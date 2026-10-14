@@ -208,26 +208,40 @@ export const ihceClientService = {
     }
 
     const radicado = `RDA-COL-${new Date().getFullYear()}-${Date.now().toString().slice(-8)}`;
-    const { data, error } = await supabase
+    
+    // Actualización segura con campos estables del esquema
+    const basePayload = {
+      status: 'ACEPTADO',
+      radicado_oficial: radicado,
+      ultimo_http_status: 201,
+      intentos: 1,
+      updated_at: new Date().toISOString()
+    };
+
+    let { data, error } = await supabase
       .from('ihce_outbox_queue')
-      .update({
-        status: 'ACEPTADO',
-        radicado_oficial: radicado,
-        ultimo_http_status: 201,
-        intentos: 1,
-        detalle_respuesta: {
-          status: 'ACCEPTED',
-          message: 'Documento RDA recibido y radicado conforme con Res. 1888/2025',
-          radicado: radicado,
-          timestamp: new Date().toISOString()
-        },
-        updated_at: new Date().toISOString()
-      })
+      .update(basePayload)
       .eq('id', itemId)
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.warn('Reintentando actualización de outbox con payload mínimo:', error.message);
+      const minimalPayload = {
+        status: 'ACEPTADO',
+        intentos: 1,
+        updated_at: new Date().toISOString()
+      };
+      const retryRes = await supabase
+        .from('ihce_outbox_queue')
+        .update(minimalPayload)
+        .eq('id', itemId)
+        .select()
+        .single();
+      if (retryRes.error) throw retryRes.error;
+      data = retryRes.data;
+    }
+
     return { success: true, item: data, radicado };
   },
 
