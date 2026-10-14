@@ -6,6 +6,7 @@ import { FiActivity, FiEdit3, FiTrash2, FiPenTool, FiCheck, FiFileText, FiX, FiA
 import { getDoctorSignatureAndData, validateDoctorCanSign } from '../../../services/doctorSignatureService';
 import { closeEvolution, createEvolutionAddendum, getEvolutionAddendaBatch } from '../../../services/evolutionService';
 import { isDoctorUser } from '../../../utils/doctorHelpers';
+import { ihceClientService } from '../../../services/ihce/ihceClientService';
 
 
 // SVG de Huella digital codificado para simulador
@@ -1656,6 +1657,9 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
             toast.success("Evolución clínica cerrada y certificada con éxito ✅");
             setCloseModalEvo(null);
             await loadEvolutions();
+
+            // Despacho asíncrono desatendido a MinSalud en segundo plano (Res. 1888/2025)
+            ihceClientService.autoDispatchPending().catch(e => console.info("IHCE background dispatch:", e.message));
         } catch (error) {
             console.error("Error al cerrar evolución:", error);
             if (error.message?.includes("DOCTOR_SIGNATURE_REQUIRED")) {

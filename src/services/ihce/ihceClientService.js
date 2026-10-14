@@ -252,6 +252,38 @@ export const ihceClientService = {
   },
 
   /**
+   * Despacha automáticamente cualquier atención pendiente en la cola sin intervención de usuario.
+   * Totalmente asíncrono y silencioso para la clínica (Res. 1888/2025).
+   */
+  async autoDispatchPending(tenantId) {
+    try {
+      let query = supabase
+        .from('ihce_outbox_queue')
+        .select('id')
+        .eq('status', 'PENDIENTE')
+        .limit(10);
+      
+      if (tenantId) query = query.eq('tenant_id', tenantId);
+      const { data: pending, error } = await query;
+      if (error || !pending || pending.length === 0) return { processed: 0 };
+
+      const results = [];
+      for (const item of pending) {
+        try {
+          const res = await this.dispatchOutboxItem(item.id, tenantId);
+          results.push(res);
+        } catch (itemErr) {
+          console.warn(`Error al auto-despachar outbox item ${item.id}:`, itemErr.message);
+        }
+      }
+      return { processed: results.length, items: results };
+    } catch (e) {
+      console.info('autoDispatchPending info:', e.message);
+      return { processed: 0, error: e.message };
+    }
+  },
+
+  /**
    * Ejecuta una prueba de validación y conectividad de credenciales IHCE.
    * Totalmente protegida y sanitizada (cero datos de pacientes, cero credenciales expuestas).
    */

@@ -191,6 +191,9 @@ export default function ConfigIhce({ tenantId, tenantName, onClose } = {}) {
   const loadOutboxItems = async () => {
     setLoadingOutbox(true);
     try {
+      if (formData.auto_dispatch_enabled !== false) {
+        await ihceClientService.autoDispatchPending(tenantId).catch(() => {});
+      }
       const items = await ihceClientService.getOutboxItems(50, tenantId);
       setOutboxItems(items || []);
     } catch (err) {
