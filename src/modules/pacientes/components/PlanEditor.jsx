@@ -618,31 +618,77 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
         let providerCode = '';
         let billingCfg = {};
         try {
-            const { getConfigSection } = await import('../../../services/configPersistenceService');
-            const [billingSection, companyCfg, tenantRow, sisproSecrets] = await Promise.all([
+            const { getConfigSection, getConfigItems } = await import('../../../services/configPersistenceService');
+            const [billingSection, companyCfg, tenantRow, sisproSecrets, sucursalesList] = await Promise.all([
                 getConfigSection(inquilino, "facturacion_electronica", {}),
                 getConfigSection(inquilino, "empresa_datos", {}),
                 supabase.from("tenants").select("*").eq("id", inquilino).maybeSingle(),
-                supabase.from("tenant_secrets").select("sispro_config").eq("tenant_id", inquilino).maybeSingle()
+                supabase.from("tenant_secrets").select("sispro_config").eq("tenant_id", inquilino).maybeSingle(),
+                getConfigItems(inquilino, "sucursales", "sucursales").catch(() => [])
             ]);
+
             const branchBilling = billingSection?.por_sucursal || {};
             const branchId = userProfile?.sucursal_id || userProfile?.sucursal || patient?.sucursal_id || null;
-            billingCfg = (branchId && branchBilling[branchId])
-                || branchBilling.general 
-                || Object.values(branchBilling)[0] 
-                || billingSection?.general 
-                || billingSection 
-                || {};
+            
+            // Base general de facturación
+            const baseGeneral = billingSection?.general || (billingSection?.numbering_range_id || billingSection?.provider_code ? billingSection : {});
+            const branchSpecific = (branchId && branchBilling[branchId]) ? branchBilling[branchId] : {};
+            
+            // Combinar configuración para que la sede herede cualquier dato no sobreescrito
+            billingCfg = {
+                ...baseGeneral,
+                ...branchSpecific
+            };
+
             const dTenant = tenantRow?.data || {};
             const dSispro = sisproSecrets?.data?.sispro_config || {};
+
+            // Buscar en sucursales configuradas
+            let sucursalProviderCode = '';
+            if (Array.isArray(sucursalesList)) {
+                const activeBranch = branchId ? sucursalesList.find(s => s.id === branchId) : null;
+                sucursalProviderCode = activeBranch?.codigoPrestador || activeBranch?.codigoPrestadorDetalle || activeBranch?.codigo_prestador || '';
+                if (!sucursalProviderCode) {
+                    const anyBranchWithCode = sucursalesList.find(s => s?.codigoPrestador || s?.codigoPrestadorDetalle || s?.codigo_prestador);
+                    if (anyBranchWithCode) {
+                        sucursalProviderCode = anyBranchWithCode.codigoPrestador || anyBranchWithCode.codigoPrestadorDetalle || anyBranchWithCode.codigo_prestador || '';
+                    }
+                }
+            }
+
+            // Buscar en cualquier sede de facturación electrónica
+            const anyBranchBillingCode = Object.values(branchBilling || {}).find(b => b?.provider_code)?.provider_code || '';
+
+            // Búsqueda exhaustiva en todos los campos donde la clínica puede tener su REPS
             providerCode = String(
                 billingCfg?.provider_code ||
-                dTenant.codigoPrestador ||
-                dSispro.codigoPrestador ||
+                baseGeneral?.provider_code ||
+                billingSection?.provider_code ||
+                anyBranchBillingCode ||
+                sucursalProviderCode ||
                 companyCfg?.codigoPrestador ||
+                companyCfg?.codigo_prestador ||
                 companyCfg?.reps ||
+                companyCfg?.provider_code ||
+                companyCfg?.codPrestador ||
+                companyCfg?.codigo_habilitacion_reps ||
+                dTenant?.codigo_prestador ||
+                dTenant?.codigoPrestador ||
+                dTenant?.reps ||
+                dSispro?.codigoPrestador ||
+                dSispro?.codigo_prestador ||
+                dSispro?.reps ||
+                userProfile?.codigo_habilitacion_reps ||
+                userProfile?.codigoPrestador ||
                 ''
             ).trim();
+
+            if (providerCode && !billingCfg.provider_code) {
+                billingCfg.provider_code = providerCode;
+            }
+            if (baseGeneral?.numbering_range_id && !billingCfg.numbering_range_id) {
+                billingCfg.numbering_range_id = baseGeneral.numbering_range_id;
+            }
         } catch (e) {
             console.warn('Error cargando configuración en PlanEditor:', e);
         }

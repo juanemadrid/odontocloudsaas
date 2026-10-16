@@ -70,6 +70,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
     const [condicionesPagoList, setCondicionesPagoList] = useState([]);
     const [facturasCompraPendientes, setFacturasCompraPendientes] = useState([]);
     const [facturasSeleccionadas, setFacturasSeleccionadas] = useState([]);
+    const [mostrarTodasFacturasModal, setMostrarTodasFacturasModal] = useState(false);
 
     // Nombre de la caja o del usuario/responsable que atiende la caja
     const userCajaLabel = useMemo(() => {
@@ -364,15 +365,70 @@ export default function PagosForm({ onCancel, onSuccess }) {
 
                 // 8. Cargar Facturas de Compra pendientes y pagos previos para asegurar saldo real
                 try {
-                    const [{ data: fcDb }, { data: ppDb }] = await Promise.all([
-                        supabase.from("facturas_compra").select("*").eq("tenant_id", inquilino),
-                        supabase.from("pagos_proveedor").select("items, total").eq("tenant_id", inquilino)
-                    ]);
-                    let allFc = fcDb || [];
+                    let allFc = [];
+
+                    // Capa A: getConfigSection oficial de facturas_compra
+                    try {
+                        const cfgList = await getConfigSection(inquilino, "facturas_compra", []);
+                        if (Array.isArray(cfgList) && cfgList.length > 0) {
+                            allFc = [...cfgList];
+                        }
+                    } catch (e) {}
+
+                    // Capa B: website_config directo
                     if (allFc.length === 0) {
-                        allFc = cfg.facturas_compra || cfg.facturasCompra || [];
+                        try {
+                            const { data: cfgRow } = await supabase
+                                .from("website_config")
+                                .select("config")
+                                .eq("tenant_id", inquilino)
+                                .maybeSingle();
+                            const fromWc = cfgRow?.config?.facturas_compra || cfgRow?.config?.facturasCompra || [];
+                            if (Array.isArray(fromWc) && fromWc.length > 0) {
+                                allFc = [...fromWc];
+                            }
+                        } catch (e) {}
                     }
-                    const allPp = ppDb || cfg.pagos_proveedor || [];
+
+                    // Capa C: Fallback a cfg cargado previamente
+                    if (allFc.length === 0) {
+                        const fromCfg = cfg.facturas_compra || cfg.facturasCompra || [];
+                        if (Array.isArray(fromCfg) && fromCfg.length > 0) {
+                            allFc = [...fromCfg];
+                        }
+                    }
+
+                    // Capa D: tabla facturas_compra en Supabase (si existe)
+                    try {
+                        const { data: fcDb, error: fcDbErr } = await supabase
+                            .from("facturas_compra")
+                            .select("*")
+                            .eq("tenant_id", inquilino);
+                        if (!fcDbErr && Array.isArray(fcDb) && fcDb.length > 0) {
+                            const existingIds = new Set(allFc.map(f => String(f.id)));
+                            const existingNums = new Set(allFc.map(f => String(f.factus_number || f.nroFactura || f.documentoNumero || f.numero || "")));
+                            fcDb.forEach(fc => {
+                                const fId = String(fc.id);
+                                const fNum = String(fc.factus_number || fc.nroFactura || fc.documentoNumero || fc.numero || "");
+                                if (!existingIds.has(fId) && (!fNum || !existingNums.has(fNum))) {
+                                    allFc.push(fc);
+                                }
+                            });
+                        }
+                    } catch (e) {}
+
+                    // Cargar pagos previos para calcular saldo real
+                    let allPp = [];
+                    try {
+                        const { data: ppDb } = await supabase
+                            .from("pagos_proveedor")
+                            .select("items, total")
+                            .eq("tenant_id", inquilino);
+                        if (Array.isArray(ppDb)) allPp = ppDb;
+                    } catch (e) {}
+                    if (allPp.length === 0 && Array.isArray(cfg.pagos_proveedor)) {
+                        allPp = cfg.pagos_proveedor;
+                    }
 
                     // Mapear abonos previos por factura
                     const abonosPorFactura = {};
@@ -387,25 +443,36 @@ export default function PagosForm({ onCancel, onSuccess }) {
                     });
 
                     const facturasCalculadas = allFc.map(fc => {
-                        const totalDoc = Number(fc.total || fc.monto || 0);
+                        const totalDoc = Number(fc.totalNeto ?? fc.total ?? fc.monto ?? 0);
                         const fcCode = fc.factus_number || fc.nroFactura || fc.documentoNumero || fc.numero || (String(fc.id).startsWith("fc_") ? `FC-${String(fc.id).slice(3, 8)}` : `FC-${fc.id}`);
                         const abonado = Math.max(
                             abonosPorFactura[String(fc.id)] || 0,
                             abonosPorFactura[String(fcCode)] || 0
                         );
 
-                        let saldo = fc.saldo_pendiente !== undefined && fc.saldo_pendiente !== null
-                            ? Number(fc.saldo_pendiente)
-                            : (fc.saldoPendiente !== undefined && fc.saldoPendiente !== null ? Number(fc.saldoPendiente) : Math.max(0, totalDoc - abonado));
-
-                        if (abonado > 0 && (fc.saldo_pendiente === undefined || fc.saldo_pendiente === null) && (fc.saldoPendiente === undefined || fc.saldoPendiente === null)) {
+                        // Cálculo preciso del saldo pendiente
+                        let saldo = 0;
+                        if (fc.saldo_pendiente !== undefined && fc.saldo_pendiente !== null && Number(fc.saldo_pendiente) > 0) {
+                            saldo = Number(fc.saldo_pendiente);
+                        } else if (fc.saldoPendiente !== undefined && fc.saldoPendiente !== null && Number(fc.saldoPendiente) > 0) {
+                            saldo = Number(fc.saldoPendiente);
+                        } else if (totalDoc > 0) {
                             saldo = Math.max(0, totalDoc - abonado);
+                        }
+
+                        // Si hay abonos y el total es mayor a cero, asegurar coherencia
+                        if (abonado > 0 && totalDoc > 0) {
+                            saldo = Math.max(0, totalDoc - abonado);
+                        } else if (saldo === 0 && totalDoc > 0 && (fc.estado || "").toLowerCase() !== "pagada") {
+                            // Si no hay abonos registrados y la factura no está pagada, el saldo es el total
+                            saldo = totalDoc;
                         }
 
                         return {
                             ...fc,
                             saldo_pendiente: saldo,
-                            saldoPendiente: saldo
+                            saldoPendiente: saldo,
+                            totalCalculado: totalDoc
                         };
                     });
 
@@ -599,41 +666,99 @@ export default function PagosForm({ onCancel, onSuccess }) {
         }
     };
 
-    // Facturas de compra disponibles exclusivamente para el tercero seleccionado con saldo pendiente
-    const availableFacturasCompra = useMemo(() => {
-        if (!selectedTerceroObj && !terceroSearchQuery.trim()) return [];
-        const tName = (selectedTerceroObj?.nombre || terceroSearchQuery || "").toLowerCase().trim();
-        const tDoc = (selectedTerceroObj?.documento || "").toLowerCase().trim();
-        const tId = String(selectedTerceroObj?.id || "");
-        
+    // Funciones auxiliares para extracción segura de datos de terceros en facturas
+    const extractProvName = (f) => {
+        if (!f) return "";
+        if (typeof f.proveedor === "string" && f.proveedor.trim()) return f.proveedor.trim();
+        if (typeof f.tercero === "string" && f.tercero.trim()) return f.tercero.trim();
+        if (typeof f.proveedorNombre === "string" && f.proveedorNombre.trim()) return f.proveedorNombre.trim();
+        if (typeof f.terceroNombre === "string" && f.terceroNombre.trim()) return f.terceroNombre.trim();
+        if (typeof f.nombre === "string" && f.nombre.trim()) return f.nombre.trim();
+        if (typeof f.paciente === "string" && f.paciente.trim()) return f.paciente.trim();
+        if (typeof f.pacienteNombre === "string" && f.pacienteNombre.trim()) return f.pacienteNombre.trim();
+        if (f.tercero && typeof f.tercero === "object") {
+            return f.tercero.nombre || f.tercero.razonSocial || f.tercero.razon_social || f.tercero.nombre_completo || f.tercero.nombreCompleto || "";
+        }
+        if (f.proveedor && typeof f.proveedor === "object") {
+            return f.proveedor.nombre || f.proveedor.razonSocial || f.proveedor.razon_social || f.proveedor.nombre_completo || f.proveedor.nombreCompleto || "";
+        }
+        if (f.paciente && typeof f.paciente === "object") {
+            return f.paciente.nombre || f.paciente.nombreCompleto || f.paciente.nombres || "";
+        }
+        return "";
+    };
+
+    const extractProvDoc = (f) => {
+        if (!f) return "";
+        if (typeof f.documentoTercero === "string" || typeof f.documentoTercero === "number") return String(f.documentoTercero);
+        if (typeof f.documento === "string" || typeof f.documento === "number") return String(f.documento);
+        if (typeof f.nit === "string" || typeof f.nit === "number") return String(f.nit);
+        if (typeof f.nroDocumento === "string" || typeof f.nroDocumento === "number") return String(f.nroDocumento);
+        if (typeof f.documentoPaciente === "string" || typeof f.documentoPaciente === "number") return String(f.documentoPaciente);
+        if (f.tercero && typeof f.tercero === "object") {
+            return String(f.tercero.documento || f.tercero.nroDocumento || f.tercero.nit || f.tercero.identificacion || "");
+        }
+        if (f.proveedor && typeof f.proveedor === "object") {
+            return String(f.proveedor.documento || f.proveedor.nroDocumento || f.proveedor.nit || f.proveedor.identificacion || "");
+        }
+        return "";
+    };
+
+    // Todas las facturas pendientes de la clínica con saldo mayor a 0 y no pagadas/anuladas
+    const todasFacturasPendientes = useMemo(() => {
         if (!facturasCompraPendientes || facturasCompraPendientes.length === 0) return [];
-        
         return facturasCompraPendientes.filter(fc => {
-            // 1. Filtrar sólo facturas que tengan saldo pendiente real mayor a 0
-            const saldo = parseFloat(fc.saldo_pendiente ?? fc.saldoPendiente ?? fc.total ?? fc.monto ?? 0);
+            const saldo = parseFloat(fc.saldo_pendiente ?? fc.saldoPendiente ?? fc.totalNeto ?? fc.total ?? fc.monto ?? 0);
             if (saldo <= 0) return false;
 
-            // 2. Descartar facturas con estado Pagada o Anulada
             const estado = (fc.estado || fc.status || "").toLowerCase().trim();
             if (estado === "pagada" || estado === "anulada") return false;
 
-            // 3. Tampoco mostrar si ya fue agregada en la lista actual de items de este pago
             const fcCode = fc.factus_number || fc.nroFactura || fc.documentoNumero || fc.numero || (String(fc.id).startsWith("fc_") ? `FC-${String(fc.id).slice(3, 8)}` : `FC-${fc.id}`);
             const yaEnItems = items.some(it => it.isFactura && (String(it.facturaId) === String(fc.id) || String(it.numeroFactura) === String(fcCode)));
             if (yaEnItems) return false;
 
-            // 4. Coincidencia con el tercero seleccionado
-            const fcProvId = String(fc.tercero_id || fc.terceroId || fc.proveedor_id || fc.proveedorId || "");
-            const fcProv = (fc.proveedor || fc.tercero || fc.proveedorNombre || fc.terceroNombre || fc.nombre || "").toLowerCase().trim();
-            const fcDoc = (fc.documentoTercero || fc.documento || fc.nit || fc.nroDocumento || "").toLowerCase().trim();
-            
-            const matchId = tId && fcProvId && (tId === fcProvId);
-            const matchName = tName && fcProv && (fcProv.includes(tName) || tName.includes(fcProv));
-            const matchDoc = tDoc && fcDoc && (fcDoc === tDoc || fcDoc.includes(tDoc) || tDoc.includes(fcDoc));
-            
-            return matchId || matchName || matchDoc;
+            return true;
         });
-    }, [facturasCompraPendientes, selectedTerceroObj, terceroSearchQuery, items]);
+    }, [facturasCompraPendientes, items]);
+
+    // Facturas de compra disponibles para el tercero seleccionado con saldo pendiente
+    const availableFacturasCompra = useMemo(() => {
+        if (!selectedTerceroObj && !terceroSearchQuery.trim()) return todasFacturasPendientes;
+        
+        const tName = (selectedTerceroObj?.nombre || terceroSearchQuery || "").toLowerCase().trim();
+        const tDocClean = String(selectedTerceroObj?.documento || selectedTerceroObj?.nroDocumento || selectedTerceroObj?.nit || "").replace(/\D/g, "");
+        const tId = String(selectedTerceroObj?.id || "").trim();
+
+        if (todasFacturasPendientes.length === 0) return [];
+
+        return todasFacturasPendientes.filter(fc => {
+            // 1. Coincidencia por ID de tercero o paciente
+            const fcProvId = String(fc.tercero_id || fc.terceroId || fc.proveedor_id || fc.proveedorId || fc.tercero?.id || fc.proveedor?.id || "").trim();
+            const fcPacId = String(fc.paciente_id || fc.pacienteId || fc.paciente?.id || "").trim();
+            if (tId && (tId === fcProvId || tId === fcPacId)) return true;
+
+            // 2. Coincidencia por documento (comparando solo dígitos numéricos)
+            const fcDocClean = extractProvDoc(fc).replace(/\D/g, "");
+            if (tDocClean && fcDocClean) {
+                if (tDocClean === fcDocClean || tDocClean.startsWith(fcDocClean) || fcDocClean.startsWith(tDocClean)) {
+                    return true;
+                }
+            }
+
+            // 3. Coincidencia por nombre o razón social (segura contra objetos)
+            const fcProvName = extractProvName(fc).toLowerCase().trim();
+            if (tName && fcProvName) {
+                if (fcProvName.includes(tName) || tName.includes(fcProvName)) return true;
+
+                // Coincidencia por palabras clave significativas
+                const tWords = tName.split(/\s+/).filter(w => w.length >= 3);
+                if (tWords.some(w => fcProvName.includes(w))) return true;
+            }
+
+            return false;
+        });
+    }, [todasFacturasPendientes, selectedTerceroObj, terceroSearchQuery]);
 
     const getFacturaCode = (fc) => {
         if (!fc) return "Factura de compra";
@@ -665,7 +790,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
         }
         const fc = facturasCompraPendientes.find(f => String(f.id) === String(fcId));
         if (fc) {
-            const saldo = parseFloat(fc.saldo_pendiente ?? fc.saldoPendiente ?? fc.total ?? fc.monto ?? 0);
+            const saldo = parseFloat(fc.saldo_pendiente ?? fc.saldoPendiente ?? fc.totalNeto ?? fc.total ?? fc.monto ?? 0);
             setAsociarFacturaData(prev => ({
                 ...prev,
                 facturaId: fc.id,
@@ -673,6 +798,22 @@ export default function PagosForm({ onCancel, onSuccess }) {
                 pendientePorPagar: saldo,
                 valorAPagar: saldo
             }));
+
+            // Si el tercero en el formulario principal no ha sido seleccionado, auto-vincularlo
+            if (!selectedTerceroObj && !terceroId) {
+                const provName = extractProvName(fc);
+                const provDoc = extractProvDoc(fc);
+                if (provName) {
+                    setTerceroSearchQuery(provName);
+                    setTerceroId(fc.tercero_id || fc.terceroId || fc.proveedor_id || provName);
+                    setSelectedTerceroObj({
+                        id: fc.tercero_id || fc.terceroId || fc.proveedor_id || provName,
+                        nombre: provName,
+                        documento: provDoc,
+                        tipo: "tercero"
+                    });
+                }
+            }
         }
     };
 
@@ -1822,25 +1963,55 @@ export default function PagosForm({ onCancel, onSuccess }) {
                                         <FiInfo size={13} />
                                     </span>
                                 </div>
-                                <div className="md:col-span-8">
+                                <div className="md:col-span-8 space-y-1.5">
                                     <select
                                         value={asociarFacturaData.facturaId}
                                         onChange={(e) => handleSelectFacturaChange(e.target.value)}
                                         className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
                                     >
                                         <option value="">No seleccionar factura</option>
-                                        {availableFacturasCompra.length > 0 ? (
-                                            availableFacturasCompra.map((fc) => (
-                                                <option key={fc.id} value={fc.id}>
-                                                    {getFacturaCode(fc)} - {fc.proveedor || fc.tercero || "Proveedor"} ({fmt(fc.saldo_pendiente ?? fc.saldoPendiente ?? fc.total ?? fc.monto)})
-                                                </option>
-                                            ))
-                                        ) : (
+                                        {availableFacturasCompra.length > 0 && (
+                                            <optgroup label={selectedTerceroObj ? `Facturas de ${selectedTerceroObj.nombre}` : "Facturas encontradas"}>
+                                                {availableFacturasCompra.map((fc) => (
+                                                    <option key={fc.id} value={fc.id}>
+                                                        {getFacturaCode(fc)} - {extractProvName(fc) || "Proveedor"} ({fmt(fc.saldo_pendiente ?? fc.saldoPendiente ?? fc.totalNeto ?? fc.total ?? fc.monto)})
+                                                    </option>
+                                                ))}
+                                            </optgroup>
+                                        )}
+                                        {mostrarTodasFacturasModal && todasFacturasPendientes.length > 0 && (
+                                            <optgroup label="Todas las facturas pendientes de la clínica">
+                                                {todasFacturasPendientes
+                                                    .filter(fc => !availableFacturasCompra.some(af => String(af.id) === String(fc.id)))
+                                                    .map((fc) => (
+                                                        <option key={fc.id} value={fc.id}>
+                                                            {getFacturaCode(fc)} - {extractProvName(fc) || "Proveedor"} ({fmt(fc.saldo_pendiente ?? fc.saldoPendiente ?? fc.totalNeto ?? fc.total ?? fc.monto)})
+                                                        </option>
+                                                    ))
+                                                }
+                                            </optgroup>
+                                        )}
+                                        {availableFacturasCompra.length === 0 && !mostrarTodasFacturasModal && (
                                             <option value="" disabled>
-                                                {selectedTerceroObj ? "Este tercero no tiene facturas de compra pendientes" : "Seleccione primero un tercero o paciente"}
+                                                {todasFacturasPendientes.length > 0
+                                                    ? "Sin facturas vinculadas a este tercero (activa 'Ver todas' abajo)"
+                                                    : (selectedTerceroObj ? "No hay facturas de compra pendientes en el sistema" : "Seleccione primero un tercero o paciente")}
                                             </option>
                                         )}
                                     </select>
+                                    {todasFacturasPendientes.length > 0 && (
+                                        <div className="flex items-center justify-between text-[11px] text-slate-500 pt-0.5">
+                                            <label className="flex items-center gap-1.5 cursor-pointer hover:text-slate-700 select-none">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={mostrarTodasFacturasModal}
+                                                    onChange={(e) => setMostrarTodasFacturasModal(e.target.checked)}
+                                                    className="w-3.5 h-3.5 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                                                />
+                                                <span>Ver todas las facturas pendientes de la clínica ({todasFacturasPendientes.length})</span>
+                                            </label>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 

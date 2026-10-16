@@ -785,22 +785,55 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
       if (!hasCredentials) setNoCredsWarning(true);
 
       if (isSalud) {
-        const { getConfigSection: getPersistedCfg } = await import("../../../services/configPersistenceService");
-        const [companyCfg, tenantRow, sisproSecrets] = await Promise.all([
+        const { getConfigSection: getPersistedCfg, getConfigItems: getPersistedItems } = await import("../../../services/configPersistenceService");
+        const [companyCfg, tenantRow, sisproSecrets, sucursalesList] = await Promise.all([
           getPersistedCfg(inquilino, "empresa_datos", {}),
           supabase.from("tenants").select("*").eq("id", inquilino).maybeSingle(),
           supabase.from("tenant_secrets").select("sispro_config").eq("tenant_id", inquilino).maybeSingle(),
+          getPersistedItems(inquilino, "sucursales", "sucursales").catch(() => []),
         ]);
         const dTenant = tenantRow?.data || {};
         const dSispro = sisproSecrets?.data?.sispro_config || {};
+
+        let sucursalProviderCode = "";
+        if (Array.isArray(sucursalesList)) {
+          const activeBranch = selectedSucursalId ? sucursalesList.find(s => s.id === selectedSucursalId) : null;
+          sucursalProviderCode = activeBranch?.codigoPrestador || activeBranch?.codigoPrestadorDetalle || activeBranch?.codigo_prestador || "";
+          if (!sucursalProviderCode) {
+            const anyBranchWithCode = sucursalesList.find(s => s?.codigoPrestador || s?.codigoPrestadorDetalle || s?.codigo_prestador);
+            if (anyBranchWithCode) {
+              sucursalProviderCode = anyBranchWithCode.codigoPrestador || anyBranchWithCode.codigoPrestadorDetalle || anyBranchWithCode.codigo_prestador || "";
+            }
+          }
+        }
+
+        const anyBranchBillingCode = Object.values(billingConfig?.por_sucursal || {}).find(b => b?.provider_code)?.provider_code || "";
+
         const providerCode = String(
           billingConfig?.provider_code ||
-          dTenant.codigoPrestador ||
-          dSispro.codigoPrestador ||
+          billingConfig?.general?.provider_code ||
+          anyBranchBillingCode ||
+          sucursalProviderCode ||
           companyCfg?.codigoPrestador ||
+          companyCfg?.codigo_prestador ||
           companyCfg?.reps ||
+          companyCfg?.provider_code ||
+          companyCfg?.codPrestador ||
+          companyCfg?.codigo_habilitacion_reps ||
+          dTenant?.codigo_prestador ||
+          dTenant?.codigoPrestador ||
+          dTenant?.reps ||
+          dSispro?.codigoPrestador ||
+          dSispro?.codigo_prestador ||
+          dSispro?.reps ||
+          userProfile?.codigo_habilitacion_reps ||
+          userProfile?.codigoPrestador ||
           ""
         ).trim();
+
+        if (providerCode && !billingConfig.provider_code) {
+          billingConfig.provider_code = providerCode;
+        }
 
         let billingPeriod = null;
         try {
