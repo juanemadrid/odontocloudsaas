@@ -922,6 +922,16 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
       if (!hasCredentials) setNoCredsWarning(true);
 
       if (isSalud) {
+        const { isFevRips0948Enabled } = await import("../../rips/v003/ripsFeatureFlagService");
+        const fevRipsEnabled = await isFevRips0948Enabled(inquilino);
+        if (!fevRipsEnabled) {
+          const msg = "El módulo FEV-RIPS (Resolución 0948 de 2026) no está habilitado para esta clínica. Solicite al SuperAdministrador autorizarlo en el panel SuperAdmin (Clínicas → Autorizar FEV-RIPS 0948) antes de emitir facturas a pacientes.";
+          setError(msg);
+          toast.error(msg);
+          setSaving(false);
+          return;
+        }
+
         const { getConfigSection: getPersistedCfg, getConfigItems: getPersistedItems } = await import("../../../services/configPersistenceService");
         const [companyCfg, tenantRow, sisproSecrets, sucursalesList] = await Promise.all([
           getPersistedCfg(inquilino, "empresa_datos", {}),
