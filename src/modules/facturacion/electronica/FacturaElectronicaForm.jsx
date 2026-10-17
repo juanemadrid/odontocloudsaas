@@ -761,14 +761,15 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
           lockedBy: userProfile?.email || "user",
           timeoutSeconds: 120,
         });
-        backendLockToken = lockRes.lockToken;
+        backendLockToken = lockRes?.lockToken || null;
       } catch (lockErr) {
-        const msg = lockErr.code === "FEV_OPERATION_ALREADY_IN_PROGRESS"
-          ? "Operación en curso: ya existe un reintento activo para esta factura."
-          : lockErr.message;
-        setError(msg);
-        toast.error(msg);
-        return;
+        if (lockErr?.code === "FEV_OPERATION_ALREADY_IN_PROGRESS") {
+          setError("Operación en curso: ya existe un reintento activo para esta factura.");
+          toast.error("Operación en curso: ya existe un reintento activo para esta factura.");
+          return;
+        }
+        console.warn("Lock backend FEV omitido (no bloqueante):", lockErr?.message);
+        backendLockToken = null;
       }
     }
 
