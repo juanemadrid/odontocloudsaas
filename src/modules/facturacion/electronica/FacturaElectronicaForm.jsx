@@ -933,18 +933,41 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
         const dSispro = sisproSecrets?.data?.sispro_config || {};
 
         let sucursalProviderCode = "";
+        const activeBranchId =
+          initialFactura?.sucursal_id ||
+          initialFactura?.sucursalId ||
+          initialDetalles?.sucursal_id ||
+          initialDetalles?.sucursalId ||
+          userProfile?.sucursal_id ||
+          userProfile?.sucursal ||
+          (typeof localStorage !== "undefined" ? localStorage.getItem("oc_active_sede_id") : null) ||
+          null;
+        const selectedSucursalId = activeBranchId;
+
         if (Array.isArray(sucursalesList)) {
-          const activeBranch = selectedSucursalId ? sucursalesList.find(s => s.id === selectedSucursalId) : null;
-          sucursalProviderCode = activeBranch?.codigoPrestador || activeBranch?.codigoPrestadorDetalle || activeBranch?.codigo_prestador || "";
+          const activeBranch = selectedSucursalId
+            ? sucursalesList.find((s) => String(s.id) === String(selectedSucursalId) || String(s._id) === String(selectedSucursalId))
+            : null;
+          sucursalProviderCode =
+            activeBranch?.codigoPrestador ||
+            activeBranch?.codigoPrestadorDetalle ||
+            activeBranch?.codigo_prestador ||
+            "";
           if (!sucursalProviderCode) {
-            const anyBranchWithCode = sucursalesList.find(s => s?.codigoPrestador || s?.codigoPrestadorDetalle || s?.codigo_prestador);
+            const anyBranchWithCode = sucursalesList.find(
+              (s) => s?.codigoPrestador || s?.codigoPrestadorDetalle || s?.codigo_prestador
+            );
             if (anyBranchWithCode) {
-              sucursalProviderCode = anyBranchWithCode.codigoPrestador || anyBranchWithCode.codigoPrestadorDetalle || anyBranchWithCode.codigo_prestador || "";
+              sucursalProviderCode =
+                anyBranchWithCode.codigoPrestador ||
+                anyBranchWithCode.codigoPrestadorDetalle ||
+                anyBranchWithCode.codigo_prestador ||
+                "";
             }
           }
         }
 
-        const anyBranchBillingCode = Object.values(billingConfig?.por_sucursal || {}).find(b => b?.provider_code)?.provider_code || "";
+        const anyBranchBillingCode = Object.values(billingConfig?.por_sucursal || {}).find((b) => b?.provider_code)?.provider_code || "";
 
         const providerCode = String(
           billingConfig?.provider_code ||
@@ -968,7 +991,7 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
           ""
         ).trim();
 
-        if (providerCode && !billingConfig.provider_code) {
+        if (providerCode && billingConfig && !billingConfig.provider_code) {
           billingConfig.provider_code = providerCode;
         }
 

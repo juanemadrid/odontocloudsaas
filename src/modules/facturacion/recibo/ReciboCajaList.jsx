@@ -516,8 +516,8 @@ export default function ReciboCajaList({ onNew }) {
             let invoiceMap = {};
             try {
                 const [factsRes, fevRes] = await Promise.all([
-                    supabase.from("facturas").select("id, numero, detalles, recibo_id, factura_id").eq("tenant_id", inquilino),
-                    supabase.from("facturas_electronicas").select("id, numero, detalles, recibo_id, prefix, number").eq("tenant_id", inquilino)
+                    supabase.from("facturas").select("id, numero, detalles, total").eq("tenant_id", inquilino).catch(() => ({ data: [] })),
+                    supabase.from("facturas_electronicas").select("id, numero, detalles, total, prefix, number").eq("tenant_id", inquilino).catch(() => ({ data: [] }))
                 ]);
                 const allInvoices = [...(factsRes?.data || []), ...(fevRes?.data || [])];
                 allInvoices.forEach((f) => {
