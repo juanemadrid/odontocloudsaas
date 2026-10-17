@@ -12,6 +12,7 @@ import { computePaymentStatus } from "../../../services/billingReceiptLinkServic
 import { getDoctorsList } from "../../../services/supabaseServices";
 import { getConfigItems, getConfigSection } from "../../../services/configPersistenceService";
 import { validateTerceroForDian, formatTerceroNombre } from "../../../utils/dian/dianHelpers";
+import { CUPS_DENTAL_CODES } from "../../../data/cupsCodes";
 
 import {
   buildBillingPeriodFromAttentions,
@@ -134,6 +135,11 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
   });
 
   // CARD 3: Conceptos
+  const [usarListaPrecios, setUsarListaPrecios] = useState(false);
+  const [procedimientosCatalogo, setProcedimientosCatalogo] = useState([]);
+  const [activeSearchItemId, setActiveSearchItemId] = useState(null);
+  const procedureSearchRef = useRef(null);
+
   const [items, setItems] = useState(() => {
     const raw = initialFactura?.items || initialDetalles?.items;
     if (Array.isArray(raw) && raw.length > 0) {
@@ -191,6 +197,9 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
     const handleClickOutside = (e) => {
       if (searchContainerRef.current && !searchContainerRef.current.contains(e.target)) {
         setIsSearchingTercero(false);
+      }
+      if (procedureSearchRef.current && !procedureSearchRef.current.contains(e.target)) {
+        setActiveSearchItemId(null);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -383,6 +392,87 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
           ];
         }
         setMediosPagoList(mpList);
+
+        // 5. Cargar Lista de Precios / Procedimientos de la Clínica y Catálogo CUPS
+        let catalogo = [];
+        try {
+          const { data: lpDb } = await supabase
+            .from("listas_precios")
+            .select("id, nombre, descripcion")
+            .eq("tenant_id", inquilino);
+          if (lpDb && lpDb.length > 0) {
+            for (const lp of lpDb) {
+              try {
+                const parsed = typeof lp.descripcion === "string" ? JSON.parse(lp.descripcion) : lp.descripcion;
+                if (Array.isArray(parsed)) {
+                  parsed.forEach((it, idx) => {
+                    const rawCode = it.codigo || it.code || it.codigo_cups || it.cups || "";
+                    const rawName = it.nombre || it.name || it.descripcion || "";
+                    const rawPrice = Number(it.precio ?? it.valor ?? it.price ?? 0);
+                    const rawCat = it.categoria || lp.nombre || "CLÍNICA";
+                    if (rawName) {
+                      catalogo.push({
+                        id: it.id || `custom_${idx}_${rawCode}`,
+                        code: rawCode,
+                        name: rawName,
+                        precio: rawPrice,
+                        category: rawCat,
+                        isCustom: true,
+                      });
+                    }
+                  });
+                }
+              } catch (_) {}
+            }
+          }
+        } catch (e) {
+          console.warn("Error cargando listas_precios en factura:", e);
+        }
+
+        // Si no vino de la tabla listas_precios, intentar website_config
+        if (catalogo.length === 0) {
+          try {
+            const rawLp = await getConfigItems(inquilino, "listas_precios", []);
+            if (Array.isArray(rawLp) && rawLp.length > 0) {
+              for (const lp of rawLp) {
+                const parsed = typeof lp.descripcion === "string" ? JSON.parse(lp.descripcion) : (lp.items || lp.descripcion || []);
+                if (Array.isArray(parsed)) {
+                  parsed.forEach((it, idx) => {
+                    const rawName = it.nombre || it.name || it.descripcion;
+                    if (rawName) {
+                      catalogo.push({
+                        id: it.id || `cfg_${idx}`,
+                        code: it.codigo || it.code || "",
+                        name: rawName,
+                        precio: Number(it.precio || it.valor || 0),
+                        category: it.categoria || lp.nombre || "LISTA DE PRECIOS",
+                        isCustom: true,
+                      });
+                    }
+                  });
+                }
+              }
+            }
+          } catch (_) {}
+        }
+
+        // Combinar con Catálogo Maestro CUPS Odontología (evitando duplicar códigos exactos)
+        const customCodes = new Set(catalogo.map((c) => c.code).filter(Boolean));
+        if (Array.isArray(CUPS_DENTAL_CODES)) {
+          for (const c of CUPS_DENTAL_CODES) {
+            if (!customCodes.has(c.code)) {
+              catalogo.push({
+                id: `cups_${c.code}`,
+                code: c.code,
+                name: c.name,
+                precio: Number(c.precio || 0),
+                category: c.category || "PROCEDIMIENTOS CUPS",
+                isCustom: false,
+              });
+            }
+          }
+        }
+        setProcedimientosCatalogo(catalogo);
       } catch (err) {
         console.error("Error cargando catálogos iniciales:", err);
       }
@@ -456,6 +546,44 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
         return updated;
       })
     );
+  };
+
+  // Selección de procedimiento desde la lista de precios / CUPS
+  const handleSelectProcedure = (itemId, proc) => {
+    setItems((prev) =>
+      prev.map((item) => {
+        if (item.id !== itemId) return item;
+        const pu = Number(proc.precio || 0);
+        const cant = Number(item.cantidad || 1);
+        const desc = Number(item.descuento || 0);
+        const total = Math.max(0, pu * cant - desc);
+        const codePrefix = proc.code ? `${proc.code} - ` : "";
+        return {
+          ...item,
+          concepto: `${codePrefix}${proc.name}`,
+          codigo_cups: proc.code || "",
+          cups: proc.code || "",
+          code_reference: proc.code || "",
+          precioUnitario: pu,
+          total,
+        };
+      })
+    );
+    setActiveSearchItemId(null);
+  };
+
+  // Filtrado de procedimientos por código, nombre o categoría
+  const getFilteredProcedures = (query) => {
+    const q = (query || "").toLowerCase().trim();
+    if (!q) return procedimientosCatalogo.slice(0, 30);
+    const words = q.split(/\s+/).filter(Boolean);
+    return procedimientosCatalogo.filter((p) => {
+      const code = String(p.code || "").toLowerCase();
+      const name = String(p.name || "").toLowerCase();
+      const cat = String(p.category || "").toLowerCase();
+      const combined = `${code} ${name} ${cat}`;
+      return words.every((w) => combined.includes(w));
+    }).slice(0, 30);
   };
 
   // Manejo de Retenciones
@@ -697,12 +825,18 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
         profesional_id: profesionalId,
         profesional_nombre: profNombreSelected,
         items: items.map((it, idx) => {
-          const cups = it.cups || it.codigo_cups || it.concepto || (isSalud ? "SERV-0001" : `ITEM-${Date.now().toString(36)}`);
+          const rawCode = it.codigo_cups || it.cups || (typeof it.concepto === "string" ? it.concepto.match(/^(\d{4,8})/)?.[1] : null);
+          const cups = rawCode || (isSalud ? "SERV-0001" : `ITEM-${Date.now().toString(36)}`);
           const lineId = it.invoiceLineId || (crypto?.randomUUID ? crypto.randomUUID() : `line-${idx + 1}-${Date.now()}`);
           const sourceId = it.clinicalSourceId || it.planItemId || (it.planId && it.id ? it.id : null);
           const sourceType = it.clinicalSourceType || (it.planItemId || it.planId ? "PLAN_ITEM" : null);
           const totalVal = parseFloat(it.total) || Math.max(0, (parseFloat(it.precioUnitario) || 0) * (parseFloat(it.cantidad) || 1) - (parseFloat(it.descuento) || 0));
           const fechaAtencion = (it.fechaAtencion || it.fechaRealizado || fecha || new Date().toISOString()).slice(0, 10);
+          
+          const fullLineName = it.concepto && it.descripcion && it.concepto !== it.descripcion
+            ? `${it.concepto} (${it.descripcion})`
+            : (it.concepto || it.descripcion || "Servicio Odontológico");
+
           return {
             ...it,
             invoiceLineId: lineId,
@@ -711,6 +845,9 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
             code: cups,
             code_reference: cups,
             cups,
+            nombre: fullLineName,
+            name: fullLineName,
+            descripcion: fullLineName,
             fechaAtencion,
             valor: totalVal,
             total: totalVal,
@@ -1437,25 +1574,78 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
         </div>
 
         {/* ========================================================= */}
+        {/* ========================================================= */}
         {/* CARD 3: TABLA DE CONCEPTOS                                */}
         {/* ========================================================= */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden p-6 space-y-4">
-          <div className="flex items-center justify-end">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-100">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                Conceptos / Procedimientos
+              </span>
+              <div className="h-4 w-px bg-slate-200 hidden sm:block" />
+              
+              {/* Interruptor estilizado: Usar lista de precios / procedimientos */}
+              <div
+                onClick={() => setUsarListaPrecios(!usarListaPrecios)}
+                className={`inline-flex items-center gap-2.5 px-3 py-1.5 rounded-lg border transition-all cursor-pointer select-none ${
+                  usarListaPrecios 
+                    ? "bg-emerald-50/70 border-emerald-300 text-emerald-900 shadow-2xs" 
+                    : "bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-700"
+                }`}
+                title="Activa el selector inteligente con la lista de precios y catálogo CUPS de la clínica"
+              >
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={usarListaPrecios}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setUsarListaPrecios(!usarListaPrecios);
+                  }}
+                  className={`w-9 h-5 flex items-center rounded-full p-0.5 cursor-pointer transition-colors duration-200 ease-in-out border-0 ${
+                    usarListaPrecios ? "bg-[#8dc63f]" : "bg-slate-300"
+                  }`}
+                >
+                  <div
+                    className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${
+                      usarListaPrecios ? "translate-x-4" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+                <span className="text-xs font-semibold">
+                  Usar lista de precios / procedimientos
+                </span>
+                {usarListaPrecios && (
+                  <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-600 text-white uppercase tracking-wider">
+                    Activo
+                  </span>
+                )}
+              </div>
+            </div>
+
             <button
               type="button"
               onClick={handleAddConcepto}
-              className="px-5 py-2 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-full text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 active:scale-95 cursor-pointer border-0"
+              className="px-5 py-2 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-full text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 active:scale-95 cursor-pointer border-0 self-end sm:self-auto"
             >
               + Nuevo concepto
             </button>
           </div>
 
-          <div className="overflow-x-auto border border-slate-100 rounded-lg">
+          <div
+            ref={procedureSearchRef}
+            className={`border border-slate-100 rounded-lg ${
+              usarListaPrecios && activeSearchItemId !== null ? "min-h-[300px] overflow-visible" : "overflow-x-auto"
+            }`}
+          >
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="border-b border-slate-200 text-slate-500 font-semibold bg-white">
-                  <th className="py-3 px-4 w-[22%]">Concepto</th>
-                  <th className="py-3 px-4 w-[28%]">Descripción</th>
+                  <th className="py-3 px-4 w-[24%]">
+                    Concepto {usarListaPrecios && <span className="text-emerald-600 font-bold">(Catálogo CUPS)</span>}
+                  </th>
+                  <th className="py-3 px-4 w-[26%]">Descripción</th>
                   <th className="py-3 px-4 w-[14%]">Precio unitario</th>
                   <th className="py-3 px-4 w-[10%]">Cantidad</th>
                   <th className="py-3 px-4 w-[12%]">Descuento</th>
@@ -1464,72 +1654,163 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {items.map((item) => (
-                  <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="py-2.5 px-4">
-                      <input
-                        type="text"
-                        value={item.concepto}
-                        onChange={(e) => handleItemChange(item.id, "concepto", e.target.value)}
-                        placeholder="Concepto..."
-                        className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none"
-                      />
-                    </td>
-                    <td className="py-2.5 px-4">
-                      <input
-                        type="text"
-                        value={item.descripcion}
-                        onChange={(e) => handleItemChange(item.id, "descripcion", e.target.value)}
-                        placeholder="Descripción..."
-                        className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none"
-                      />
-                    </td>
-                    <td className="py-2.5 px-4">
-                      <input
-                        type="number"
-                        min="0"
-                        step="1000"
-                        value={item.precioUnitario || ""}
-                        onChange={(e) => handleItemChange(item.id, "precioUnitario", e.target.value)}
-                        placeholder="0"
-                        className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none"
-                      />
-                    </td>
-                    <td className="py-2.5 px-4">
-                      <input
-                        type="number"
-                        min="1"
-                        value={item.cantidad || ""}
-                        onChange={(e) => handleItemChange(item.id, "cantidad", e.target.value)}
-                        className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none text-center"
-                      />
-                    </td>
-                    <td className="py-2.5 px-4">
-                      <input
-                        type="number"
-                        min="0"
-                        step="1000"
-                        value={item.descuento || ""}
-                        onChange={(e) => handleItemChange(item.id, "descuento", e.target.value)}
-                        placeholder="0"
-                        className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none"
-                      />
-                    </td>
-                    <td className="py-2.5 px-4 font-bold text-slate-800">
-                      {fmt(item.total)}
-                    </td>
-                    <td className="py-2.5 px-4 text-center">
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveConcepto(item.id)}
-                        className="text-slate-400 hover:text-rose-500 p-1 transition-colors cursor-pointer border-0 bg-transparent"
-                        title="Eliminar fila"
-                      >
-                        <FiTrash2 size={14} />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {items.map((item) => {
+                  const filteredProcs = getFilteredProcedures(item.concepto);
+                  const isSearchingThis = activeSearchItemId === item.id;
+                  return (
+                    <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="py-2.5 px-4 relative">
+                        {usarListaPrecios ? (
+                          <div className="relative">
+                            <input
+                              type="text"
+                              value={item.concepto}
+                              onChange={(e) => {
+                                handleItemChange(item.id, "concepto", e.target.value);
+                                setActiveSearchItemId(item.id);
+                              }}
+                              onFocus={() => setActiveSearchItemId(item.id)}
+                              placeholder="Buscar procedimiento o CUPS..."
+                              className="w-full h-8 pl-7 pr-7 bg-white border border-emerald-300 focus:border-emerald-500 rounded text-xs text-slate-800 outline-none shadow-2xs font-medium"
+                            />
+                            <FiSearch className="absolute left-2.5 top-2.5 text-slate-400 pointer-events-none" size={13} />
+                            {item.concepto && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleItemChange(item.id, "concepto", "");
+                                  handleItemChange(item.id, "codigo_cups", "");
+                                  handleItemChange(item.id, "cups", "");
+                                  handleItemChange(item.id, "code_reference", "");
+                                }}
+                                className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 border-0 bg-transparent cursor-pointer p-0.5"
+                                title="Limpiar"
+                              >
+                                <FiX size={12} />
+                              </button>
+                            )}
+
+                            {/* Dropdown flotante de sugerencias */}
+                            {isSearchingThis && (
+                              <div
+                                className="absolute left-0 top-full mt-1 w-[420px] max-h-64 overflow-y-auto bg-white rounded-xl shadow-2xl border border-slate-200 z-50 divide-y divide-slate-100"
+                              >
+                                <div className="px-3 py-1.5 bg-slate-50 text-[10px] font-bold text-slate-500 uppercase tracking-wider flex justify-between items-center sticky top-0 z-10 border-b border-slate-100">
+                                  <span>Catálogo de Procedimientos ({filteredProcs.length})</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveSearchItemId(null)}
+                                    className="text-slate-400 hover:text-slate-700 cursor-pointer border-0 bg-transparent"
+                                  >
+                                    <FiX size={12} />
+                                  </button>
+                                </div>
+                                {filteredProcs.length === 0 ? (
+                                  <div className="p-3 text-center text-xs text-slate-400 italic">
+                                    No se encontraron procedimientos coincidentes
+                                  </div>
+                                ) : (
+                                  filteredProcs.map((proc, pIdx) => (
+                                    <div
+                                      key={proc.id || pIdx}
+                                      onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        handleSelectProcedure(item.id, proc);
+                                      }}
+                                      className="p-2.5 hover:bg-emerald-50/80 transition-colors cursor-pointer flex items-center justify-between gap-3 text-left"
+                                    >
+                                      <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-1.5 mb-0.5">
+                                          {proc.code && (
+                                            <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-mono font-bold text-[10px]">
+                                              {proc.code}
+                                            </span>
+                                          )}
+                                          <span className="text-[10px] text-slate-400 font-medium truncate">
+                                            {proc.category}
+                                          </span>
+                                        </div>
+                                        <p className="text-xs font-semibold text-slate-800 line-clamp-1 m-0">
+                                          {proc.name}
+                                        </p>
+                                      </div>
+                                      <div className="text-right shrink-0">
+                                        <span className="text-xs font-bold text-emerald-600 block">
+                                          {fmt(proc.precio)}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <input
+                            type="text"
+                            value={item.concepto}
+                            onChange={(e) => handleItemChange(item.id, "concepto", e.target.value)}
+                            placeholder="Concepto..."
+                            className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none"
+                          />
+                        )}
+                      </td>
+                      <td className="py-2.5 px-4">
+                        <input
+                          type="text"
+                          value={item.descripcion}
+                          onChange={(e) => handleItemChange(item.id, "descripcion", e.target.value)}
+                          placeholder={usarListaPrecios ? "Notas adicionales, diente, superficie..." : "Descripción..."}
+                          className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none"
+                        />
+                      </td>
+                      <td className="py-2.5 px-4">
+                        <input
+                          type="number"
+                          min="0"
+                          step="1000"
+                          value={item.precioUnitario || ""}
+                          onChange={(e) => handleItemChange(item.id, "precioUnitario", e.target.value)}
+                          placeholder="0"
+                          className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none font-medium"
+                        />
+                      </td>
+                      <td className="py-2.5 px-4">
+                        <input
+                          type="number"
+                          min="1"
+                          value={item.cantidad || ""}
+                          onChange={(e) => handleItemChange(item.id, "cantidad", e.target.value)}
+                          className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none text-center"
+                        />
+                      </td>
+                      <td className="py-2.5 px-4">
+                        <input
+                          type="number"
+                          min="0"
+                          step="1000"
+                          value={item.descuento || ""}
+                          onChange={(e) => handleItemChange(item.id, "descuento", e.target.value)}
+                          placeholder="0"
+                          className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none"
+                        />
+                      </td>
+                      <td className="py-2.5 px-4 font-bold text-slate-800">
+                        {fmt(item.total)}
+                      </td>
+                      <td className="py-2.5 px-4 text-center">
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveConcepto(item.id)}
+                          className="text-slate-400 hover:text-rose-500 p-1 transition-colors cursor-pointer border-0 bg-transparent"
+                          title="Eliminar fila"
+                        >
+                          <FiTrash2 size={14} />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

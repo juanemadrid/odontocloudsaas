@@ -70,7 +70,6 @@ export default function PagosForm({ onCancel, onSuccess }) {
     const [condicionesPagoList, setCondicionesPagoList] = useState([]);
     const [facturasCompraPendientes, setFacturasCompraPendientes] = useState([]);
     const [facturasSeleccionadas, setFacturasSeleccionadas] = useState([]);
-    const [mostrarTodasFacturasModal, setMostrarTodasFacturasModal] = useState(false);
 
     // Nombre de la caja o del usuario/responsable que atiende la caja
     const userCajaLabel = useMemo(() => {
@@ -153,7 +152,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
                 // 1. Cargar configuración de la clínica
                 const cfg = await getConfigSectionsCached(inquilino, [
                     "terceros", "proveedores", "bancos", "cuentas_bancarias",
-                    "condiciones_pago", "metodos_pago", "facturas_compra", "facturasCompra"
+                    "condiciones_pago", "metodos_pago", "facturas_compra"
                 ]);
 
                 // 2. Cargar Terceros y Pacientes unificados
@@ -724,36 +723,79 @@ export default function PagosForm({ onCancel, onSuccess }) {
 
     // Facturas de compra disponibles para el tercero seleccionado con saldo pendiente
     const availableFacturasCompra = useMemo(() => {
-        if (!selectedTerceroObj && !terceroSearchQuery.trim()) return todasFacturasPendientes;
-        
-        const tName = (selectedTerceroObj?.nombre || terceroSearchQuery || "").toLowerCase().trim();
-        const tDocClean = String(selectedTerceroObj?.documento || selectedTerceroObj?.nroDocumento || selectedTerceroObj?.nit || "").replace(/\D/g, "");
-        const tId = String(selectedTerceroObj?.id || "").trim();
-
+        // Si no hay ningún tercero seleccionado ni especificado, NO mostrar facturas
+        if (!selectedTerceroObj && !terceroSearchQuery.trim()) return [];
         if (todasFacturasPendientes.length === 0) return [];
 
+        const tId = String(selectedTerceroObj?.id || "").trim();
+        const tDoc = String(selectedTerceroObj?.documento || selectedTerceroObj?.nroDocumento || selectedTerceroObj?.nit || "").trim();
+        const tName = String(selectedTerceroObj?.nombre || selectedTerceroObj?.razonSocial || terceroSearchQuery || "").trim();
+
+        // Normalización estricta de nombres y textos
+        const normalizeText = (val) =>
+            String(val || "")
+                .toLowerCase()
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "") // eliminar tildes/acentos
+                .replace(/[^a-z0-9]/g, " ")      // signos de puntuación como espacios
+                .replace(/\s+/g, " ")            // espacios colapsados
+                .trim();
+
+        // Eliminar sufijos societarios comunes para comparar la raíz del nombre
+        const stripSocietario = (val) =>
+            normalizeText(val)
+                .replace(/\b(s\s*a\s*s|s\s*a|ltda|limitada|e\s*u|e\s*p\s*s|i\s*p\s*s|sociedad por acciones simplificada|cia|compania)\b/g, "")
+                .replace(/\s+/g, " ")
+                .trim();
+
+        // Extractor de dígitos del documento (completo y base sin dígito de verificación)
+        const getDocDetails = (val) => {
+            if (!val) return { full: "", base: "" };
+            const s = String(val).trim();
+            const withoutHyphen = s.includes("-") ? s.split("-")[0] : s;
+            return {
+                full: s.replace(/\D/g, ""),
+                base: withoutHyphen.replace(/\D/g, "")
+            };
+        };
+
+        const tDocInfo = getDocDetails(tDoc);
+        const tNormName = normalizeText(tName);
+        const tCoreName = stripSocietario(tName);
+
         return todasFacturasPendientes.filter(fc => {
-            // 1. Coincidencia por ID de tercero o paciente
-            const fcProvId = String(fc.tercero_id || fc.terceroId || fc.proveedor_id || fc.proveedorId || fc.tercero?.id || fc.proveedor?.id || "").trim();
-            const fcPacId = String(fc.paciente_id || fc.pacienteId || fc.paciente?.id || "").trim();
+            // 1. Coincidencia directa por ID de tercero, proveedor o paciente
+            const fcProvId = String(fc.terceroId || fc.tercero_id || fc.proveedorId || fc.proveedor_id || fc.tercero?.id || fc.proveedor?.id || "").trim();
+            const fcPacId = String(fc.pacienteId || fc.paciente_id || fc.paciente?.id || "").trim();
             if (tId && (tId === fcProvId || tId === fcPacId)) return true;
 
-            // 2. Coincidencia por documento (comparando solo dígitos numéricos)
-            const fcDocClean = extractProvDoc(fc).replace(/\D/g, "");
-            if (tDocClean && fcDocClean) {
-                if (tDocClean === fcDocClean || tDocClean.startsWith(fcDocClean) || fcDocClean.startsWith(tDocClean)) {
-                    return true;
+            // 2. Coincidencia por documento (NIT o Cédula sin dígitos de verificación falsos)
+            const rawFcDoc = extractProvDoc(fc);
+            if (rawFcDoc) {
+                const fcDocInfo = getDocDetails(rawFcDoc);
+                // Si ambos tienen NIT base de al menos 4 dígitos numéricos y coinciden exactamente
+                if (tDocInfo.base && fcDocInfo.base && tDocInfo.base.length >= 4 && fcDocInfo.base.length >= 4) {
+                    if (tDocInfo.base === fcDocInfo.base) return true;
+                }
+                // O coincidencia exacta de todos los dígitos
+                if (tDocInfo.full && fcDocInfo.full && tDocInfo.full.length >= 4 && fcDocInfo.full.length >= 4) {
+                    if (tDocInfo.full === fcDocInfo.full) return true;
                 }
             }
 
-            // 3. Coincidencia por nombre o razón social (segura contra objetos)
-            const fcProvName = extractProvName(fc).toLowerCase().trim();
-            if (tName && fcProvName) {
-                if (fcProvName.includes(tName) || tName.includes(fcProvName)) return true;
+            // 3. Coincidencia por nombre o razón social (estricta)
+            const fcProvName = extractProvName(fc);
+            if (fcProvName) {
+                const fcNormName = normalizeText(fcProvName);
+                const fcCoreName = stripSocietario(fcProvName);
 
-                // Coincidencia por palabras clave significativas
-                const tWords = tName.split(/\s+/).filter(w => w.length >= 3);
-                if (tWords.some(w => fcProvName.includes(w))) return true;
+                // Igualdad exacta de nombre completo normalizado
+                if (tNormName && fcNormName && tNormName === fcNormName) return true;
+
+                // Igualdad exacta de la raíz del nombre (sin sufijo tipo SAS, EPS, etc.)
+                if (tCoreName && fcCoreName && tCoreName.length >= 4 && fcCoreName.length >= 4) {
+                    if (tCoreName === fcCoreName) return true;
+                }
             }
 
             return false;
@@ -766,6 +808,10 @@ export default function PagosForm({ onCancel, onSuccess }) {
     };
 
     const handleAddFactura = () => {
+        if (!selectedTerceroObj && !terceroSearchQuery.trim()) {
+            toast.error("Por favor, seleccione o ingrese primero un tercero o paciente");
+            return;
+        }
         setAsociarFacturaData({
             facturaId: "",
             facturaObj: null,
@@ -1970,48 +2016,22 @@ export default function PagosForm({ onCancel, onSuccess }) {
                                         className="w-full h-8 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
                                     >
                                         <option value="">No seleccionar factura</option>
-                                        {availableFacturasCompra.length > 0 && (
-                                            <optgroup label={selectedTerceroObj ? `Facturas de ${selectedTerceroObj.nombre}` : "Facturas encontradas"}>
+                                        {availableFacturasCompra.length > 0 ? (
+                                            <optgroup label={selectedTerceroObj ? `Facturas de ${selectedTerceroObj.nombre}` : "Facturas del tercero"}>
                                                 {availableFacturasCompra.map((fc) => (
                                                     <option key={fc.id} value={fc.id}>
                                                         {getFacturaCode(fc)} - {extractProvName(fc) || "Proveedor"} ({fmt(fc.saldo_pendiente ?? fc.saldoPendiente ?? fc.totalNeto ?? fc.total ?? fc.monto)})
                                                     </option>
                                                 ))}
                                             </optgroup>
-                                        )}
-                                        {mostrarTodasFacturasModal && todasFacturasPendientes.length > 0 && (
-                                            <optgroup label="Todas las facturas pendientes de la clínica">
-                                                {todasFacturasPendientes
-                                                    .filter(fc => !availableFacturasCompra.some(af => String(af.id) === String(fc.id)))
-                                                    .map((fc) => (
-                                                        <option key={fc.id} value={fc.id}>
-                                                            {getFacturaCode(fc)} - {extractProvName(fc) || "Proveedor"} ({fmt(fc.saldo_pendiente ?? fc.saldoPendiente ?? fc.totalNeto ?? fc.total ?? fc.monto)})
-                                                        </option>
-                                                    ))
-                                                }
-                                            </optgroup>
-                                        )}
-                                        {availableFacturasCompra.length === 0 && !mostrarTodasFacturasModal && (
+                                        ) : (
                                             <option value="" disabled>
-                                                {todasFacturasPendientes.length > 0
-                                                    ? "Sin facturas vinculadas a este tercero (activa 'Ver todas' abajo)"
-                                                    : (selectedTerceroObj ? "No hay facturas de compra pendientes en el sistema" : "Seleccione primero un tercero o paciente")}
+                                                {selectedTerceroObj || Boolean(terceroSearchQuery.trim())
+                                                    ? "No hay facturas pendientes para este tercero"
+                                                    : "Seleccione primero un tercero o paciente"}
                                             </option>
                                         )}
                                     </select>
-                                    {todasFacturasPendientes.length > 0 && (
-                                        <div className="flex items-center justify-between text-[11px] text-slate-500 pt-0.5">
-                                            <label className="flex items-center gap-1.5 cursor-pointer hover:text-slate-700 select-none">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={mostrarTodasFacturasModal}
-                                                    onChange={(e) => setMostrarTodasFacturasModal(e.target.checked)}
-                                                    className="w-3.5 h-3.5 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
-                                                />
-                                                <span>Ver todas las facturas pendientes de la clínica ({todasFacturasPendientes.length})</span>
-                                            </label>
-                                        </div>
-                                    )}
                                 </div>
                             </div>
 
