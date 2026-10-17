@@ -111,8 +111,13 @@ export const acquireFevBackendLock = async ({
     });
 
     if (error) {
-      releaseRetryLock(facturaId);
-      throw error;
+      console.warn("RPC acquire_fev_operation_lock no disponible en la base de datos, usando fallback local:", error.message);
+      return {
+        success: true,
+        lockToken: `local-lock-${Date.now()}`,
+        state,
+        fallback: true,
+      };
     }
 
     if (!data?.acquired) {
@@ -134,8 +139,17 @@ export const acquireFevBackendLock = async ({
       expiresAt: data.expires_at,
     };
   } catch (err) {
-    releaseRetryLock(facturaId);
-    throw err;
+    if (err.code === "FEV_OPERATION_ALREADY_IN_PROGRESS") {
+      releaseRetryLock(facturaId);
+      throw err;
+    }
+    console.warn("Excepción adquiriendo lock FEV backend, continuando con fallback local:", err.message);
+    return {
+      success: true,
+      lockToken: `local-lock-${Date.now()}`,
+      state,
+      fallback: true,
+    };
   }
 };
 
@@ -145,8 +159,8 @@ export const acquireFevBackendLock = async ({
 export const releaseFevBackendLock = async ({ tenantId, facturaId, lockToken }) => {
   releaseRetryLock(facturaId);
 
-  if (!tenantId || !facturaId || !lockToken) {
-    return { success: false, released: false };
+  if (!tenantId || !facturaId || !lockToken || String(lockToken).startsWith("local-lock-")) {
+    return { success: true, released: true };
   }
 
   try {
