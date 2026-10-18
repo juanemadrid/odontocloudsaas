@@ -3,7 +3,7 @@ import { useAuth } from "../../../context/AuthContext";
 import supabase from "../../../lib/supabaseClient";
 import { isDoctorUser, getPatientAssignedDoctors } from "../../../utils/doctorHelpers";
 import { getDoctorsList } from "../../../services/supabaseServices";
-import { getConfigItems } from "../../../services/configPersistenceService";
+import { getConfigItems, getConfigSection } from "../../../services/configPersistenceService";
 import { ReceiptPrintService } from "../../../services/ReceiptPrintService";
 import { printReciboCaja, printElectronicInvoice } from "../../../utils/electronicInvoiceTemplate";
 import { FiDollarSign, FiSearch, FiFileText, FiFilter, FiDownload, FiCheck, FiX, FiEye, FiPrinter, FiRefreshCw } from "react-icons/fi";
@@ -200,7 +200,9 @@ export default function ReporteFinanciero() {
         saldosFavorRes,
         trasladosRes,
         pagosProvRes,
-        cfgRes
+        cfgRes,
+        cfgFacturasCompra,
+        cfgPagosProv
       ] = await Promise.all([
         getConfigItems(tenantId, "sucursales", "sucursales").catch(() => []),
         supabase.from("pacientes").select("*").eq("tenant_id", tenantId),
@@ -217,7 +219,9 @@ export default function ReporteFinanciero() {
         supabase.from("saldos_favor").select("*").eq("tenant_id", tenantId).then(r => r, () => ({ data: [] })),
         supabase.from("traslados").select("*").eq("tenant_id", tenantId).then(r => r, () => ({ data: [] })),
         supabase.from("pagos_proveedor").select("*").eq("tenant_id", tenantId).then(r => r, () => ({ data: [] })),
-        supabase.from("website_config").select("config").eq("tenant_id", tenantId).maybeSingle().then(r => r, () => ({ data: null }))
+        supabase.from("website_config").select("config").eq("tenant_id", tenantId).maybeSingle().then(r => r, () => ({ data: null })),
+        getConfigSection(tenantId, "facturas_compra", []).catch(() => []),
+        getConfigSection(tenantId, "pagos_proveedor", []).catch(() => [])
       ]);
 
       // 1. Armar Sedes / Oficinas
@@ -535,6 +539,7 @@ export default function ReporteFinanciero() {
 
       // 6. Cargar Movimientos de Caja (Egresos, Compras a proveedores, Traslados)
       const snapMovs = movsRes?.data || [];
+      const cajaEgresosList = [];
       let egresoIdx = 1001;
       let trasladoIdx = 101;
       let compraIdx = 501;
@@ -648,67 +653,50 @@ export default function ReporteFinanciero() {
           return;
         }
 
-        // Todos los egresos de caja son estrictamente Egreso- (nunca Factura de compra)
-        const storedCons = m.nroConsecutivo || m.consecutivo || m.comprobante || m.numero;
-        const nroDoc = storedCons ? storedCons : `EGR-${egresoIdx++}`;
-        const isAnulado = (m.estado || "").toLowerCase() === "anulado";
-        const rawObs = m.observaciones || m.notas || m.descripcion || "";
-
-        allRows.push({
-          id: `mov_${m.id}`,
-          rawId: m.id,
-          numeroDocumento: nroDoc,
-          tipoDocumento: "Egreso-",
-          fechaCreacion: m.created_at || new Date().toISOString(),
-          fechaSeleccionada: m.fecha || m.created_at || new Date().toISOString(),
-          concepto: m.concepto || m.descripcion || "Egreso de caja",
-          valor: montoNum,
-          consecutivo: "Principal",
-          docReferencia: m.referencia || String(nroDoc),
-          documentosAsociados: m.factura_asociada || "—",
-          estado: isAnulado ? "Anulado" : "Activo",
-          tercero: m.beneficiario || m.proveedor || "Proveedor / Tercero",
-          documentoTercero: m.nit || m.documento || "",
-          profesional: "Administración",
-          profesionalId: "",
-          formaPago: m.metodo_pago || m.forma_pago || "Efectivo",
-          subtotal: montoNum,
-          descuento: 0,
-          iva: 0,
-          retencion: 0,
-          total: montoNum,
-          usuarioCreador: m.usuario_nombre || m.creado_por || "Administración",
-          observaciones: cleanObservaciones(rawObs),
-          cuentaContable: "510506 - Gastos Operativos",
-          oficina: m.oficina || m.sucursal || m.sede || ""
-        });
+        // Guardar egresos de caja para procesar con deduplicación rigurosa frente a pagos_proveedor
+        cajaEgresosList.push(m);
       });
 
-      // 6.1. Cargar Egresos desde Administración > Facturación > Egresos (pagos_proveedor)
+      // 6. Cargar Egresos Oficiales desde Administración > Facturación > Egresos (pagos_proveedor y website_config)
       const rawPagosProv = [
         ...(pagosProvRes?.data || []),
+        ...(Array.isArray(cfgPagosProv) ? cfgPagosProv : []),
         ...((cfgRes?.data?.config?.pagos_proveedor) || [])
       ];
       const seenPagoProvIds = new Set();
+      const egresoFingerprints = [];
       let egrProvIdx = 2001;
 
       rawPagosProv.forEach(pp => {
-        if (!pp || !pp.id || seenPagoProvIds.has(pp.id)) return;
-        seenPagoProvIds.add(pp.id);
+        if (!pp) return;
+        const pId = pp.id || pp._id;
+        if (pId && seenPagoProvIds.has(pId)) return;
+        if (pId) seenPagoProvIds.add(pId);
 
         const montoNum = Number(pp.total || pp.monto || pp.valor || 0);
-        // Evitar duplicar si ya fue registrado como movimiento de caja con la misma referencia o comprobante
-        const yaEnCaja = allRows.some(r => r.tipoDocumento === "Egreso-" && Math.abs(r.total - montoNum) < 1 && (r.docReferencia === pp.referencia || r.numeroDocumento === pp.nroComprobante));
-        if (yaEnCaja) return;
-
         const storedCons = pp.nroComprobante || pp.consecutivo || pp.numero || pp.nroConsecutivo;
-        const nroDoc = storedCons ? storedCons : `EGR-${egrProvIdx++}`;
+        const nroDoc = storedCons ? String(storedCons).trim() : `EGR-${egrProvIdx++}`;
         const isAnulado = (pp.estado || "").toLowerCase() === "anulado" || pp.anulado;
         const rawObs = pp.observaciones || pp.notas || pp.motivo || "";
+        const rawFecha = pp.fecha || pp.created_at || new Date().toISOString();
+
+        // Extraer dígitos de consecutivo
+        const numDigits = String(storedCons || "").replace(/\D/g, "");
+
+        egresoFingerprints.push({
+          id: pId,
+          nroDoc: nroDoc.toLowerCase(),
+          consecutivo: String(pp.consecutivo || pp.numero || "").toLowerCase(),
+          consecutivoDigits: numDigits,
+          monto: montoNum,
+          concepto: String(pp.concepto || pp.descripcion || "").toLowerCase(),
+          proveedor: String(pp.proveedor || pp.tercero || pp.beneficiario || "").toLowerCase(),
+          fechaDay: rawFecha ? String(rawFecha).split("T")[0] : ""
+        });
 
         allRows.push({
-          id: `egr_pp_${pp.id}`,
-          rawId: pp.id,
+          id: `egr_pp_${pId || nroDoc}`,
+          rawId: pId,
           numeroDocumento: nroDoc,
           tipoDocumento: "Egreso-",
           fechaCreacion: pp.created_at || pp.fecha || new Date().toISOString(),
@@ -723,7 +711,7 @@ export default function ReporteFinanciero() {
           documentoTercero: pp.nit || pp.documento || "",
           profesional: "Administración",
           profesionalId: "",
-          formaPago: pp.medioPago || pp.bancoCaja || pp.formaPago || "Transferencia",
+          formaPago: pp.medioPago || pp.bancoCaja || pp.formaPago || "Efectivo",
           subtotal: montoNum,
           descuento: 0,
           iva: 0,
@@ -732,7 +720,84 @@ export default function ReporteFinanciero() {
           usuarioCreador: pp.usuario_nombre || pp.creado_por || "Administración",
           observaciones: cleanObservaciones(rawObs),
           cuentaContable: "510506 - Gastos y Pagos a Proveedores",
-          oficina: pp.oficina || pp.sucursal || pp.sede || ""
+          oficina: pp.oficina || pp.sucursal || pp.sede || "",
+          rawEgreso: pp
+        });
+      });
+
+      // 6.1. Incorporar egresos exclusivos de caja menor (descartando espejos duplicados)
+      egresoIdx = 1001;
+      cajaEgresosList.forEach(m => {
+        const montoNum = Number(m.monto || 0);
+        const conceptoLower = String(m.concepto || m.descripcion || "").toLowerCase();
+        const descLower = String(m.descripcion || "").toLowerCase();
+        const refLower = String(m.referencia || "").toLowerCase();
+        const storedCons = String(m.nroConsecutivo || m.consecutivo || m.comprobante || m.numero || "").trim();
+        const mFechaDay = String(m.fecha || m.created_at || "").split("T")[0];
+
+        // Extraer número de consecutivo dentro del concepto ej: "[EGR-1628]" o similar
+        const matchCons = conceptoLower.match(/\[egr-?(\d+)\]/i) || refLower.match(/\[egr-?(\d+)\]/i);
+        const consInConcept = matchCons ? matchCons[1] : "";
+        const mDigits = storedCons.replace(/\D/g, "");
+
+        // Deduplicación contra egresos oficiales registrados en pagos_proveedor
+        const esDuplicado = egresoFingerprints.some(fp => {
+          // 1. Coincidencia por consecutivo o comprobante
+          if (mDigits && fp.consecutivoDigits && mDigits === fp.consecutivoDigits) return true;
+          if (storedCons && (fp.consecutivo === storedCons.toLowerCase() || fp.nroDoc === storedCons.toLowerCase())) return true;
+          if (consInConcept && (fp.consecutivoDigits === consInConcept || fp.nroDoc.includes(consInConcept))) return true;
+
+          // 2. Coincidencia de prefijo "Pago a Proveedor" generado automáticamente por PagosForm
+          if (conceptoLower.startsWith("pago a proveedor:") || refLower.startsWith("pago proveedor")) {
+            if (Math.abs(fp.monto - montoNum) < 1) return true;
+          }
+
+          // 3. Coincidencia de monto + fecha exacta del mismo día + similitud
+          if (Math.abs(fp.monto - montoNum) < 1 && mFechaDay && fp.fechaDay === mFechaDay) {
+            return true;
+          }
+
+          return false;
+        });
+
+        if (esDuplicado) {
+          // Espejo de caja que ya existe en pagos_proveedor con su número oficial (ej: EGR-1020). Descartar.
+          return;
+        }
+
+        // Es un egreso independiente originado en caja menor
+        const nroDoc = storedCons ? storedCons : `EGR-${egresoIdx++}`;
+        const isAnulado = (m.estado || "").toLowerCase() === "anulado";
+        const rawObs = m.observaciones || m.notas || m.descripcion || "";
+
+        allRows.push({
+          id: `mov_${m.id}`,
+          rawId: m.id,
+          numeroDocumento: nroDoc,
+          tipoDocumento: "Egreso-",
+          fechaCreacion: m.created_at || new Date().toISOString(),
+          fechaSeleccionada: m.fecha || m.created_at || new Date().toISOString(),
+          concepto: m.concepto || m.descripcion || "Egreso de caja menor",
+          valor: montoNum,
+          consecutivo: "Principal",
+          docReferencia: m.referencia || String(nroDoc),
+          documentosAsociados: m.factura_asociada || "—",
+          estado: isAnulado ? "Anulado" : "Activo",
+          tercero: m.beneficiario || m.proveedor || "Caja Menor / Varios",
+          documentoTercero: m.nit || m.documento || "",
+          profesional: "Administración",
+          profesionalId: "",
+          formaPago: m.metodo_pago || m.forma_pago || "Efectivo",
+          subtotal: montoNum,
+          descuento: 0,
+          iva: 0,
+          retencion: 0,
+          total: montoNum,
+          usuarioCreador: m.usuario_nombre || m.creado_por || "Administración",
+          observaciones: cleanObservaciones(rawObs),
+          cuentaContable: "510506 - Gastos Operativos Caja Menor",
+          oficina: m.oficina || m.sucursal || m.sede || "",
+          rawEgreso: m
         });
       });
 
@@ -1059,39 +1124,74 @@ export default function ReporteFinanciero() {
         });
       });
 
-      // 8. Cargar Facturas de Compra (facturas_compra)
-      (facturasCompraRes?.data || []).forEach((fc, fcIdx) => {
-        const totalNum = Number(fc.total || fc.monto || 0);
-        const storedCons = fc.numero || fc.nroFactura || fc.nro_factura || fc.nroConsecutivo;
-        const nroDoc = storedCons ? storedCons : `FC-${201 + fcIdx}`;
+      // 8. Cargar Facturas de Compra y Documentos Soporte (desde getConfigSection, website_config y tabla)
+      const allRawFacturasCompra = [
+        ...(facturasCompraRes?.data || []),
+        ...(Array.isArray(cfgFacturasCompra) ? cfgFacturasCompra : []),
+        ...(Array.isArray(cfgRes?.data?.config?.facturas_compra) ? cfgRes.data.config.facturas_compra : []),
+        ...(Array.isArray(cfgRes?.data?.config?.facturasCompra) ? cfgRes.data.config.facturasCompra : []),
+        ...(Array.isArray(cfgRes?.data?.config?.documentos_soporte) ? cfgRes.data.config.documentos_soporte : []),
+        ...(Array.isArray(cfgRes?.data?.config?.documentosSoporte) ? cfgRes.data.config.documentosSoporte : [])
+      ];
+
+      const seenFacturaCompraIds = new Set();
+      const seenFacturaCompraNums = new Set();
+      let fcIdx = 101;
+
+      allRawFacturasCompra.forEach((fc) => {
+        if (!fc) return;
+        const rawId = fc.id || fc._id;
+        if (rawId && seenFacturaCompraIds.has(rawId)) return;
+        if (rawId) seenFacturaCompraIds.add(rawId);
+
+        const totalNum = Number(fc.total || fc.monto || fc.valor || 0);
+        const subtotalNum = Number(fc.subtotal || totalNum);
+        const ivaNum = Number(fc.iva || 0);
+        const retNum = Number(fc.retencion || fc.retencionTotal || 0);
+
+        const storedCons = fc.factus_number || fc.documentoNumero || fc.nroFactura || fc.nro_factura || fc.numeroFactura || fc.numero || (fc.prefix && fc.consecutivo ? `${fc.prefix}${fc.consecutivo}` : null);
+        const nroDoc = storedCons ? String(storedCons).trim() : `FC-${fcIdx++}`;
+
+        // Deduplicar si tiene el mismo nroDoc y el mismo monto
+        const numKey = `${nroDoc}_${Math.round(totalNum)}`;
+        if (seenFacturaCompraNums.has(numKey)) return;
+        seenFacturaCompraNums.add(numKey);
+
+        const isAnulado = (fc.estado || "").toLowerCase() === "anulado" || fc.anulado;
+        const conceptoDesc = fc.concepto || fc.descripcion || (Array.isArray(fc.items) && (fc.items[0]?.concepto || fc.items[0]?.descripcion)) || "Compra de insumos / Materiales";
+        const cudsOrRef = fc.cuds || fc.cufe || fc.referencia || nroDoc;
+
+        // Documentos asociados (egreso vinculado)
+        const docAsoc = fc.egreso_asociado || fc.pago_asociado || (Array.isArray(fc.egresos_asociados) && fc.egresos_asociados.length > 0 ? fc.egresos_asociados.join(", ") : "—");
 
         allRows.push({
-          id: `fc_${fc.id}`,
-          rawId: fc.id,
+          id: `fc_${rawId || nroDoc}`,
+          rawId: rawId,
           numeroDocumento: nroDoc,
           tipoDocumento: "Factura de compra",
-          fechaCreacion: fc.created_at || new Date().toISOString(),
+          fechaCreacion: fc.created_at || fc.fecha || new Date().toISOString(),
           fechaSeleccionada: fc.fecha || fc.created_at || new Date().toISOString(),
-          concepto: fc.concepto || fc.descripcion || "Compra de insumos / Materiales",
+          concepto: conceptoDesc,
           valor: totalNum,
           consecutivo: "Principal",
-          docReferencia: fc.numero || nroDoc,
-          documentosAsociados: "—",
-          estado: (fc.estado || "Activo"),
-          tercero: fc.proveedor || fc.tercero || "Proveedor",
-          documentoTercero: fc.documentoTercero || fc.nit || "",
+          docReferencia: cudsOrRef,
+          documentosAsociados: docAsoc || "—",
+          estado: isAnulado ? "Anulado" : (fc.dian_status || fc.estado || "Activo"),
+          tercero: fc.proveedor || fc.tercero || fc.nombreProveedor || "Proveedor",
+          documentoTercero: fc.documentoTercero || fc.nit || fc.cedula || fc.identificacion || "",
           profesional: "Administración",
           profesionalId: "",
-          formaPago: fc.formaPago || "Contado",
-          subtotal: totalNum,
-          descuento: 0,
-          iva: 0,
-          retencion: 0,
+          formaPago: fc.formaPago || fc.medioPago || fc.metodoPago || "Contado",
+          subtotal: subtotalNum,
+          descuento: Number(fc.descuento || 0),
+          iva: ivaNum,
+          retencion: retNum,
           total: totalNum,
-          usuarioCreador: "Administración",
-          observaciones: cleanObservaciones(fc.observaciones || fc.descripcion || ""),
+          usuarioCreador: fc.creado_por || fc.usuario_nombre || "Administración",
+          observaciones: cleanObservaciones(fc.observaciones || fc.notas || fc.descripcion || ""),
           cuentaContable: "220505 - Proveedores Nacionales",
-          oficina: fc.oficina || ""
+          oficina: fc.oficina || fc.sucursal || fc.sede || "",
+          rawFacturaCompra: fc
         });
       });
 
@@ -1254,17 +1354,15 @@ export default function ReporteFinanciero() {
         if (!matchesOffice) return false;
       }
 
-      // 3. Filtro por Tipo de Movimiento (Preciso 1:1)
+      // 3. Filtro por Tipo de Movimiento (Estricto 1:1)
       if (appliedFilters.tipoMovimiento && appliedFilters.tipoMovimiento !== "Todos") {
         const target = appliedFilters.tipoMovimiento.trim();
         const rowType = (r.tipoDocumento || "").trim();
 
         if (target === "Factura de compra") {
-          const isCompraMatch = rowType === "Factura de compra" || r.concepto?.toLowerCase().includes("proveedor");
-          if (!isCompraMatch) return false;
+          if (rowType !== "Factura de compra") return false;
         } else if (target === "Egreso-") {
-          const isEgresoMatch = rowType === "Egreso-" || rowType === "Factura de compra";
-          if (!isEgresoMatch) return false;
+          if (rowType !== "Egreso-") return false;
         } else if (target === "Traslado+") {
           if (rowType !== "Traslado+") return false;
         } else if (target === "Traslado-") {
@@ -1273,11 +1371,18 @@ export default function ReporteFinanciero() {
           if (rowType !== "Saldo a favor+") return false;
         } else if (target === "Anticipo+") {
           if (rowType !== "Anticipo+") return false;
+        } else if (target === "Recibo de caja+") {
+          if (rowType !== "Recibo de caja+") return false;
+        } else if (target === "Factura de venta+") {
+          if (rowType !== "Factura de venta+") return false;
+        } else if (target === "Nota crédito+") {
+          if (rowType !== "Nota crédito+") return false;
+        } else if (target === "Nota débito-") {
+          if (rowType !== "Nota débito-") return false;
         } else {
-          // Recibo de caja+, Factura de venta+, Nota crédito+, Nota débito-
           const cleanTarget = target.toLowerCase().replace(/[+\-]/g, "").trim();
           const cleanRow = rowType.toLowerCase().replace(/[+\-]/g, "").trim();
-          if (rowType !== target && !cleanRow.includes(cleanTarget) && !cleanTarget.includes(cleanRow)) {
+          if (rowType !== target && cleanRow !== cleanTarget) {
             return false;
           }
         }
@@ -1698,11 +1803,69 @@ export default function ReporteFinanciero() {
     }
   };
 
+  const handlePrintEgresoDoc = async (egrItem, fallbackDoc) => {
+    try {
+      const rawEgr = egrItem.rawEgreso || fallbackDoc?.rawEgreso || {};
+      const valNum = Number(egrItem.valor !== undefined ? egrItem.valor : (rawEgr.total || fallbackDoc?.valor || 0));
+      const nroDoc = egrItem.numeroDocumento || rawEgr.numeroDocumento || fallbackDoc?.numeroDocumento || "EGR-0001";
+      const conceptoStr = egrItem.concepto || rawEgr.concepto || fallbackDoc?.concepto || "Pago a Proveedor";
+
+      const pagoData = {
+        tipo: "egreso",
+        tipoDoc: "Comprobante de Egreso",
+        documentTitle: "Comprobante de Egreso",
+        monto: valNum,
+        total: valNum,
+        medio: rawEgr.medioPago || rawEgr.formaPago || fallbackDoc?.formaPago || "Efectivo",
+        concepto: conceptoStr,
+        notas: rawEgr.observaciones || fallbackDoc?.observaciones || "",
+        fecha: egrItem.fecha || fallbackDoc?.fechaSeleccionada || fallbackDoc?.fechaCreacion || new Date().toISOString(),
+        nroConsecutivo: nroDoc,
+        registradoPor: rawEgr.usuarioCreador || fallbackDoc?.usuarioCreador || userProfile?.nombreCompleto || "Administración",
+        planTitle: conceptoStr,
+        tercero: rawEgr.proveedor || rawEgr.tercero || fallbackDoc?.tercero || "Proveedor",
+        proveedor: rawEgr.proveedor || rawEgr.tercero || fallbackDoc?.tercero || "Proveedor",
+        documentoTercero: rawEgr.nit || rawEgr.documento || fallbackDoc?.documentoTercero || "",
+        items: [
+          {
+            concepto: conceptoStr,
+            descripcion: conceptoStr,
+            precioUnitario: valNum,
+            cantidad: 1,
+            total: valNum
+          }
+        ]
+      };
+
+      const clinicData = {
+        inquilino: userProfile?.inquilino || "",
+        logo: userProfile?.tenant?.logo || userProfile?.logo || "",
+        nombreComercial: userProfile?.tenant?.nombreComercial || userProfile?.tenant?.nombre || "CLÍNICA DENTAL",
+        nit: userProfile?.tenant?.nit || "",
+        direccion: userProfile?.tenant?.direccion || "",
+        telefono: userProfile?.tenant?.telefono || "",
+        email: userProfile?.tenant?.email || "",
+      };
+
+      const patientData = {
+        nombreCompleto: rawEgr.proveedor || rawEgr.tercero || fallbackDoc?.tercero || "Proveedor",
+        nroDocumento: rawEgr.nit || rawEgr.documento || fallbackDoc?.documentoTercero || "—",
+        tipoDocumento: "NIT",
+      };
+
+      await ReceiptPrintService.generatePDF(pagoData, patientData, clinicData, userProfile);
+    } catch (err) {
+      console.error("Error al imprimir comprobante de egreso:", err);
+    }
+  };
+
   const handlePrintAssociatedDoc = async (docItem) => {
     if (!docItem) return;
     const tipo = (docItem.tipoDocumento || "").toLowerCase();
     if (tipo.includes("recibo")) {
       await handlePrintReceiptDoc(docItem, selectedDoc);
+    } else if (tipo.includes("egreso")) {
+      await handlePrintEgresoDoc(docItem, selectedDoc);
     } else {
       handlePrintInvoiceDoc(docItem, selectedDoc);
     }
@@ -1715,6 +1878,8 @@ export default function ReporteFinanciero() {
       handlePrintInvoiceDoc(r, r);
     } else if (tipo.includes("recibo") || tipo.includes("saldo a favor") || tipo.includes("anticipo")) {
       await handlePrintReceiptDoc(r, r);
+    } else if (tipo.includes("egreso")) {
+      await handlePrintEgresoDoc(r, r);
     } else {
       setSelectedDoc(r);
     }
