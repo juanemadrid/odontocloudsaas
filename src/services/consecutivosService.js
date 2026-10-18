@@ -91,7 +91,7 @@ export const consumeNextConsecutivo = async (tenantId, tipoField) => {
       if (tipoField === CONSECUTIVO_TYPES.RECIBO_CAJA) {
         const [recsRes, pagsRes] = await Promise.all([
           supabase.from("recibos_caja").select("numero, nroConsecutivo, nro_consecutivo").eq("tenant_id", tenantId),
-          supabase.from("pagos").select("nro_consecutivo").eq("tenant_id", tenantId)
+          supabase.from("pagos").select("nro_consecutivo, notas").eq("tenant_id", tenantId)
         ]);
         let maxDb = 0;
         (recsRes?.data || []).forEach(r => {
@@ -99,7 +99,14 @@ export const consumeNextConsecutivo = async (tenantId, tipoField) => {
           if (!isNaN(val) && val > maxDb && val < 100000) maxDb = val;
         });
         (pagsRes?.data || []).forEach(p => {
-          const val = parseInt(String(p.nro_consecutivo || 0), 10);
+          let nro = p.nro_consecutivo;
+          if (!nro && p.notas) {
+            try {
+              const meta = JSON.parse(p.notas);
+              nro = meta?.nroConsecutivo || meta?.numero;
+            } catch {}
+          }
+          const val = parseInt(String(nro || 0), 10);
           if (!isNaN(val) && val > maxDb && val < 100000) maxDb = val;
         });
         if (maxDb >= currentVal) {

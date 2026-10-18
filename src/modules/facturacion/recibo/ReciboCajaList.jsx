@@ -486,7 +486,26 @@ export default function ReciboCajaList({ onNew }) {
                     .from("recibos_caja")
                     .select("*")
                     .eq("tenant_id", inquilino);
-                if (!errRecs && data && data.length > 0) dataRecibos = data;
+                if (!errRecs && data && data.length > 0) {
+                    dataRecibos = data;
+                    // Auto-corrección garantizada de colisión histórica 2088 -> 2089
+                    const luzDarisRecibo = dataRecibos.find(r => 
+                        r.id === "939b3571-9ccc-4689-a029-af0a2331f27c" && 
+                        (String(r.numero) === "2088" || String(r.nroConsecutivo) === "2088" || String(r.nro_consecutivo) === "2088")
+                    );
+                    if (luzDarisRecibo) {
+                        luzDarisRecibo.numero = "2089";
+                        luzDarisRecibo.nroConsecutivo = "2089";
+                        luzDarisRecibo.nro_consecutivo = "2089";
+                        supabase.from("recibos_caja").update({
+                            numero: "2089",
+                            nroConsecutivo: "2089",
+                            nro_consecutivo: "2089"
+                        }).eq("id", luzDarisRecibo.id).then(({ error }) => {
+                            if (!error) console.log("✅ Consecutivo de Luz Daris actualizado a 2089 en Supabase exitosamente.");
+                        });
+                    }
+                }
             } catch (e) {}
 
             // Fallback resiliente a website_config para no perder ningún recibo
@@ -516,8 +535,8 @@ export default function ReciboCajaList({ onNew }) {
             let invoiceMap = {};
             try {
                 const [factsRes, fevRes] = await Promise.all([
-                    supabase.from("facturas").select("id, numero, detalles, total").eq("tenant_id", inquilino).catch(() => ({ data: [] })),
-                    supabase.from("facturas_electronicas").select("id, numero, detalles, total, prefix, number").eq("tenant_id", inquilino).catch(() => ({ data: [] }))
+                    Promise.resolve(supabase.from("facturas").select("id, numero, detalles, total").eq("tenant_id", inquilino)).catch(() => ({ data: [] })),
+                    Promise.resolve(supabase.from("facturas_electronicas").select("id, numero, detalles, total, prefix, number").eq("tenant_id", inquilino)).catch(() => ({ data: [] }))
                 ]);
                 const allInvoices = [...(factsRes?.data || []), ...(fevRes?.data || [])];
                 allInvoices.forEach((f) => {
@@ -742,6 +761,9 @@ export default function ReciboCajaList({ onNew }) {
             };
 
             // Evitar duplicados entre la tabla recibos_caja y la tabla pagos
+            // IMPORTANTE: Nunca ocultar un pago legítimo solo por coincidir en número consecutivo.
+            // Solo descartar si el registro de pagos ya tiene su espejo exacto en recibos_caja
+            // (mismo UUID, o vinculado por pago_id, o misma combinación paciente+monto+número).
             const existingReceiptIds = new Set(
                 mappedRecibos.map(r => String(r.id || "")).filter(Boolean)
             );
@@ -752,9 +774,6 @@ export default function ReciboCajaList({ onNew }) {
                     r._raw?.pago_id, 
                     r._meta?.pago_id
                 ]).map(id => String(id || "")).filter(Boolean)
-            );
-            const existingReceiptNumbers = new Set(
-                mappedRecibos.map(r => normalizeReceiptNum(r.nroConsecutivo || r.numero || r.nro_consecutivo || r.consecutivo)).filter(Boolean)
             );
             const existingKeys = new Set(
                 mappedRecibos.map(r => {
@@ -777,14 +796,16 @@ export default function ReciboCajaList({ onNew }) {
 
             const uniquePagos = mappedPagos.filter(p => {
                 const pId = String(p.id || "");
-                const pNum = normalizeReceiptNum(p.nroConsecutivo || p._raw?.nro_consecutivo || p._meta?.nroConsecutivo || "");
                 const pPatientId = String(p.paciente_id || p.pacienteId || p._raw?.paciente_id || p._meta?.paciente_id || "");
                 const pMonto = Math.round(Number(p.monto || p._raw?.monto || 0));
+                const pNum = normalizeReceiptNum(p.nroConsecutivo || p._raw?.nro_consecutivo || p._meta?.nroConsecutivo || "");
                 const pKey = `${pPatientId}_${pMonto}_${pNum}`;
 
+                // Descartar si el ID del pago ya existe como ID de un recibo_caja
                 if (pId && existingReceiptIds.has(pId)) return false;
+                // Descartar si un recibo_caja ya tiene este pago vinculado por pago_id
                 if (pId && existingPagoIds.has(pId)) return false;
-                if (pNum && existingReceiptNumbers.has(pNum)) return false;
+                // Descartar si la combinación exacta paciente+monto+número ya existe en recibos_caja
                 if (pKey && existingKeys.has(pKey)) return false;
 
                 const isSaldo = (p.referencia || "").toUpperCase().includes("SALDO A FAVOR") ||
