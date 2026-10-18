@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback } from "react";
-import { FiCreditCard, FiSearch, FiCalendar, FiPrinter, FiTrash2, FiPlus, FiHome, FiFileText, FiAlertTriangle, FiSlash, FiX } from "react-icons/fi";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { FiCreditCard, FiSearch, FiCalendar, FiPrinter, FiTrash2, FiPlus, FiHome, FiFileText, FiAlertTriangle, FiSlash, FiX, FiEye } from "react-icons/fi";
 import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { toast } from "sonner";
 import { ReceiptPrintService } from "../../../services/ReceiptPrintService";
+import { printDocumentoSoporte } from "../../../utils/electronicInvoiceTemplate";
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
@@ -31,11 +32,20 @@ export default function PagosList({ onNew }) {
   const inquilino = userProfile?.inquilino || "";
   const [loading, setLoading] = useState(true);
   const [pagos, setPagos] = useState([]);
+  const [facturasCompra, setFacturasCompra] = useState([]);
+  const [clinic, setClinic] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [fechaInicio, setFechaInicio] = useState(() => {
     const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().split("T")[0];
   });
   const [fechaFin, setFechaFin] = useState(new Date().toISOString().split("T")[0]);
+
+  // Paginación (10 items por página 1:1 OralDrive)
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 10;
+
+  // Estado para el modal de Documentos Asociados (Doc. Ref.)
+  const [selectedPagoDocs, setSelectedPagoDocs] = useState(null);
 
   // Estado para el modal de anulación
   const [pagoAAnular, setPagoAAnular] = useState(null);
@@ -57,12 +67,23 @@ export default function PagosList({ onNew }) {
         if (data && data.length > 0) list = data;
       } catch (e) {}
 
+      // Cargar facturas de compra para vincular con egresos (Doc. Ref.)
+      let fcList = [];
+      try {
+        const { data: fcData } = await supabase
+          .from("facturas_compra")
+          .select("*")
+          .eq("tenant_id", inquilino);
+        if (fcData && fcData.length > 0) fcList = fcData;
+      } catch (e) {}
+
       try {
         const { data: cfgRow } = await supabase
           .from("website_config")
           .select("config")
           .eq("tenant_id", inquilino)
           .maybeSingle();
+
         const cfgList = cfgRow?.config?.pagos_proveedor || [];
         if (cfgList.length > 0) {
           const map = new Map();
@@ -72,7 +93,23 @@ export default function PagosList({ onNew }) {
           });
           list = Array.from(map.values());
         }
+
+        const cfgFc = cfgRow?.config?.facturas_compra || [];
+        if (cfgFc.length > 0) {
+          const fcMap = new Map();
+          fcList.forEach(f => fcMap.set(f.id, f));
+          cfgFc.forEach(f => {
+            if (!fcMap.has(f.id)) fcMap.set(f.id, f);
+          });
+          fcList = Array.from(fcMap.values());
+        }
+
+        if (cfgRow?.config?.empresa_datos) {
+          setClinic(cfgRow.config.empresa_datos);
+        }
       } catch (e) {}
+
+      setFacturasCompra(fcList);
 
       const start = parseLocalDate(fechaInicio); start.setHours(0,0,0,0);
       const end = parseLocalDate(fechaFin); end.setHours(23,59,59,999);
@@ -104,12 +141,100 @@ export default function PagosList({ onNew }) {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // Resetear a página 1 cuando cambia el filtro o término de búsqueda
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, fechaInicio, fechaFin]);
+
+  // Helper para resolver facturas de compra / documentos soporte asociados a un egreso
+  const getAssociatedFacturas = useCallback((pago, fcList) => {
+    if (!pago || !Array.isArray(fcList) || fcList.length === 0) return [];
+    const matched = [];
+    const pagoCons = String(pago.consecutivo || pago.numero || pago.nroConsecutivo || (pago.id && String(pago.id).replace(/\D/g, "").slice(-4)) || "").trim();
+    const pagoId = String(pago.id || "").trim();
+    const fcAsoc = String(pago.factura_asociada || pago.facturaId || pago.factura_id || "").trim();
+    const fcSels = Array.isArray(pago.facturasSeleccionadas) ? pago.facturasSeleccionadas : [];
+    const rawItems = Array.isArray(pago.items) ? pago.items : [];
+    const obsStr = `${pago.observaciones || ""} ${pago.notas || ""} ${pago.descripcion || ""} ${pago.concepto || ""}`.toLowerCase();
+    const pagoTercero = String(pago.proveedor || pago.tercero || "").trim().toLowerCase();
+    const pagoMonto = Number(pago.monto || pago.total || 0);
+
+    fcList.forEach(fc => {
+      const fcNum = String(fc.nroFactura || fc.documentoNumero || fc.numero || fc.consecutivo || "").trim();
+      const fcNumClean = fcNum.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+      const fcId = String(fc.id || "").trim();
+      const fcTotal = Number(fc.totalNeto || fc.total || fc.monto || fc.valor || 0);
+      const fcTercero = String(fc.proveedor || fc.tercero || fc.nombreProveedor || "").trim().toLowerCase();
+
+      let isMatch = false;
+
+      // 1. Vínculo directo por ID o consecutivo guardado en el egreso
+      if (fcAsoc && (fcAsoc === fcNum || fcAsoc === fcId || (fcNumClean && fcAsoc.replace(/[^a-zA-Z0-9]/g, "").toLowerCase() === fcNumClean))) {
+        isMatch = true;
+      } else if (fcSels.some(s => {
+        const sVal = String(s?.id || s?.numero || s?.nroFactura || s?.documentoNumero || s).trim();
+        return sVal === fcId || sVal === fcNum || (fcNumClean && sVal.replace(/[^a-zA-Z0-9]/g, "").toLowerCase() === fcNumClean);
+      })) {
+        isMatch = true;
+      } else if (rawItems.some(i => i.isFactura && (String(i.facturaId) === fcId || String(i.numeroFactura || i.concepto) === fcNum || (fcNumClean && String(i.numeroFactura || i.concepto).replace(/[^a-zA-Z0-9]/g, "").toLowerCase() === fcNumClean)))) {
+        isMatch = true;
+      } 
+      // 2. Vínculo inverso desde la factura de compra
+      else if (pagoCons && fc.egreso_asociado && String(fc.egreso_asociado).trim() === pagoCons) {
+        isMatch = true;
+      } else if (pagoCons && fc.pago_asociado && String(fc.pago_asociado).trim() === pagoCons) {
+        isMatch = true;
+      } else if (pagoCons && Array.isArray(fc.egresos_asociados) && fc.egresos_asociados.map(String).includes(pagoCons)) {
+        isMatch = true;
+      }
+      // 3. Mención del número de factura en observaciones / concepto
+      else if (fcNumClean && fcNumClean.length >= 3 && obsStr.replace(/[^a-zA-Z0-9]/g, "").includes(fcNumClean)) {
+        isMatch = true;
+      }
+      // 4. Mismo tercero y mismo monto exacto si la observación contiene indicios de factura o compra
+      else if (pagoTercero && fcTercero && pagoTercero === fcTercero && Math.abs(fcTotal - pagoMonto) < 1 && (obsStr.includes("factura") || obsStr.includes("compra") || obsStr.includes("doc") || obsStr.includes("soporte") || obsStr.includes("pastel"))) {
+        isMatch = true;
+      }
+
+      if (isMatch && !matched.some(m => m.id === fc.id)) {
+        matched.push(fc);
+      }
+    });
+
+    return matched;
+  }, []);
+
+  // Imprimir factura de compra asociada desde el modal
+  const handlePrintFacturaCompra = (factura) => {
+    if (!factura) return;
+    const tenantData = {
+      ...userProfile?.tenant,
+      nombreComercial: clinic?.nombreComercial || clinic?.nombre || userProfile?.tenant?.nombreComercial || userProfile?.tenant?.nombre || "ATM CENTRO DEL DOLOR OROFACIAL",
+      nombre: clinic?.nombre || clinic?.nombreComercial || userProfile?.tenant?.nombre || "ATM CENTRO DEL DOLOR OROFACIAL",
+      nit: clinic?.nit || userProfile?.tenant?.nit || "64576359-3",
+      direccion: clinic?.direccion || userProfile?.tenant?.direccion || "Calle 16#17-68",
+      telefono: clinic?.telefono || userProfile?.tenant?.telefono || "3103583706",
+      email: clinic?.email || userProfile?.tenant?.email || "atmcentrodedolor@gmail.com",
+      ciudad: clinic?.ciudad || userProfile?.tenant?.ciudad || "Sincelejo",
+      logoUrl: clinic?.logo || clinic?.logoUrl || userProfile?.tenant?.logo || ""
+    };
+
+    printDocumentoSoporte({
+      factura,
+      tenant: tenantData,
+      userProfile
+    });
+  };
+
   const filtered = pagos.filter(p =>
     (p.proveedor || p.tercero || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
     (p.concepto || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
     (p.medioPago || p.bancoCaja || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
     String(p.consecutivo || p.numero || p.nroConsecutivo || "").toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const paginatedList = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const handleOpenAnularModal = (pago) => {
     if (pago.anulado || (pago.estado || "").toLowerCase() === "anulado") {
@@ -612,6 +737,7 @@ export default function PagosList({ onNew }) {
                 <tr className="text-slate-600 font-semibold">
                   <th className="py-3 px-4 w-28">Fecha</th>
                   <th className="py-3 px-4 w-24">Doc.</th>
+                  <th className="py-3 px-3 w-20 text-center">Doc. Ref.</th>
                   <th className="py-3 px-4">Proveedor / Tercero</th>
                   <th className="py-3 px-4">Concepto / Detalle</th>
                   <th className="py-3 px-4">Medio de Pago / Caja</th>
@@ -622,13 +748,13 @@ export default function PagosList({ onNew }) {
               <tbody className="divide-y divide-slate-100 text-slate-700">
                 {loading ? (
                   <tr>
-                    <td colSpan="7" className="py-12 text-center text-slate-400 font-medium">
+                    <td colSpan="8" className="py-12 text-center text-slate-400 font-medium">
                       Cargando egresos...
                     </td>
                   </tr>
                 ) : filtered.length === 0 ? (
                   <tr>
-                    <td colSpan="7" className="py-12 text-center text-slate-400">
+                    <td colSpan="8" className="py-12 text-center text-slate-400">
                       <div className="flex flex-col items-center gap-2">
                         <FiCreditCard size={32} className="text-slate-300" />
                         <p className="font-semibold text-slate-500">No hay egresos registrados en este periodo</p>
@@ -637,10 +763,11 @@ export default function PagosList({ onNew }) {
                     </td>
                   </tr>
                 ) : (
-                  filtered.map(p => {
+                  paginatedList.map(p => {
                     const isAnulado = p.anulado || (p.estado || "").toLowerCase() === "anulado";
                     const motivoAnul = p.motivo_anulacion || p.motivoAnulacion || "";
                     const docConsecutivo = p.consecutivo || p.numero || p.nroConsecutivo || (p.id && String(p.id).replace(/\D/g, "").slice(-4)) || "—";
+                    const associatedDocs = getAssociatedFacturas(p, facturasCompra);
 
                     return (
                       <tr
@@ -661,6 +788,20 @@ export default function PagosList({ onNew }) {
                               </span>
                             )}
                           </div>
+                        </td>
+                        <td className="py-3 px-3 text-center font-mono">
+                          {associatedDocs.length > 0 ? (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedPagoDocs({ pago: p, docs: associatedDocs })}
+                              className="inline-flex items-center justify-center p-1 rounded-md bg-sky-50 hover:bg-sky-100 text-[#009beb] transition-colors cursor-pointer"
+                              title={`Ver documento asociado: ${associatedDocs.map(d => d.nroFactura || d.numeroDocumento || d.numero || d.id).join(', ')}`}
+                            >
+                              <FiEye size={13} />
+                            </button>
+                          ) : (
+                            <span className="text-slate-400 font-mono">—</span>
+                          )}
                         </td>
                         <td className={`py-3 px-4 font-bold uppercase ${isAnulado ? "text-slate-400" : "text-slate-800"}`}>
                           {p.proveedor || p.tercero || "—"}
@@ -736,7 +877,138 @@ export default function PagosList({ onNew }) {
               </tbody>
             </table>
           </div>
+
+          {/* Paginador (1:1 OralDrive) */}
+          <div className="px-5 py-3 border-t border-slate-200 bg-white flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+            <div>
+              {filtered.length > 0 ? (
+                <span>
+                  Mostrando <strong className="text-slate-700 font-bold">{(currentPage - 1) * pageSize + 1}</strong> a <strong className="text-slate-700 font-bold">{Math.min(currentPage * pageSize, filtered.length)}</strong> de <strong className="text-slate-700 font-bold">{filtered.length}</strong> egresos
+                </span>
+              ) : (
+                <span>0 egresos</span>
+              )}
+            </div>
+
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="w-7 h-7 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors text-xs font-bold cursor-pointer"
+                  title="Página anterior"
+                >
+                  ‹
+                </button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(pageNum => (
+                  <button
+                    key={pageNum}
+                    type="button"
+                    onClick={() => setCurrentPage(pageNum)}
+                    className={`w-7 h-7 rounded text-xs font-semibold transition-all cursor-pointer ${
+                      currentPage === pageNum
+                        ? "bg-[#009beb] text-white shadow-xs font-bold"
+                        : "border border-slate-200 bg-white hover:bg-slate-50 text-slate-600"
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="w-7 h-7 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors text-xs font-bold cursor-pointer"
+                  title="Página siguiente"
+                >
+                  ›
+                </button>
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Modal de Documentos Asociados (Doc. Ref.) */}
+        {selectedPagoDocs && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-fadeIn">
+            <div className="bg-white rounded-lg shadow-2xl border border-slate-200 w-full max-w-xl overflow-hidden flex flex-col animate-scaleUp">
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-white">
+                <h3 className="text-base font-semibold text-slate-800">
+                  Documentos asociados
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setSelectedPagoDocs(null)}
+                  className="text-slate-400 hover:text-slate-600 transition-colors cursor-pointer text-lg leading-none"
+                  title="Cerrar"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Table */}
+              <div className="p-6">
+                <div className="border border-slate-200 rounded overflow-hidden">
+                  <table className="w-full text-xs text-left border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-50/70 text-slate-600 font-medium">
+                        <th className="py-2.5 px-4 text-center font-semibold w-1/4">Número documento</th>
+                        <th className="py-2.5 px-4 font-semibold w-1/4">Tipo documento</th>
+                        <th className="py-2.5 px-4 text-center font-semibold w-1/4">Valor</th>
+                        <th className="py-2.5 px-4 text-center font-semibold w-1/4">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 text-slate-700 bg-white">
+                      {selectedPagoDocs.docs.map((doc, idx) => {
+                        const isDs = Boolean(doc.docSoporteDian || doc.cuds || String(doc.nroFactura || doc.numeroDocumento || '').startsWith('DCS'));
+                        const docTipo = isDs ? "Documento soporte" : "Factura de compra";
+                        const docNum = doc.nroFactura || doc.numeroDocumento || doc.numero || doc.consecutivo || "—";
+                        const docVal = Number(doc.totalNeto || doc.total || doc.monto || doc.valor || 0);
+
+                        return (
+                          <tr key={doc.id || idx} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="py-3 px-4 text-center font-medium text-slate-800 font-mono">
+                              {docNum}
+                            </td>
+                            <td className="py-3 px-4 text-slate-700">
+                              {docTipo}
+                            </td>
+                            <td className="py-3 px-4 text-center font-mono text-slate-800 font-medium">
+                              {fmt(docVal)}
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handlePrintFacturaCompra(doc)}
+                                className="inline-flex items-center justify-center w-7 h-7 rounded bg-sky-500 hover:bg-sky-600 text-white transition-all shadow-xs cursor-pointer"
+                                title="Imprimir documento asociado"
+                              >
+                                <FiPrinter size={13} />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setSelectedPagoDocs(null)}
+                  className="px-4 py-1.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 text-xs font-medium rounded transition-colors cursor-pointer"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
       </div>
 

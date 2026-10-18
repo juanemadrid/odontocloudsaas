@@ -1229,19 +1229,22 @@ export const generateDocumentoSoporteHtml = ({
     factura?.trackId ||
     '';
 
-  // QR Code
-  let qrData =
-    factura?.factusQr ||
-    factura?.qrCode ||
-    factura?.qr ||
-    (cuds ? `https://catalogo-vpfe.dian.gov.co/document/searchqr?documentkey=${cuds}` : null);
-  if (!qrData && cuds) {
-    qrData = `https://catalogo-vpfe.dian.gov.co/document/searchqr?documentkey=${cuds}`;
-  } else if (!qrData) {
-    qrData = `https://catalogo-vpfe.dian.gov.co/document/searchqr?documentkey=Simulated_DS_${docNumero}`;
+  // QR Code: ÚNICAMENTE para Documentos Soporte electrónicos transmitidos a la DIAN
+  const showQr = Boolean(isDocSoporte);
+  let qrImgUrl = null;
+  if (showQr) {
+    let qrData =
+      factura?.factusQr ||
+      factura?.qrCode ||
+      factura?.qr ||
+      (cuds ? `https://catalogo-vpfe.dian.gov.co/document/searchqr?documentkey=${cuds}` : null);
+    if (!qrData && cuds) {
+      qrData = `https://catalogo-vpfe.dian.gov.co/document/searchqr?documentkey=${cuds}`;
+    } else if (!qrData) {
+      qrData = `https://catalogo-vpfe.dian.gov.co/document/searchqr?documentkey=Simulated_DS_${docNumero}`;
+    }
+    qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(qrData)}`;
   }
-
-  const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(qrData)}`;
 
   // Tenant / Clinic details
   const clinicName =
@@ -1577,9 +1580,11 @@ export const generateDocumentoSoporteHtml = ({
             <div class="doc-sub">${docBadge}</div>
             <div class="doc-sub">${docSub}</div>
           </div>
-          <div class="qr-container">
-            <img id="qrImg" src="${qrImgUrl}" alt="QR DIAN" onload="markQrLoaded();" onerror="markQrLoaded();" />
-          </div>
+            ${showQr && qrImgUrl ? `
+            <div class="qr-container">
+              <img id="qrImg" src="${qrImgUrl}" alt="QR DIAN" onload="markQrLoaded();" onerror="markQrLoaded();" />
+            </div>
+            ` : ''}
         </div>
       </td>
     </tr>
@@ -1681,7 +1686,7 @@ export const generateDocumentoSoporteHtml = ({
     </tr>
   </table>
 
-  <span id="qrLoadedStatus" style="display: none;">0</span>
+  <span id="qrLoadedStatus" style="display: none;">${showQr ? '0' : '1'}</span>
   <script>
     var isPrinting = false;
     function markQrLoaded() {
@@ -1694,12 +1699,21 @@ export const generateDocumentoSoporteHtml = ({
       }
     }
     window.onload = function() {
-      setTimeout(function() {
+      if (${showQr ? 'false' : 'true'}) {
         if (!isPrinting) {
           isPrinting = true;
-          window.print();
+          setTimeout(function() {
+            window.print();
+          }, 200);
         }
-      }, 500);
+      } else {
+        setTimeout(function() {
+          if (!isPrinting) {
+            isPrinting = true;
+            window.print();
+          }
+        }, 500);
+      }
     };
   </script>
 </body>
