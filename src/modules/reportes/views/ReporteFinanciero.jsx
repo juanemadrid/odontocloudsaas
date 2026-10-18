@@ -8,7 +8,7 @@ import { ReceiptPrintService } from "../../../services/ReceiptPrintService";
 import { printReciboCaja, printElectronicInvoice } from "../../../utils/electronicInvoiceTemplate";
 import { FiDollarSign, FiSearch, FiFileText, FiFilter, FiDownload, FiCheck, FiX, FiEye, FiPrinter, FiRefreshCw } from "react-icons/fi";
 import { format } from "date-fns";
-import * as XLSX from "xlsx";
+import XLSX from "xlsx-js-style";
 
 const cleanObservaciones = (rawVal) => {
   if (!rawVal) return "";
@@ -49,6 +49,7 @@ const cleanDocReferencia = (ref, defaultCode) => {
 };
 
 const TIPO_MOVIMIENTO_OPTIONS = [
+  "Seleccione",
   "Todos",
   "Recibo de caja+",
   "Factura de venta+",
@@ -70,6 +71,10 @@ export default function ReporteFinanciero() {
     { id: "TODAS", nombre: "Todas las oficinas" }
   ]);
   const [loading, setLoading] = useState(true);
+  const [clinicInfo, setClinicInfo] = useState({
+    nombre: userProfile?.tenant?.nombreComercial || userProfile?.tenant?.nombre || userProfile?.tenantNombre || userProfile?.clinica || "Clínica Dental",
+    nit: userProfile?.tenant?.nit || ""
+  });
 
   // Filtros del formulario superior (1:1 con OralDrive)
   const now = new Date();
@@ -78,7 +83,7 @@ export default function ReporteFinanciero() {
   const [fechaFinal, setFechaFinal] = useState(format(now, "yyyy-MM-dd"));
   const [isAllHistory, setIsAllHistory] = useState(false);
   const [oficina, setOficina] = useState("Todas las oficinas");
-  const [tipoMovimiento, setTipoMovimiento] = useState("Todos");
+  const [tipoMovimiento, setTipoMovimiento] = useState("Seleccione");
   const [informacionContable, setInformacionContable] = useState(false);
   const [selectedProfesional, setSelectedProfesional] = useState("Todos");
 
@@ -91,7 +96,7 @@ export default function ReporteFinanciero() {
     fechaFinal: format(now, "yyyy-MM-dd"),
     isAllHistory: false,
     oficina: "Todas las oficinas",
-    tipoMovimiento: "Todos",
+    tipoMovimiento: "Seleccione",
     informacionContable: false,
     profesional: "Todos"
   });
@@ -202,7 +207,9 @@ export default function ReporteFinanciero() {
         pagosProvRes,
         cfgRes,
         cfgFacturasCompra,
-        cfgPagosProv
+        cfgPagosProv,
+        tenantRes,
+        empresaConfigRes
       ] = await Promise.all([
         getConfigItems(tenantId, "sucursales", "sucursales").catch(() => []),
         supabase.from("pacientes").select("*").eq("tenant_id", tenantId),
@@ -221,8 +228,17 @@ export default function ReporteFinanciero() {
         supabase.from("pagos_proveedor").select("*").eq("tenant_id", tenantId).then(r => r, () => ({ data: [] })),
         supabase.from("website_config").select("config").eq("tenant_id", tenantId).maybeSingle().then(r => r, () => ({ data: null })),
         getConfigSection(tenantId, "facturas_compra", []).catch(() => []),
-        getConfigSection(tenantId, "pagos_proveedor", []).catch(() => [])
+        getConfigSection(tenantId, "pagos_proveedor", []).catch(() => []),
+        supabase.from("tenants").select("id, nombre, nit, direccion, telefono, logo_url").eq("id", tenantId).maybeSingle().then(r => r, () => ({ data: null })),
+        getConfigSection(tenantId, "empresa_datos", {}).catch(() => ({}))
       ]);
+
+      // 0. Sincronizar datos reales de la Clínica / Institución
+      const tData = tenantRes?.data || {};
+      const cData = empresaConfigRes || {};
+      const resolvedClinicName = cData.nombreComercial || cData.nombre || tData.nombre || userProfile?.tenant?.nombreComercial || userProfile?.tenant?.nombre || userProfile?.tenantNombre || userProfile?.clinica || "Clínica Dental";
+      const resolvedClinicNit = cData.nit || tData.nit || userProfile?.tenant?.nit || "";
+      setClinicInfo({ nombre: resolvedClinicName, nit: resolvedClinicNit });
 
       // 1. Armar Sedes / Oficinas
       const sedesList = [{ id: "TODAS", nombre: "Todas las oficinas" }];
@@ -1290,28 +1306,91 @@ export default function ReporteFinanciero() {
     return isNaN(dt.getTime()) ? String(dateVal) : format(dt, "dd/MM/yyyy");
   };
 
-  // Conteo de transacciones por tipo de movimiento para el selector interactivo
+  // Transacciones en el período y filtros activos para conteos contextuales en el selector
+  const transactionsInPeriod = useMemo(() => {
+    return allTransactions.filter(r => {
+      // 1. Filtro por Fechas
+      if (!isAllHistory && fechaInicial && fechaInicial.trim() !== "") {
+        const rawDate = r.fechaSeleccionada || r.fechaCreacion;
+        if (rawDate) {
+          const targetDate = rawDate?.toDate ? rawDate.toDate() : new Date(rawDate);
+          if (!isNaN(targetDate.getTime())) {
+            const init = new Date(fechaInicial + "T00:00:00");
+            const endStr = fechaFinal || fechaInicial;
+            const end = new Date(endStr + "T23:59:59");
+            if (targetDate < init || targetDate > end) return false;
+          }
+        }
+      }
+
+      // 2. Filtro por Oficina / Sede
+      if (oficina && oficina !== "Todas las oficinas" && oficina !== "Todas") {
+        const targetOficina = oficina.toLowerCase().trim();
+        const rOficina = String(r.oficina || r.sucursal || r.sede || "").toLowerCase().trim();
+        const rOficinaId = String(r.sucursalId || r.sucursal_id || "").toLowerCase().trim();
+        
+        const ofObj = oficinasList.find(o => o.nombre.toLowerCase() === targetOficina || o.id === oficina);
+        const targetId = ofObj ? String(ofObj.id).toLowerCase() : "";
+
+        let matchesOffice = false;
+        if (rOficina) {
+          matchesOffice = rOficina.includes(targetOficina) || targetOficina.includes(rOficina);
+        }
+        if (rOficinaId && targetId) {
+          matchesOffice = matchesOffice || rOficinaId === targetId;
+        }
+        if (!rOficina && !rOficinaId) {
+          const isPrincipal = targetOficina.includes("principal") || targetOficina.includes("centro del dolor") || targetOficina.includes("sincelejo");
+          matchesOffice = isPrincipal;
+        }
+
+        if (!matchesOffice) return false;
+      }
+
+      // 3. Filtro por Profesional
+      if (selectedProfesional && selectedProfesional !== "Todos" && selectedProfesional.trim() !== "") {
+        const targetProf = selectedProfesional.toLowerCase().trim();
+        const profObj = profesionales.find(pr => pr.nombre === selectedProfesional || pr.id === selectedProfesional);
+        const rProf = String(r.profesional || "").toLowerCase().trim();
+        const rProfId = String(r.profesionalId || "").toLowerCase().trim();
+
+        let matchesDoc = false;
+        if (profObj && profObj.allNames) {
+          matchesDoc = profObj.allNames.some(nameVariant => 
+            rProf.includes(nameVariant) || rProfId === nameVariant || nameVariant.includes(rProf)
+          );
+        } else {
+          matchesDoc = rProf.includes(targetProf) || rProfId.includes(targetProf) || targetProf.includes(rProf);
+        }
+        if (!matchesDoc) return false;
+      }
+
+      return true;
+    });
+  }, [allTransactions, isAllHistory, fechaInicial, fechaFinal, oficina, selectedProfesional, oficinasList, profesionales]);
+
+  // Conteo de transacciones por tipo de movimiento para el selector interactivo (en tiempo real por período)
   const movementTypeCounts = useMemo(() => {
-    const counts = { "Todos": allTransactions.length };
+    const counts = { "Todos": transactionsInPeriod.length };
     TIPO_MOVIMIENTO_OPTIONS.forEach(opt => {
-      if (opt !== "Todos") counts[opt] = 0;
+      if (opt !== "Todos" && opt !== "Seleccione") counts[opt] = 0;
     });
 
-    allTransactions.forEach(t => {
+    transactionsInPeriod.forEach(t => {
       const rowType = (t.tipoDocumento || "").trim();
       if (counts[rowType] !== undefined) {
         counts[rowType]++;
       } else {
         // Coincidencia de prefijo
         TIPO_MOVIMIENTO_OPTIONS.forEach(opt => {
-          if (opt !== "Todos" && rowType.toLowerCase().includes(opt.toLowerCase().replace(/[+\-]/g, ""))) {
+          if (opt !== "Todos" && opt !== "Seleccione" && rowType.toLowerCase().includes(opt.toLowerCase().replace(/[+\-]/g, ""))) {
             counts[opt] = (counts[opt] || 0) + 1;
           }
         });
       }
     });
     return counts;
-  }, [allTransactions]);
+  }, [transactionsInPeriod]);
 
   // Filtrado reactivo de movimientos
   const filteredData = useMemo(() => {
@@ -1355,6 +1434,9 @@ export default function ReporteFinanciero() {
       }
 
       // 3. Filtro por Tipo de Movimiento (Estricto 1:1)
+      if (appliedFilters.tipoMovimiento === "Seleccione") {
+        return false;
+      }
       if (appliedFilters.tipoMovimiento && appliedFilters.tipoMovimiento !== "Todos") {
         const target = appliedFilters.tipoMovimiento.trim();
         const rowType = (r.tipoDocumento || "").trim();
@@ -1488,20 +1570,20 @@ export default function ReporteFinanciero() {
 
   // Restablecer filtros
   const handleResetFilters = () => {
-    setIsAllHistory(true);
-    setFechaInicial("");
-    setFechaFinal("");
+    setIsAllHistory(false);
+    setFechaInicial(format(firstDayOfMonth, "yyyy-MM-dd"));
+    setFechaFinal(format(now, "yyyy-MM-dd"));
     setOficina("Todas las oficinas");
-    setTipoMovimiento("Todos");
+    setTipoMovimiento("Seleccione");
     setSelectedProfesional("Todos");
     setTableSearchTerm("");
     setColumnFilters({});
     setAppliedFilters({
-      fechaInicial: "",
-      fechaFinal: "",
-      isAllHistory: true,
+      fechaInicial: format(firstDayOfMonth, "yyyy-MM-dd"),
+      fechaFinal: format(now, "yyyy-MM-dd"),
+      isAllHistory: false,
       oficina: "Todas las oficinas",
-      tipoMovimiento: "Todos",
+      tipoMovimiento: "Seleccione",
       informacionContable,
       profesional: "Todos"
     });
@@ -1515,15 +1597,15 @@ export default function ReporteFinanciero() {
     }));
   };
 
-  // Exportar reporte a Excel Ejecutivo
+  // Exportar reporte a Excel Ejecutivo con diseño profesional 1:1
   const handleExportExcel = () => {
     if (filteredData.length === 0) {
       alert("No hay transacciones disponibles para exportar con los filtros seleccionados.");
       return;
     }
 
-    const clinicName = userProfile?.nombreClinica || userProfile?.tenant_nombre || "CLÍNICA DENTAL SINCELEJO";
-    const clinicNit = userProfile?.nit || userProfile?.documento || "900251327";
+    const clinicName = clinicInfo?.nombre || userProfile?.tenant?.nombreComercial || userProfile?.tenant?.nombre || userProfile?.tenantNombre || userProfile?.clinica || "Clínica Dental";
+    const clinicNit = clinicInfo?.nit || userProfile?.tenant?.nit || userProfile?.nit || "";
     const dateFormatted = format(new Date(), "dd/MM/yyyy HH:mm");
     const periodText = appliedFilters.isAllHistory 
       ? "Histórico Completo (Sin límite de fechas)" 
@@ -1531,27 +1613,68 @@ export default function ReporteFinanciero() {
 
     const activeColKeys = Object.keys(visibleColumns).filter(k => visibleColumns[k]);
     const headers = activeColKeys.map(k => columnLabels[k]);
+    const totalCols = Math.max(headers.length, 10);
 
-    // Encabezado institucional
+    // Definición de bordes elegantes
+    const borderThin = {
+      top: { style: "thin", color: { rgb: "CBD5E1" } },
+      bottom: { style: "thin", color: { rgb: "CBD5E1" } },
+      left: { style: "thin", color: { rgb: "CBD5E1" } },
+      right: { style: "thin", color: { rgb: "CBD5E1" } }
+    };
+
+    const borderTotal = {
+      top: { style: "thin", color: { rgb: "64748B" } },
+      bottom: { style: "double", color: { rgb: "0F172A" } },
+      left: { style: "thin", color: { rgb: "E2E8F0" } },
+      right: { style: "thin", color: { rgb: "E2E8F0" } }
+    };
+
+    // Estructura AOA
+    // Fila 0: Título principal institucional (sin OdontoCloud)
+    // Fila 1: Clínica / NIT / Fecha Emisión
+    // Fila 2: Período / Sede / Tipo de Movimiento
+    // Fila 3: Separador
+    // Fila 4: Tarjetas KPI Encabezados
+    // Fila 5: Tarjetas KPI Valores
+    // Fila 6: Separador
+    // Fila 7: Encabezados de la tabla
     const aoa = [
-      ["ODONTOCLOUD COLOMBIA — SISTEMA DE GESTIÓN CLÍNICA Y FINANCIERA"],
       ["REPORTE DETALLADO DE FACTURACIÓN Y MOVIMIENTOS FINANCIEROS"],
-      [`Clínica / Institución: ${clinicName} (NIT: ${clinicNit})`, "", `Fecha de Emisión: ${dateFormatted}`],
-      [`Período: ${periodText}`, `Sede: ${appliedFilters.oficina}`, `Tipo de Movimiento: ${appliedFilters.tipoMovimiento}`],
-      [
-        `Total Transacciones: ${filteredData.length}`,
-        `Recaudos/Ingresos (+): $ ${totalIngresos.toLocaleString('es-CO')}`,
-        `Total Facturado (FEV): $ ${totalFacturado.toLocaleString('es-CO')}`,
-        `Egresos (-): $ ${totalEgresos.toLocaleString('es-CO')}`,
-        `Balance Neto: $ ${(totalIngresos - totalEgresos).toLocaleString('es-CO')}`
-      ],
-      [], // Separador
+      [`Clínica / Institución:  ${clinicName}`, "", "", "", `NIT:  ${clinicNit || '—'}`, "", `Fecha de Emisión:  ${dateFormatted}`],
+      [`Período:  ${periodText}`, "", `Sede / Oficina:  ${appliedFilters.oficina}`, "", `Tipo de Movimiento:  ${appliedFilters.tipoMovimiento}`],
+      [],
+      ["TOTAL MOVIMIENTOS", "", "RECAUDOS / INGRESOS (+)", "", "FACTURACIÓN (FEV)", "", "EGRESOS (-)", "", "BALANCE NETO", ""],
+      [filteredData.length, "", Number(totalIngresos || 0), "", Number(totalFacturado || 0), "", Number(totalEgresos || 0), Number((totalIngresos || 0) - (totalEgresos || 0)), ""],
+      [],
       headers
     ];
+
+    // Acumuladores de columnas numéricas
+    let sumValor = 0;
+    let sumSubtotal = 0;
+    let sumDescuento = 0;
+    let sumIVA = 0;
+    let sumRetencion = 0;
+    let sumTotal = 0;
 
     // Filas de datos
     filteredData.forEach(r => {
       const row = [];
+      const vVal = Number(r.valor || 0);
+      const vSub = Number(r.subtotal || r.valor || 0);
+      const vDesc = Number(r.descuento || 0);
+      const vIva = Number(r.iva || 0);
+      const vRet = Number(r.retencion || 0);
+      const vTot = Number(r.total || r.valor || 0);
+
+      sumValor += vVal;
+      sumSubtotal += vSub;
+      sumDescuento += vDesc;
+      sumIVA += vIva;
+      sumRetencion += vRet;
+      sumTotal += vTot;
+
       activeColKeys.forEach(k => {
         switch (k) {
           case "numeroDocumento": row.push(r.numeroDocumento || ""); break;
@@ -1559,7 +1682,7 @@ export default function ReporteFinanciero() {
           case "fechaCreacion": row.push(formatDateTime(r.fechaCreacion)); break;
           case "fechaSeleccionada": row.push(formatDateOnly(r.fechaSeleccionada)); break;
           case "concepto": row.push(r.concepto || ""); break;
-          case "valor": row.push(Number(r.valor || 0)); break;
+          case "valor": row.push(vVal); break;
           case "consecutivo": row.push(r.consecutivo || "Principal"); break;
           case "docReferencia": row.push(r.docReferencia || ""); break;
           case "documentosAsociados": row.push(r.documentosAsociados || "—"); break;
@@ -1568,11 +1691,11 @@ export default function ReporteFinanciero() {
           case "documentoTercero": row.push(r.documentoTercero || ""); break;
           case "profesional": row.push(r.profesional || "Sin asignar"); break;
           case "formaPago": row.push(r.formaPago || "Efectivo"); break;
-          case "subtotal": row.push(Number(r.subtotal || r.valor || 0)); break;
-          case "descuento": row.push(Number(r.descuento || 0)); break;
-          case "iva": row.push(Number(r.iva || 0)); break;
-          case "retencion": row.push(Number(r.retencion || 0)); break;
-          case "total": row.push(Number(r.total || r.valor || 0)); break;
+          case "subtotal": row.push(vSub); break;
+          case "descuento": row.push(vDesc); break;
+          case "iva": row.push(vIva); break;
+          case "retencion": row.push(vRet); break;
+          case "total": row.push(vTot); break;
           case "usuarioCreador": row.push(r.usuarioCreador || ""); break;
           case "observaciones": row.push(r.observaciones || ""); break;
           case "cuentaContable": row.push(r.cuentaContable || ""); break;
@@ -1582,31 +1705,217 @@ export default function ReporteFinanciero() {
       aoa.push(row);
     });
 
-    // Fila de totales al final
+    // Fila de totales generales al final
     const summaryRow = [];
     activeColKeys.forEach(k => {
       if (k === "concepto") summaryRow.push("TOTALES GENERALES:");
-      else if (k === "valor" || k === "total") summaryRow.push(totalFacturado || totalIngresos);
+      else if (k === "valor") summaryRow.push(sumValor);
+      else if (k === "subtotal") summaryRow.push(sumSubtotal);
+      else if (k === "descuento") summaryRow.push(sumDescuento);
+      else if (k === "iva") summaryRow.push(sumIVA);
+      else if (k === "retencion") summaryRow.push(sumRetencion);
+      else if (k === "total") summaryRow.push(sumTotal);
       else summaryRow.push("");
     });
-    aoa.push([]);
     aoa.push(summaryRow);
 
     const worksheet = XLSX.utils.aoa_to_sheet(aoa);
 
-    // Ajuste de anchos de columna
-    const colWidths = headers.map((h, i) => {
-      let maxLen = Math.max(h.length, 12);
-      filteredData.forEach(r => {
-        const val = String(r[activeColKeys[i]] || "");
-        if (val.length > maxLen) maxLen = Math.min(val.length, 45);
+    // Combinación de celdas (Merges)
+    const merges = [
+      // Fila 0: Título principal
+      { s: { r: 0, c: 0 }, e: { r: 0, c: totalCols - 1 } },
+      // Fila 1: Clínica / NIT / Emisión
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 3 } },
+      { s: { r: 1, c: 4 }, e: { r: 1, c: 5 } },
+      { s: { r: 1, c: 6 }, e: { r: 1, c: Math.min(totalCols - 1, 8) } },
+      // Fila 2: Período / Sede / Tipo
+      { s: { r: 2, c: 0 }, e: { r: 2, c: 1 } },
+      { s: { r: 2, c: 2 }, e: { r: 2, c: 3 } },
+      { s: { r: 2, c: 4 }, e: { r: 2, c: Math.min(totalCols - 1, 6) } },
+      // Filas 4 y 5: 5 Tarjetas KPI ejecutivas
+      { s: { r: 4, c: 0 }, e: { r: 4, c: 1 } }, { s: { r: 5, c: 0 }, e: { r: 5, c: 1 } },
+      { s: { r: 4, c: 2 }, e: { r: 4, c: 3 } }, { s: { r: 5, c: 2 }, e: { r: 5, c: 3 } },
+      { s: { r: 4, c: 4 }, e: { r: 4, c: 5 } }, { s: { r: 5, c: 4 }, e: { r: 5, c: 5 } },
+      { s: { r: 4, c: 6 }, e: { r: 4, c: 7 } }, { s: { r: 5, c: 6 }, e: { r: 5, c: 7 } },
+      { s: { r: 4, c: 8 }, e: { r: 4, c: 9 } }, { s: { r: 5, c: 8 }, e: { r: 5, c: 9 } }
+    ];
+    worksheet["!merges"] = merges;
+
+    // Alturas de filas ejecutivas
+    const rowHeights = [
+      { hpt: 32 }, // R0: Título
+      { hpt: 22 }, // R1: Clínica / NIT / Emisión
+      { hpt: 20 }, // R2: Período / Sede / Tipo
+      { hpt: 8 },  // R3: Separador
+      { hpt: 18 }, // R4: KPI Headers
+      { hpt: 26 }, // R5: KPI Values
+      { hpt: 10 }, // R6: Separador
+      { hpt: 26 }  // R7: Table Headers
+    ];
+    for (let i = 0; i < filteredData.length; i++) {
+      rowHeights.push({ hpt: 20 });
+    }
+    rowHeights.push({ hpt: 24 }); // Totales
+    worksheet["!rows"] = rowHeights;
+
+    // 1. Estilo Título Principal (R0)
+    for (let c = 0; c < totalCols; c++) {
+      const ref = XLSX.utils.encode_cell({ r: 0, c });
+      if (!worksheet[ref]) worksheet[ref] = { t: "s", v: "" };
+      worksheet[ref].s = {
+        font: { name: "Calibri", sz: 13, bold: true, color: { rgb: "FFFFFF" } },
+        fill: { fgColor: { rgb: "0F172A" } },
+        alignment: { horizontal: "center", vertical: "center" }
+      };
+    }
+
+    // 2. Estilo Metadatos (R1 & R2)
+    for (let r = 1; r <= 2; r++) {
+      for (let c = 0; c < totalCols; c++) {
+        const ref = XLSX.utils.encode_cell({ r, c });
+        if (!worksheet[ref]) worksheet[ref] = { t: "s", v: "" };
+        worksheet[ref].s = {
+          font: { name: "Calibri", sz: 10, bold: true, color: { rgb: "334155" } },
+          fill: { fgColor: { rgb: "F8FAFC" } },
+          alignment: { horizontal: c === 6 ? "right" : "left", vertical: "center" },
+          border: { bottom: { style: "thin", color: { rgb: "E2E8F0" } } }
+        };
+      }
+    }
+
+    // 3. Estilo KPI Cards (R4 & R5)
+    const kpiFillsHeader = ["F1F5F9", "F0FDF4", "F0F9FF", "FEF2F2", "EFF6FF"];
+    const kpiColorsVal = ["0F172A", "16A34A", "0284C7", "DC2626", "2563EB"];
+
+    for (let i = 0; i < 5; i++) {
+      const cStart = i * 2;
+      const cEnd = cStart + 1;
+      const fgH = kpiFillsHeader[i];
+      const valColor = kpiColorsVal[i];
+
+      [cStart, cEnd].forEach(c => {
+        const refH = XLSX.utils.encode_cell({ r: 4, c });
+        if (!worksheet[refH]) worksheet[refH] = { t: "s", v: "" };
+        worksheet[refH].s = {
+          font: { name: "Calibri", sz: 8.5, bold: true, color: { rgb: "475569" } },
+          fill: { fgColor: { rgb: fgH } },
+          alignment: { horizontal: "center", vertical: "center" },
+          border: borderThin
+        };
+
+        const refV = XLSX.utils.encode_cell({ r: 5, c });
+        if (!worksheet[refV]) worksheet[refV] = { t: "n", v: 0 };
+        worksheet[refV].s = {
+          font: { name: "Calibri", sz: 12, bold: true, color: { rgb: valColor } },
+          fill: { fgColor: { rgb: "FFFFFF" } },
+          alignment: { horizontal: "center", vertical: "center" },
+          border: borderThin,
+          numFmt: i === 0 ? "#,##0" : "\"$\"#,##0"
+        };
       });
-      return { wch: maxLen + 4 };
+    }
+
+    // 4. Estilo Encabezados de Tabla (R7)
+    headers.forEach((_, cIdx) => {
+      const ref = XLSX.utils.encode_cell({ r: 7, c: cIdx });
+      if (!worksheet[ref]) worksheet[ref] = { t: "s", v: "" };
+      worksheet[ref].s = {
+        font: { name: "Calibri", sz: 10, bold: true, color: { rgb: "FFFFFF" } },
+        fill: { fgColor: { rgb: "1E293B" } },
+        alignment: { horizontal: "center", vertical: "center" },
+        border: borderThin
+      };
+    });
+
+    // 5. Estilo Filas de Datos (R8+)
+    const currencyColKeys = new Set(["valor", "subtotal", "descuento", "iva", "retencion", "total"]);
+    const centerColKeys = new Set(["numeroDocumento", "tipoDocumento", "fechaCreacion", "fechaSeleccionada", "consecutivo", "docReferencia", "documentosAsociados", "estado", "documentoTercero", "formaPago", "cuentaContable"]);
+
+    filteredData.forEach((_, rIdx) => {
+      const rowNum = 8 + rIdx;
+      const isZebra = rIdx % 2 === 1;
+      const rowBg = isZebra ? "F8FAFC" : "FFFFFF";
+
+      activeColKeys.forEach((k, cIdx) => {
+        const ref = XLSX.utils.encode_cell({ r: rowNum, c: cIdx });
+        if (!worksheet[ref]) worksheet[ref] = { t: "s", v: "" };
+
+        const isCurrency = currencyColKeys.has(k);
+        const isCenter = centerColKeys.has(k);
+
+        worksheet[ref].s = {
+          font: { name: "Calibri", sz: 9.5, color: { rgb: "334155" }, bold: k === "numeroDocumento" },
+          fill: { fgColor: { rgb: rowBg } },
+          alignment: {
+            horizontal: isCurrency ? "right" : (isCenter ? "center" : "left"),
+            vertical: "center"
+          },
+          border: borderThin,
+          numFmt: isCurrency ? "\"$\"#,##0" : undefined
+        };
+      });
+    });
+
+    // 6. Estilo Fila de Totales Generales
+    const totalRowNum = 8 + filteredData.length;
+    activeColKeys.forEach((k, cIdx) => {
+      const ref = XLSX.utils.encode_cell({ r: totalRowNum, c: cIdx });
+      if (!worksheet[ref]) worksheet[ref] = { t: "s", v: "" };
+
+      const isCurrency = currencyColKeys.has(k);
+
+      worksheet[ref].s = {
+        font: { name: "Calibri", sz: 10.5, bold: true, color: { rgb: "0F172A" } },
+        fill: { fgColor: { rgb: "FEF9C3" } },
+        alignment: {
+          horizontal: isCurrency ? "right" : (k === "concepto" ? "right" : "center"),
+          vertical: "center"
+        },
+        border: borderTotal,
+        numFmt: isCurrency ? "\"$\"#,##0" : undefined
+      };
+    });
+
+    // Ajuste dinámico de anchos de columna para evitar truncamiento
+    const minWidths = {
+      numeroDocumento: 16,
+      tipoDocumento: 20,
+      fechaCreacion: 18,
+      fechaSeleccionada: 18,
+      concepto: 38,
+      valor: 18,
+      consecutivo: 15,
+      docReferencia: 22,
+      documentosAsociados: 22,
+      estado: 14,
+      tercero: 32,
+      documentoTercero: 18,
+      profesional: 28,
+      formaPago: 16,
+      subtotal: 18,
+      descuento: 16,
+      iva: 16,
+      retencion: 16,
+      total: 18,
+      usuarioCreador: 22,
+      observaciones: 35,
+      cuentaContable: 18
+    };
+
+    const colWidths = headers.map((h, i) => {
+      const colKey = activeColKeys[i];
+      let maxLen = Math.max(h.length + 4, minWidths[colKey] || 15);
+      filteredData.forEach(r => {
+        const val = String(r[colKey] || "");
+        if (val.length > maxLen) maxLen = Math.min(val.length + 3, 50);
+      });
+      return { wch: maxLen };
     });
     worksheet["!cols"] = colWidths;
 
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Reporte Facturacion");
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Reporte Facturación");
     
     const cleanClinic = clinicName.replace(/[^a-zA-Z0-9]/g, "_");
     const fileNameSuffix = appliedFilters.isAllHistory ? "Historico" : format(new Date(), "yyyyMMdd");
@@ -2038,6 +2347,13 @@ export default function ReporteFinanciero() {
               className="w-full h-8 px-3 bg-white border border-slate-300 rounded text-xs text-slate-700 focus:outline-none focus:border-sky-500 transition-all font-medium"
             >
               {TIPO_MOVIMIENTO_OPTIONS.map(opt => {
+                if (opt === "Seleccione") {
+                  return (
+                    <option key={opt} value="Seleccione">
+                      Seleccione
+                    </option>
+                  );
+                }
                 const cnt = movementTypeCounts[opt] ?? 0;
                 return (
                   <option key={opt} value={opt}>
@@ -2114,7 +2430,7 @@ export default function ReporteFinanciero() {
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-slate-700">Movimientos registrados:</span>
             <span className="text-xs font-semibold px-2 py-0.5 bg-slate-100 text-slate-700 rounded border border-slate-200">
-              {appliedFilters.tipoMovimiento} ({filteredData.length})
+              {appliedFilters.tipoMovimiento === "Seleccione" ? "Seleccione" : appliedFilters.tipoMovimiento} ({filteredData.length})
             </span>
           </div>
 
@@ -2444,20 +2760,36 @@ export default function ReporteFinanciero() {
                           <FiDollarSign size={22} />
                         </div>
                         <div className="text-sm font-bold text-slate-700 mb-1">
-                          No se encontraron transacciones financieras
+                          {appliedFilters.tipoMovimiento === "Seleccione"
+                            ? "Seleccione un tipo de movimiento"
+                            : "No se encontraron transacciones financieras"}
                         </div>
                         <div className="text-xs text-slate-500 mb-4 text-center">
-                          {allTransactions.length > 0 
-                            ? `Los filtros actuales no coinciden con ningún movimiento. Existen ${allTransactions.length} transacciones registradas en total.` 
-                            : "No se registran movimientos financieros en este inquilino."}
+                          {appliedFilters.tipoMovimiento === "Seleccione"
+                            ? "Elija una opción en 'Tipo de movimiento' (o seleccione 'Todos') y haga clic en Buscar para consultar las transacciones del período."
+                            : (allTransactions.length > 0 
+                                ? `Los filtros actuales no coinciden con ningún movimiento. Existen ${allTransactions.length} transacciones registradas en total.` 
+                                : "No se registran movimientos financieros en este inquilino.")}
                         </div>
-                        {allTransactions.length > 0 && (
+                        {appliedFilters.tipoMovimiento === "Seleccione" ? (
                           <button
-                            onClick={handleResetFilters}
-                            className="px-4 py-2 bg-[#009beb] hover:bg-[#0087cd] text-white text-xs font-semibold rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer"
+                            onClick={() => {
+                              setTipoMovimiento("Todos");
+                              setAppliedFilters(prev => ({ ...prev, tipoMovimiento: "Todos" }));
+                            }}
+                            className="px-4 py-2 bg-[#8bc34a] hover:bg-[#7cb342] text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer"
                           >
-                            <span>Ver todas las transacciones ({allTransactions.length})</span>
+                            <span>Ver todos los movimientos del período ({movementTypeCounts["Todos"] || 0})</span>
                           </button>
+                        ) : (
+                          allTransactions.length > 0 && (
+                            <button
+                              onClick={handleResetFilters}
+                              className="px-4 py-2 bg-[#009beb] hover:bg-[#0087cd] text-white text-xs font-semibold rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer"
+                            >
+                              <span>Restablecer filtros</span>
+                            </button>
+                          )
                         )}
                       </div>
                     </td>
