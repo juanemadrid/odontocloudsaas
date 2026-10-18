@@ -549,7 +549,7 @@ export default function ReporteFinanciero() {
           ...item,
           numeroDocumento: cleanConsecutivo,
           nroConsecutivo: cleanConsecutivo,
-          docReferencia: item.docReferencia || `FCEV${cleanConsecutivo + 50}`
+          docReferencia: item.docReferencia || ""
         });
       });
 
@@ -720,8 +720,8 @@ export default function ReporteFinanciero() {
           concepto: pp.concepto || pp.descripcion || `Pago a Proveedor: ${pp.proveedor || pp.beneficiario || 'Tercero'}`,
           valor: montoNum,
           consecutivo: "Principal",
-          docReferencia: pp.referencia || pp.factura_asociada || String(nroDoc),
-          documentosAsociados: pp.factura_asociada || "—",
+          docReferencia: (pp.referencia && pp.referencia !== String(nroDoc)) ? pp.referencia : (pp.factura_asociada || ""),
+          documentosAsociados: pp.factura_asociada || "",
           estado: isAnulado ? "Anulado" : "Activo",
           tercero: pp.proveedor || pp.beneficiario || pp.tercero || "Proveedor / Tercero",
           documentoTercero: pp.nit || pp.documento || "",
@@ -796,8 +796,8 @@ export default function ReporteFinanciero() {
           concepto: m.concepto || m.descripcion || "Egreso de caja menor",
           valor: montoNum,
           consecutivo: "Principal",
-          docReferencia: m.referencia || String(nroDoc),
-          documentosAsociados: m.factura_asociada || "—",
+          docReferencia: (m.referencia && m.referencia !== String(nroDoc)) ? m.referencia : (m.factura_asociada || ""),
+          documentosAsociados: m.factura_asociada || "",
           estado: isAnulado ? "Anulado" : "Activo",
           tercero: m.beneficiario || m.proveedor || "Caja Menor / Varios",
           documentoTercero: m.nit || m.documento || "",
@@ -1117,7 +1117,7 @@ export default function ReporteFinanciero() {
           concepto: conceptoFinal,
           valor: totalNum,
           consecutivo: "Principal",
-          docReferencia: refClean,
+          docReferencia: linkedReceiptText || "",
           documentosAsociados: docAsocFinal,
           associatedDocs: associatedDocs,
           rawFactura: f,
@@ -1175,10 +1175,9 @@ export default function ReporteFinanciero() {
 
         const isAnulado = (fc.estado || "").toLowerCase() === "anulado" || fc.anulado;
         const conceptoDesc = fc.concepto || fc.descripcion || (Array.isArray(fc.items) && (fc.items[0]?.concepto || fc.items[0]?.descripcion)) || "Compra de insumos / Materiales";
-        const cudsOrRef = fc.cuds || fc.cufe || fc.referencia || nroDoc;
 
         // Documentos asociados (egreso vinculado)
-        const docAsoc = fc.egreso_asociado || fc.pago_asociado || (Array.isArray(fc.egresos_asociados) && fc.egresos_asociados.length > 0 ? fc.egresos_asociados.join(", ") : "—");
+        const docAsoc = fc.egreso_asociado || fc.pago_asociado || (Array.isArray(fc.egresos_asociados) && fc.egresos_asociados.length > 0 ? fc.egresos_asociados.join(", ") : "");
 
         allRows.push({
           id: `fc_${rawId || nroDoc}`,
@@ -1190,8 +1189,8 @@ export default function ReporteFinanciero() {
           concepto: conceptoDesc,
           valor: totalNum,
           consecutivo: "Principal",
-          docReferencia: cudsOrRef,
-          documentosAsociados: docAsoc || "—",
+          docReferencia: docAsoc || "",
+          documentosAsociados: docAsoc || "",
           estado: isAnulado ? "Anulado" : (fc.dian_status || fc.estado || "Activo"),
           tercero: fc.proveedor || fc.tercero || fc.nombreProveedor || "Proveedor",
           documentoTercero: fc.documentoTercero || fc.nit || fc.cedula || fc.identificacion || "",
@@ -1277,6 +1276,280 @@ export default function ReporteFinanciero() {
           cuentaContable: "410505 - Ingresos por Servicios",
           oficina: nd.oficina || ""
         });
+      });
+
+      // 10. RECONCILIACIÓN Y VINCULACIÓN CRUZADA BIDIRECCIONAL 1:1
+      const normalizeCleanStr = (val) => {
+        if (!val) return "";
+        return String(val)
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^a-z0-9]/g, "");
+      };
+
+      const isCudsOrCufeHash = (str) => {
+        if (!str) return false;
+        const clean = String(str).trim();
+        return clean.length >= 24 && /^[0-9a-f]{20,}/i.test(clean);
+      };
+
+      const egresoRows = allRows.filter(r => r.tipoDocumento === "Egreso-");
+      const compraRows = allRows.filter(r => r.tipoDocumento === "Factura de compra");
+      const ventaRows = allRows.filter(r => r.tipoDocumento === "Factura de venta+");
+      const reciboRows = allRows.filter(r => (r.tipoDocumento || "").includes("Recibo") || (r.tipoDocumento || "").includes("Saldo a favor") || (r.tipoDocumento || "").includes("Anticipo"));
+
+      // 10.1. Cruce Egresos <-> Facturas de Compra / Documentos Soporte
+      const egresoToCompras = new Map();
+      const compraToEgresos = new Map();
+
+      const linkEgresoCompra = (egr, fc) => {
+        if (!egr || !fc) return;
+        if (!egresoToCompras.has(egr.id)) egresoToCompras.set(egr.id, new Set());
+        egresoToCompras.get(egr.id).add(fc);
+
+        if (!compraToEgresos.has(fc.id)) compraToEgresos.set(fc.id, new Set());
+        compraToEgresos.get(fc.id).add(egr);
+      };
+
+      // Paso A: Vínculos explícitos por propiedades directas o mención en observaciones
+      egresoRows.forEach(egr => {
+        const rawEgr = egr.rawEgreso || {};
+        const fcAsoc = rawEgr.factura_asociada || rawEgr.facturaId || rawEgr.factura_id || "";
+        const fcSels = Array.isArray(rawEgr.facturasSeleccionadas) ? rawEgr.facturasSeleccionadas : [];
+        const rawItems = Array.isArray(rawEgr.items) ? rawEgr.items : [];
+        const obsStr = `${rawEgr.observaciones || ""} ${rawEgr.notas || ""} ${rawEgr.descripcion || ""} ${egr.concepto || ""}`;
+
+        compraRows.forEach(fc => {
+          const rawFc = fc.rawFacturaCompra || {};
+          const fcNum = String(fc.numeroDocumento || "").trim();
+          const fcNumClean = normalizeCleanStr(fcNum);
+          const fcId = String(fc.rawId || rawFc.id || "").trim();
+
+          let matched = false;
+
+          if (fcAsoc && (String(fcAsoc).trim() === fcNum || String(fcAsoc).trim() === fcId)) {
+            matched = true;
+          } else if (fcSels.some(s => String(s?.id || s?.numero || s?.nroFactura || s) === fcId || String(s?.numero || s?.nroFactura || s) === fcNum)) {
+            matched = true;
+          } else if (rawItems.some(i => i.isFactura && (String(i.facturaId) === fcId || String(i.numeroFactura || i.concepto) === fcNum))) {
+            matched = true;
+          } else if (rawFc.egreso_asociado && String(rawFc.egreso_asociado).trim() === String(egr.numeroDocumento).trim()) {
+            matched = true;
+          } else if (rawFc.pago_asociado && String(rawFc.pago_asociado).trim() === String(egr.numeroDocumento).trim()) {
+            matched = true;
+          } else if (Array.isArray(rawFc.egresos_asociados) && rawFc.egresos_asociados.map(String).includes(String(egr.numeroDocumento).trim())) {
+            matched = true;
+          } else if (fcNumClean && fcNumClean.length >= 4 && normalizeCleanStr(obsStr).includes(fcNumClean)) {
+            matched = true;
+          }
+
+          if (matched) {
+            linkEgresoCompra(egr, fc);
+          }
+        });
+      });
+
+      // Paso B: Reconciliación contable por Proveedor / Tercero y Monto
+      egresoRows.forEach(egr => {
+        if (egresoToCompras.has(egr.id) && egresoToCompras.get(egr.id).size > 0) return;
+
+        const egrTercero = normalizeCleanStr(egr.tercero);
+        const egrDocTercero = String(egr.documentoTercero || "").replace(/\D/g, "");
+        const egrMonto = Math.round(Number(egr.valor || egr.total || 0));
+        if (egrMonto <= 0) return;
+
+        const candidatas = compraRows.filter(fc => {
+          if (compraToEgresos.has(fc.id) && compraToEgresos.get(fc.id).size > 0) return false;
+          const fcTercero = normalizeCleanStr(fc.tercero);
+          const fcDocTercero = String(fc.documentoTercero || "").replace(/\D/g, "");
+
+          const matchDoc = egrDocTercero && fcDocTercero && (egrDocTercero === fcDocTercero);
+          const matchNom = egrTercero && fcTercero && (egrTercero.includes(fcTercero) || fcTercero.includes(egrTercero));
+          return matchDoc || matchNom;
+        });
+
+        // 1 a 1 por monto exacto
+        const exactMatch = candidatas.find(fc => Math.abs(Math.round(Number(fc.valor || fc.total || 0)) - egrMonto) <= 1);
+        if (exactMatch) {
+          linkEgresoCompra(egr, exactMatch);
+          return;
+        }
+
+        // 1 a N por suma total de facturas
+        if (candidatas.length >= 2) {
+          const sumCandidatas = candidatas.reduce((sum, c) => sum + Math.round(Number(c.valor || c.total || 0)), 0);
+          if (Math.abs(sumCandidatas - egrMonto) <= 1) {
+            candidatas.forEach(fc => linkEgresoCompra(egr, fc));
+            return;
+          }
+        }
+      });
+
+      // Paso C: Asignar docReferencia, documentosAsociados y associatedDocs a Egresos y Compras
+      egresoRows.forEach(egr => {
+        const linkedFcs = egresoToCompras.get(egr.id);
+        if (linkedFcs && linkedFcs.size > 0) {
+          const list = Array.from(linkedFcs);
+          const nums = list.map(f => f.numeroDocumento).filter(Boolean).join(", ");
+          egr.docReferencia = nums;
+          egr.documentosAsociados = nums;
+          egr.associatedDocs = list.map(f => ({
+            id: f.id,
+            numeroDocumento: f.numeroDocumento,
+            tipoDocumento: "Factura de compra",
+            valor: Number(f.valor || f.total || 0),
+            fecha: f.fechaSeleccionada || f.fechaCreacion,
+            concepto: f.concepto,
+            tercero: f.tercero,
+            documentoTercero: f.documentoTercero,
+            rawFacturaCompra: f.rawFacturaCompra || f
+          }));
+        } else {
+          egr.docReferencia = "—";
+          egr.documentosAsociados = "—";
+          egr.associatedDocs = [];
+        }
+      });
+
+      compraRows.forEach(fc => {
+        const linkedEgrs = compraToEgresos.get(fc.id);
+        if (linkedEgrs && linkedEgrs.size > 0) {
+          const list = Array.from(linkedEgrs);
+          const nums = list.map(e => e.numeroDocumento).filter(Boolean).join(", ");
+          fc.docReferencia = nums;
+          fc.documentosAsociados = nums;
+          fc.associatedDocs = list.map(e => ({
+            id: e.id,
+            numeroDocumento: e.numeroDocumento,
+            tipoDocumento: "Egreso-",
+            valor: Number(e.valor || e.total || 0),
+            fecha: e.fechaSeleccionada || e.fechaCreacion,
+            concepto: e.concepto,
+            tercero: e.tercero,
+            documentoTercero: e.documentoTercero,
+            rawEgreso: e.rawEgreso || e
+          }));
+        } else {
+          fc.docReferencia = "—";
+          fc.documentosAsociados = "—";
+          fc.associatedDocs = [];
+        }
+      });
+
+      // 10.2. Cruce Facturas de Venta <-> Recibos de Caja
+      const ventaToRecibos = new Map();
+      const reciboToVentas = new Map();
+
+      const linkVentaRecibo = (fac, rec) => {
+        if (!fac || !rec) return;
+        if (!ventaToRecibos.has(fac.id)) ventaToRecibos.set(fac.id, new Set());
+        ventaToRecibos.get(fac.id).add(rec);
+
+        if (!reciboToVentas.has(rec.id)) reciboToVentas.set(rec.id, new Set());
+        reciboToVentas.get(rec.id).add(fac);
+      };
+
+      ventaRows.forEach(fac => {
+        const facNum = String(fac.numeroDocumento || "").trim().toUpperCase();
+        const facId = String(fac.rawId || fac.id || "").trim();
+
+        reciboRows.forEach(rec => {
+          const recRef = String(rec.docReferencia || "").trim().toUpperCase();
+          const recAsoc = String(rec.documentosAsociados || "").trim().toUpperCase();
+
+          let matched = false;
+          if (recRef && (recRef === facNum || recRef.replace(/\D/g, "") === facNum.replace(/\D/g, ""))) {
+            matched = true;
+          } else if (recAsoc && recAsoc.includes(facNum)) {
+            matched = true;
+          }
+
+          if (matched) {
+            linkVentaRecibo(fac, rec);
+          }
+        });
+
+        if (Array.isArray(fac.associatedDocs) && fac.associatedDocs.length > 0) {
+          fac.associatedDocs.forEach(ad => {
+            const cleanRecNum = String(ad.numeroDocumento || "").replace(/^REC-?/i, "").trim();
+            const matchingRec = reciboRows.find(r => String(r.numeroDocumento || "").replace(/^REC-?/i, "").trim() === cleanRecNum);
+            if (matchingRec) {
+              linkVentaRecibo(fac, matchingRec);
+            }
+          });
+        }
+      });
+
+      ventaRows.forEach(fac => {
+        const linkedRecs = ventaToRecibos.get(fac.id);
+        if (linkedRecs && linkedRecs.size > 0) {
+          const list = Array.from(linkedRecs);
+          const nums = list.map(r => {
+            const n = String(r.numeroDocumento || "").trim();
+            return n.startsWith("REC-") ? n : `REC-${n}`;
+          }).join(", ");
+          fac.docReferencia = nums;
+          fac.documentosAsociados = `Recibo: ${nums}`;
+          fac.associatedDocs = list.map(r => ({
+            id: r.id,
+            numeroDocumento: r.numeroDocumento,
+            tipoDocumento: "Recibo de caja",
+            valor: Number(r.valor || r.total || 0),
+            fecha: r.fechaSeleccionada || r.fechaCreacion,
+            concepto: r.concepto,
+            pacienteObj: r.pacienteObj,
+            reciboObj: r.reciboObj || r
+          }));
+        } else {
+          fac.docReferencia = "—";
+          fac.documentosAsociados = "—";
+          fac.associatedDocs = [];
+        }
+      });
+
+      reciboRows.forEach(rec => {
+        const linkedFacs = reciboToVentas.get(rec.id);
+        if (linkedFacs && linkedFacs.size > 0) {
+          const list = Array.from(linkedFacs);
+          const nums = list.map(f => f.numeroDocumento).join(", ");
+          rec.docReferencia = nums;
+          rec.documentosAsociados = nums;
+          rec.associatedDocs = list.map(f => ({
+            id: f.id,
+            numeroDocumento: f.numeroDocumento,
+            tipoDocumento: "Factura de venta",
+            valor: Number(f.valor || f.total || 0),
+            fecha: f.fechaSeleccionada || f.fechaCreacion,
+            concepto: f.concepto,
+            pacienteObj: f.pacienteObj,
+            rawFactura: f.rawFactura || f
+          }));
+        } else {
+          if (rec.planId) {
+            rec.documentosAsociados = `PLAN-${String(rec.planId).slice(0, 6).toUpperCase()}`;
+          } else {
+            rec.documentosAsociados = "—";
+          }
+          if (rec.docReferencia === String(rec.numeroDocumento) || isCudsOrCufeHash(rec.docReferencia) || rec.docReferencia.startsWith("FCEVNaN") || !rec.docReferencia.trim()) {
+            rec.docReferencia = "—";
+          }
+        }
+      });
+
+      // 10.3. Limpieza universal contra auto-referencias y hashes
+      allRows.forEach(r => {
+        const nDoc = String(r.numeroDocumento || "").trim().toLowerCase();
+        const dRef = String(r.docReferencia || "").trim().toLowerCase();
+        if (dRef === nDoc || isCudsOrCufeHash(r.docReferencia)) {
+          r.docReferencia = "—";
+        }
+        if (!r.docReferencia || r.docReferencia.trim() === "") {
+          r.docReferencia = "—";
+        }
+        if (!r.documentosAsociados || r.documentosAsociados.trim() === "") {
+          r.documentosAsociados = "—";
+        }
       });
 
       allRows.sort((a, b) => new Date(b.fechaCreacion || 0) - new Date(a.fechaCreacion || 0));
@@ -1928,35 +2201,35 @@ export default function ReporteFinanciero() {
     if (Array.isArray(doc.associatedDocs) && doc.associatedDocs.length > 0) {
       return doc.associatedDocs;
     }
-    // Si documentosAsociados contiene texto (ej: "Recibo: REC-2085" o "REC-2085")
-    if (typeof doc.documentosAsociados === "string" && doc.documentosAsociados !== "—") {
-      const matches = doc.documentosAsociados.match(/(?:REC-?|RC-?|Recibo:?\s*(?:REC-?)?)(\d+)/gi);
-      if (matches) {
-        return matches.map((m) => {
-          const num = m.replace(/[^\d]/g, "");
-          return {
-            id: `rec_${num}`,
-            numeroDocumento: num,
-            tipoDocumento: "Recibo de caja",
-            valor: Number(doc.valor || 0),
-            fecha: doc.fechaSeleccionada || doc.fechaCreacion,
-            pacienteObj: doc.pacienteObj,
-            concepto: doc.concepto
-          };
-        });
-      }
-    }
-    // Si es recibo y tiene factura de referencia
-    if (doc.tipoDocumento?.toLowerCase().includes("recibo") && doc.docReferencia) {
-      return [{
-        id: `fac_${doc.docReferencia}`,
-        numeroDocumento: doc.docReferencia,
-        tipoDocumento: "Factura de venta",
+    // Si docReferencia o documentosAsociados tiene referencia
+    const refStr = (doc.docReferencia && doc.docReferencia !== "—")
+      ? doc.docReferencia
+      : (doc.documentosAsociados && doc.documentosAsociados !== "—")
+      ? doc.documentosAsociados
+      : "";
+
+    if (refStr) {
+      const tipo = (doc.tipoDocumento || "").toLowerCase();
+      let targetTipo = "Documento asociado";
+      if (tipo.includes("egreso")) targetTipo = "Factura de compra";
+      else if (tipo.includes("compra")) targetTipo = "Egreso-";
+      else if (tipo.includes("recibo")) targetTipo = "Factura de venta";
+      else if (tipo.includes("venta")) targetTipo = "Recibo de caja";
+
+      const cleanTokens = refStr.replace(/^Recibo:?\s*/i, "").split(",").map(t => t.trim()).filter(Boolean);
+      return cleanTokens.map((t, idx) => ({
+        id: `asoc_${t}_${idx}`,
+        numeroDocumento: t,
+        tipoDocumento: targetTipo,
         valor: Number(doc.valor || 0),
         fecha: doc.fechaSeleccionada || doc.fechaCreacion,
         pacienteObj: doc.pacienteObj,
-        concepto: doc.concepto
-      }];
+        concepto: doc.concepto,
+        rawFacturaCompra: doc.rawFacturaCompra,
+        rawEgreso: doc.rawEgreso,
+        rawFactura: doc.rawFactura,
+        reciboObj: doc.reciboObj
+      }));
     }
     return [];
   };
@@ -2168,6 +2441,143 @@ export default function ReporteFinanciero() {
     }
   };
 
+  const handlePrintFacturaCompraDoc = (fcItem, fallbackDoc) => {
+    try {
+      const rawFc = fcItem.rawFacturaCompra || fallbackDoc?.rawFacturaCompra || {};
+      const valNum = Number(fcItem.valor !== undefined ? fcItem.valor : (rawFc.total || fallbackDoc?.valor || 0));
+      const nroDoc = fcItem.numeroDocumento || rawFc.numeroDocumento || fallbackDoc?.numeroDocumento || "FC-001";
+      const isDocSoporte = Boolean(rawFc.docSoporteDian || String(nroDoc).startsWith("DCS"));
+      const docTitulo = isDocSoporte ? "DOCUMENTO SOPORTE EN ADQUISICIONES" : "FACTURA DE COMPRA";
+      const cNom = clinicInfo.nombre || "ATM CENTRO DEL DOLOR OROFACIAL";
+      const cNit = clinicInfo.nit || "64576359-3";
+      const provNom = rawFc.proveedor || rawFc.tercero || fcItem.tercero || fallbackDoc?.tercero || "Proveedor";
+      const provDoc = rawFc.nit || rawFc.documentoTercero || fcItem.documentoTercero || fallbackDoc?.documentoTercero || "—";
+      const conceptoStr = fcItem.concepto || rawFc.concepto || fallbackDoc?.concepto || "Compra de insumos / Materiales";
+      const fechaStr = formatDateOnly(fcItem.fecha || rawFc.fecha || fallbackDoc?.fechaSeleccionada || new Date());
+
+      const fmtMoney = (n) => `$ ${Number(n || 0).toLocaleString("es-CO")}`;
+
+      const items = Array.isArray(rawFc.items) && rawFc.items.length > 0
+        ? rawFc.items
+        : [{ concepto: conceptoStr, cantidad: 1, precioUnitario: valNum, total: valNum }];
+
+      const itemsHtml = items.map((it, idx) => `
+        <tr>
+          <td style="padding: 8px 12px; border-bottom: 1px solid #e2e8f0; text-align: center; color: #64748b;">${idx + 1}</td>
+          <td style="padding: 8px 12px; border-bottom: 1px solid #e2e8f0; font-weight: 600; color: #1e293b;">${it.concepto || it.descripcion || conceptoStr}</td>
+          <td style="padding: 8px 12px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: 600;">${it.cantidad || 1}</td>
+          <td style="padding: 8px 12px; border-bottom: 1px solid #e2e8f0; text-align: right;">${fmtMoney(it.precioUnitario || it.total || valNum)}</td>
+          <td style="padding: 8px 12px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: 700; color: #0f172a;">${fmtMoney(it.total || valNum)}</td>
+        </tr>
+      `).join("");
+
+      const printHtml = `
+        <!DOCTYPE html>
+        <html lang="es">
+        <head>
+          <meta charset="utf-8" />
+          <title>${docTitulo} #${nroDoc}</title>
+          <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+            @page { size: letter portrait; margin: 15mm; }
+            * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            body { font-family: 'Inter', -apple-system, sans-serif; font-size: 12px; color: #334155; margin: 0; padding: 10px; background: #fff; }
+            .header { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 15px; border-bottom: 2px solid #009beb; }
+            .badge { display: inline-block; background: #f0f9ff; color: #009beb; font-weight: 700; font-size: 11px; padding: 4px 10px; border-radius: 4px; border: 1px solid #bae6fd; }
+            .card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-top: 15px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 11.5px; }
+            th { background: #f1f5f9; padding: 8px 12px; text-align: left; font-weight: 700; color: #475569; border-bottom: 2px solid #cbd5e1; }
+            .total-row { display: flex; justify-content: flex-end; margin-top: 15px; font-size: 14px; font-weight: 800; color: #0f172a; }
+            .footer { margin-top: 30px; padding-top: 15px; border-top: 1px dashed #cbd5e1; text-align: center; color: #94a3b8; font-size: 10px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div>
+              <h2 style="margin: 0 0 4px 0; color: #0f172a; font-size: 16px; font-weight: 800;">${cNom}</h2>
+              <div style="font-size: 11px; color: #64748b;">NIT: ${cNit}</div>
+            </div>
+            <div style="text-align: right;">
+              <div class="badge">${docTitulo}</div>
+              <div style="margin-top: 5px; font-size: 16px; font-weight: 800; color: #0f172a; font-family: monospace;"># ${nroDoc}</div>
+              <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Fecha: ${fechaStr}</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div style="font-weight: 700; color: #0f172a; margin-bottom: 4px; font-size: 11px; text-transform: uppercase;">Información del Proveedor / Beneficiario</div>
+            <div style="display: flex; justify-content: space-between; font-size: 11.5px;">
+              <div><strong>Tercero:</strong> ${provNom}</div>
+              <div><strong>NIT / Doc:</strong> ${provDoc}</div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 40px; text-align: center;">#</th>
+                <th>Concepto / Descripción</th>
+                <th style="width: 60px; text-align: center;">Cant.</th>
+                <th style="width: 110px; text-align: right;">Precio Unit.</th>
+                <th style="width: 120px; text-align: right;">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsHtml}
+            </tbody>
+          </table>
+
+          <div class="total-row">
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 16px; text-align: right;">
+              <span style="font-size: 12px; font-weight: 600; color: #64748b; margin-right: 12px;">TOTAL NETO:</span>
+              <span>${fmtMoney(valNum)}</span>
+            </div>
+          </div>
+
+          <div class="footer">
+            Comprobante oficial generado desde OdontoCloud — Sistema de Gestión Clínica y Financiera
+          </div>
+        </body>
+        </html>
+      `;
+
+      let iframe = document.getElementById("oc-print-factura-iframe");
+      if (!iframe) {
+        iframe = document.createElement("iframe");
+        iframe.id = "oc-print-factura-iframe";
+        iframe.style.position = "fixed";
+        iframe.style.right = "0";
+        iframe.style.bottom = "0";
+        iframe.style.width = "0px";
+        iframe.style.height = "0px";
+        iframe.style.border = "none";
+        iframe.style.visibility = "hidden";
+        document.body.appendChild(iframe);
+      }
+      const doc = iframe.contentWindow.document;
+      doc.open();
+      doc.write(printHtml);
+      doc.close();
+      setTimeout(() => {
+        try {
+          iframe.contentWindow.focus();
+          iframe.contentWindow.print();
+        } catch {
+          const w = window.open("", "_blank");
+          if (w) {
+            w.document.open();
+            w.document.write(printHtml);
+            w.document.close();
+            w.focus();
+            setTimeout(() => w.print(), 300);
+          }
+        }
+      }, 250);
+    } catch (e) {
+      console.error("Error imprimiendo factura de compra:", e);
+    }
+  };
+
   const handlePrintAssociatedDoc = async (docItem) => {
     if (!docItem) return;
     const tipo = (docItem.tipoDocumento || "").toLowerCase();
@@ -2175,6 +2585,8 @@ export default function ReporteFinanciero() {
       await handlePrintReceiptDoc(docItem, selectedDoc);
     } else if (tipo.includes("egreso")) {
       await handlePrintEgresoDoc(docItem, selectedDoc);
+    } else if (tipo.includes("compra")) {
+      handlePrintFacturaCompraDoc(docItem, selectedDoc);
     } else {
       handlePrintInvoiceDoc(docItem, selectedDoc);
     }
@@ -2189,6 +2601,8 @@ export default function ReporteFinanciero() {
       await handlePrintReceiptDoc(r, r);
     } else if (tipo.includes("egreso")) {
       await handlePrintEgresoDoc(r, r);
+    } else if (tipo.includes("compra")) {
+      handlePrintFacturaCompraDoc(r, r);
     } else {
       setSelectedDoc(r);
     }
@@ -2663,14 +3077,18 @@ export default function ReporteFinanciero() {
                       )}
                       {visibleColumns.docReferencia && (
                         <td className="px-3.5 py-2 border-r border-slate-100 font-mono text-slate-600 text-center">
-                          <button
-                            type="button"
-                            onClick={() => setSelectedDoc(r)}
-                            className="inline-flex items-center justify-center p-1 rounded-md bg-sky-50 hover:bg-sky-100 text-[#009beb] transition-colors cursor-pointer"
-                            title="Ver documento de referencia"
-                          >
-                            <FiEye size={13} />
-                          </button>
+                          {r.docReferencia && r.docReferencia !== "—" ? (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedDoc(r)}
+                              className="inline-flex items-center justify-center p-1 rounded-md bg-sky-50 hover:bg-sky-100 text-[#009beb] transition-colors cursor-pointer"
+                              title={`Ver documento asociado: ${r.docReferencia}`}
+                            >
+                              <FiEye size={13} />
+                            </button>
+                          ) : (
+                            <span className="text-slate-400 font-mono">—</span>
+                          )}
                         </td>
                       )}
                       {visibleColumns.documentosAsociados && (
