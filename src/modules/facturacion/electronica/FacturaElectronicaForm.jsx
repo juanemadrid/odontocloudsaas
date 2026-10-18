@@ -901,13 +901,15 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
           estado: "Borrador",
           fecha_emision: new Date(fecha).toISOString(),
           detalles: dbDetallesBorrador,
-          ...(initialFactura?.id ? { updated_at: new Date().toISOString() } : { created_at: new Date().toISOString() }),
+          ...(!initialFactura?.id ? { created_at: new Date().toISOString() } : {}),
         };
 
         if (initialFactura?.id) {
-          await supabase.from("facturas").update(dbFacturaBorrador).eq("id", initialFactura.id);
+          const { error: updErr } = await supabase.from("facturas").update(dbFacturaBorrador).eq("id", initialFactura.id);
+          if (updErr) console.warn("Error actualizando borrador en facturas:", updErr.message);
         } else {
-          await supabase.from("facturas").insert([dbFacturaBorrador]);
+          const { error: insErr } = await supabase.from("facturas").insert([dbFacturaBorrador]);
+          if (insErr) console.warn("Error insertando borrador en facturas:", insErr.message);
         }
 
         toast.success("Factura guardada en borrador exitosamente ✅");
@@ -1168,16 +1170,18 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
         estado: (result.success && result.cufe) ? "Emitido" : "Pendiente",
         fecha_emision: new Date(fecha).toISOString(),
         detalles: dbDetalles,
-        ...(initialFactura?.id ? { updated_at: new Date().toISOString() } : { created_at: new Date().toISOString() }),
+        ...(!initialFactura?.id ? { created_at: new Date().toISOString() } : {}),
       };
 
       let savedFactura = null;
       try {
         if (initialFactura?.id) {
-          const { data: invRow } = await supabase.from("facturas").update(dbFactura).eq("id", initialFactura.id).select().single();
+          const { data: invRow, error: updErr } = await supabase.from("facturas").update(dbFactura).eq("id", initialFactura.id).select().single();
+          if (updErr) console.warn("Error actualizando factura en facturas:", updErr.message);
           savedFactura = invRow;
         } else {
-          const { data: invRow } = await supabase.from("facturas").insert([dbFactura]).select().single();
+          const { data: invRow, error: insErr } = await supabase.from("facturas").insert([dbFactura]).select().single();
+          if (insErr) console.warn("Error insertando en facturas:", insErr.message);
           savedFactura = invRow;
         }
       } catch (errDb) {
