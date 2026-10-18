@@ -48,6 +48,64 @@ const cleanDocReferencia = (ref, defaultCode) => {
   return String(ref).trim() || defaultCode || "—";
 };
 
+// Helper para extraer los conceptos reales y específicos pagados en un recibo
+const extractPaymentConcept = (record, metadata) => {
+  // 1. Probar itemPayments en metadata o en record (procedimientos específicos pagados en la cita/plan)
+  const itemPayments = (Array.isArray(metadata?.itemPayments) && metadata.itemPayments.length > 0)
+    ? metadata.itemPayments
+    : (Array.isArray(record?.itemPayments) && record.itemPayments.length > 0)
+    ? record.itemPayments
+    : null;
+
+  if (itemPayments) {
+    const descs = itemPayments
+      .map(it => it.desc || it.concepto || it.nombre || it.procedimiento || it.servicio || it.descripcion)
+      .filter(Boolean);
+    if (descs.length > 0) return descs.join(", ");
+  }
+
+  // 2. Probar items o conceptos en record o metadata
+  const rawItems = (Array.isArray(record?.conceptos) && record.conceptos.length > 0)
+    ? record.conceptos
+    : (Array.isArray(record?.items) && record.items.length > 0)
+    ? record.items
+    : (Array.isArray(metadata?.conceptos) && metadata.conceptos.length > 0)
+    ? metadata.conceptos
+    : (Array.isArray(metadata?.items) && metadata.items.length > 0)
+    ? metadata.items
+    : null;
+
+  if (rawItems) {
+    const descs = rawItems
+      .map(it => it.concepto || it.desc || it.nombre || it.procedimiento || it.servicio || it.descripcion)
+      .filter(Boolean);
+    if (descs.length > 0) return descs.join(", ");
+  }
+
+  // 3. Revisar concepto / motivo directo si es específico (distinto a genérico)
+  const directConc = metadata?.concepto || record?.concepto || record?.motivo || record?.descripcion || "";
+  const lower = String(directConc).trim().toLowerCase();
+  const isGeneric = !directConc ||
+    lower === "abono a tratamiento" ||
+    lower === "abono tratamiento" ||
+    lower === "recibo de caja" ||
+    lower === "recibo caja" ||
+    lower === "pago" ||
+    lower === "abono";
+
+  if (!isGeneric) {
+    return directConc;
+  }
+
+  // 4. Si el concepto es genérico, intentar ver si hay planTitle específico
+  const planTitle = metadata?.planTitle || record?.planTitle || record?.plan_title || "";
+  if (planTitle && planTitle.trim()) {
+    return planTitle.trim();
+  }
+
+  return directConc || "Abono a tratamiento";
+};
+
 const TIPO_MOVIMIENTO_OPTIONS = [
   "Seleccione",
   "Todos",
@@ -393,6 +451,17 @@ export default function ReporteFinanciero() {
       // 4. Mapear Recibos de Caja (recibos_caja)
       const rawRecibosList = recibosRes?.data || [];
       const mappedRecibosCaja = (rawRecibosList || []).map(d => {
+        let dMeta = {};
+        if (d.notas && typeof d.notas === "string" && d.notas.trim().startsWith("{")) {
+          try { dMeta = JSON.parse(d.notas); } catch (e) {}
+        } else if (d.metadata && typeof d.metadata === "string" && d.metadata.trim().startsWith("{")) {
+          try { dMeta = JSON.parse(d.metadata); } catch (e) {}
+        } else if (d.metadata && typeof d.metadata === "object") {
+          dMeta = d.metadata;
+        } else if (d._meta && typeof d._meta === "object") {
+          dMeta = d._meta;
+        }
+
         const pId = d.paciente_id || d.pacienteId || d.patient_id || d.paciente;
         const pac = pacDict[pId] || {};
         const pacNom = d.pacienteNombre || pac.nombreCompleto || "Paciente";
@@ -400,7 +469,7 @@ export default function ReporteFinanciero() {
         const montoNum = Number(d.total || d.monto || d.valor || 0);
         const isAnulado = (d.estado || "").toLowerCase() === "anulado";
         const rawObs = d.observaciones || d.notas || "";
-        const conc = d.concepto || d.motivo || (Array.isArray(d.conceptos) && d.conceptos[0]?.concepto) || d.descripcion || "Recibo de caja";
+        const conc = extractPaymentConcept(d, dMeta);
         const medio = d.medioPago || d.condicionPago || d.medio || "Efectivo";
 
         const isSF = checkIsSaldoFavor(conc, rawObs, medio, d.tipoDoc);
@@ -463,7 +532,7 @@ export default function ReporteFinanciero() {
         const medioRaw = pData.metodo || pData.medio || metadata.metodo || metadata.medio || "Efectivo";
         const storedCons = metadata.nroConsecutivo || pData.nroConsecutivo || pData.nro_consecutivo || pData.nroRecibo || pData.numeroRecibo || null;
         const rawObs = pData.observaciones || pData.notas || "";
-        const conc = metadata.concepto || pData.concepto || (Array.isArray(pData.items) && pData.items[0]?.concepto) || pData.descripcion || "Abono a tratamiento";
+        const conc = extractPaymentConcept(pData, metadata);
 
         const isSF = checkIsSaldoFavor(conc, rawObs, medioRaw, metadata.tipoDoc);
         const isAnt = checkIsAnticipo(conc, rawObs, medioRaw, metadata.tipoDoc);
@@ -1526,13 +1595,12 @@ export default function ReporteFinanciero() {
             rawFactura: f.rawFactura || f
           }));
         } else {
+          rec.docReferencia = "—";
+          rec.associatedDocs = [];
           if (rec.planId) {
             rec.documentosAsociados = `PLAN-${String(rec.planId).slice(0, 6).toUpperCase()}`;
           } else {
             rec.documentosAsociados = "—";
-          }
-          if (rec.docReferencia === String(rec.numeroDocumento) || isCudsOrCufeHash(rec.docReferencia) || rec.docReferencia.startsWith("FCEVNaN") || !rec.docReferencia.trim()) {
-            rec.docReferencia = "—";
           }
         }
       });
@@ -1957,7 +2025,7 @@ export default function ReporteFinanciero() {
           case "concepto": row.push(r.concepto || ""); break;
           case "valor": row.push(vVal); break;
           case "consecutivo": row.push(r.consecutivo || "Principal"); break;
-          case "docReferencia": row.push(r.docReferencia || ""); break;
+          case "docReferencia": row.push((Array.isArray(r.associatedDocs) && r.associatedDocs.length > 0) ? (r.docReferencia || r.associatedDocs.map(d => d.numeroDocumento).join(', ')) : "—"); break;
           case "documentosAsociados": row.push(r.documentosAsociados || "—"); break;
           case "estado": row.push(r.estado || "Activo"); break;
           case "tercero": row.push(r.tercero || ""); break;
@@ -2200,36 +2268,6 @@ export default function ReporteFinanciero() {
     if (!doc) return [];
     if (Array.isArray(doc.associatedDocs) && doc.associatedDocs.length > 0) {
       return doc.associatedDocs;
-    }
-    // Si docReferencia o documentosAsociados tiene referencia
-    const refStr = (doc.docReferencia && doc.docReferencia !== "—")
-      ? doc.docReferencia
-      : (doc.documentosAsociados && doc.documentosAsociados !== "—")
-      ? doc.documentosAsociados
-      : "";
-
-    if (refStr) {
-      const tipo = (doc.tipoDocumento || "").toLowerCase();
-      let targetTipo = "Documento asociado";
-      if (tipo.includes("egreso")) targetTipo = "Factura de compra";
-      else if (tipo.includes("compra")) targetTipo = "Egreso-";
-      else if (tipo.includes("recibo")) targetTipo = "Factura de venta";
-      else if (tipo.includes("venta")) targetTipo = "Recibo de caja";
-
-      const cleanTokens = refStr.replace(/^Recibo:?\s*/i, "").split(",").map(t => t.trim()).filter(Boolean);
-      return cleanTokens.map((t, idx) => ({
-        id: `asoc_${t}_${idx}`,
-        numeroDocumento: t,
-        tipoDocumento: targetTipo,
-        valor: Number(doc.valor || 0),
-        fecha: doc.fechaSeleccionada || doc.fechaCreacion,
-        pacienteObj: doc.pacienteObj,
-        concepto: doc.concepto,
-        rawFacturaCompra: doc.rawFacturaCompra,
-        rawEgreso: doc.rawEgreso,
-        rawFactura: doc.rawFactura,
-        reciboObj: doc.reciboObj
-      }));
     }
     return [];
   };
@@ -2956,12 +2994,12 @@ export default function ReporteFinanciero() {
                       )}
                       {visibleColumns.docReferencia && (
                         <td className="px-3.5 py-2 border-r border-slate-100 font-mono text-slate-600 text-center">
-                          {r.docReferencia && r.docReferencia !== "—" ? (
+                          {Array.isArray(r.associatedDocs) && r.associatedDocs.length > 0 ? (
                             <button
                               type="button"
                               onClick={() => setSelectedDoc(r)}
                               className="inline-flex items-center justify-center p-1 rounded-md bg-sky-50 hover:bg-sky-100 text-[#009beb] transition-colors cursor-pointer"
-                              title={`Ver documento asociado: ${r.docReferencia}`}
+                              title={`Ver documento asociado: ${r.docReferencia || r.associatedDocs.map(d => d.numeroDocumento).join(', ')}`}
                             >
                               <FiEye size={13} />
                             </button>
