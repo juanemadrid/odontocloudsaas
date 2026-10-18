@@ -1158,6 +1158,566 @@ export const printReciboCaja = async (data) => {
   }
 };
 
+export const generateDocumentoSoporteHtml = ({
+  factura = {},
+  tenant = {},
+  userProfile = {},
+  options = {}
+}) => {
+  const isDocSoporte = Boolean(
+    factura?.docSoporteDian ||
+    factura?.cuds ||
+    String(factura?.nroFactura || factura?.numeroDocumento || factura?.numero || '').startsWith('DCS')
+  );
+
+  const docTituloPrincipal = isDocSoporte
+    ? 'Documento soporte en<br/>adquisiciones'
+    : 'Factura de<br/>compra';
+  const docBadge = isDocSoporte
+    ? 'Documento soporte original'
+    : 'Soporte de compra original';
+  const docSub = isDocSoporte
+    ? 'Adquisición a no obligados<br/>a expedir factura'
+    : 'Registro oficial de adquisición';
+
+  const docNumero =
+    factura?.nroFactura ||
+    factura?.numeroDocumento ||
+    factura?.numero ||
+    factura?.consecutivo ||
+    'DCSE-0001';
+
+  // Proveedor / Tercero
+  const provNombre =
+    factura?.proveedor ||
+    factura?.tercero ||
+    factura?.nombreProveedor ||
+    factura?.beneficiario ||
+    'Proveedor / Tercero';
+
+  const provDoc =
+    factura?.nit ||
+    factura?.documentoTercero ||
+    factura?.cedula ||
+    factura?.identificacion ||
+    '—';
+
+  const provAddress = factura?.direccion || factura?.direccionProveedor || '—';
+  const provCity = factura?.ciudad || factura?.ciudadProveedor || 'Sincelejo';
+
+  // Fechas
+  const fechaExpFormatted = formatDateSlash(factura?.fecha || factura?.created_at || new Date());
+  const fechaVencFormatted = formatDateSlash(factura?.vencimiento || factura?.fechaVence || factura?.fecha || factura?.created_at || new Date());
+
+  // Elaborado por y medio de pago
+  const elaboradoPor =
+    factura?.usuarioCreador ||
+    factura?.creado_por ||
+    factura?.usuario_nombre ||
+    userProfile?.nombreCompleto ||
+    userProfile?.nombre ||
+    'Administración';
+
+  const paymentMethod =
+    getPaymentMethodLabel(factura?.formaPago || factura?.metodoPago || factura?.medioPago || factura?.medio || '10');
+
+  // CUDS / CUFE
+  const cuds =
+    factura?.cuds ||
+    factura?.cufe ||
+    factura?.factusCuds ||
+    factura?.trackId ||
+    '';
+
+  // QR Code
+  let qrData =
+    factura?.factusQr ||
+    factura?.qrCode ||
+    factura?.qr ||
+    (cuds ? `https://catalogo-vpfe.dian.gov.co/document/searchqr?documentkey=${cuds}` : null);
+  if (!qrData && cuds) {
+    qrData = `https://catalogo-vpfe.dian.gov.co/document/searchqr?documentkey=${cuds}`;
+  } else if (!qrData) {
+    qrData = `https://catalogo-vpfe.dian.gov.co/document/searchqr?documentkey=Simulated_DS_${docNumero}`;
+  }
+
+  const qrImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(qrData)}`;
+
+  // Tenant / Clinic details
+  const clinicName =
+    tenant?.nombreComercial ||
+    tenant?.razonSocial ||
+    tenant?.nombre ||
+    'ATM Centro del Dolor Orofacial';
+
+  const clinicNit = tenant?.nit ? `NIT ${tenant.nit}` : 'NIT 64576359-3';
+  const clinicAddress = tenant?.direccion ? tenant.direccion : 'Calle 16#17-68';
+  const clinicCity = tenant?.ciudad ? ` - ${tenant.ciudad}` : ' - Sincelejo';
+  const clinicPhone = tenant?.telefono || tenant?.celular || '3103583706';
+  const clinicEmail = tenant?.email || 'atmcentrodedolor@gmail.com';
+
+  const logoHtml = tenant?.logoUrl || tenant?.logo
+    ? `<img src="${tenant.logoUrl || tenant.logo}" style="max-height: 80px; max-width: 170px; object-fit: contain; display: block;" alt="Logo" />`
+    : `<div style="font-size: 18px; font-weight: bold; color: #333; line-height: 1.1; text-transform: uppercase;">${clinicName}</div>`;
+
+  // Items
+  const items = Array.isArray(factura?.items) && factura.items.length > 0
+    ? factura.items
+    : [{
+        concepto: factura?.concepto || factura?.descripcion || factura?.observaciones || 'Adquisición de bienes / servicios',
+        cantidad: 1,
+        precioUnitario: factura?.total || factura?.valor || 0,
+        total: factura?.total || factura?.valor || 0
+      }];
+
+  let calcSubtotal = 0;
+  const itemRowsHtml = items.map(it => {
+    const qty = parseFloat(it.cantidad || it.quantity || 1) || 1;
+    const price = parseFloat(it.precioUnitario || it.precio || it.valor || it.unit_price || 0) || 0;
+    const lineTotal = it.total !== undefined ? parseFloat(it.total) : (qty * price);
+    calcSubtotal += lineTotal;
+    const desc = it.concepto || it.descripcion || it.nombre || 'Adquisición de bienes / servicios';
+
+    return `
+      <tr>
+        <td style="padding: 5px 8px; border: 1px solid #111; font-size: 11px; vertical-align: middle;">${desc}</td>
+        <td style="padding: 5px 8px; border: 1px solid #111; font-size: 11px; text-align: right; vertical-align: middle; white-space: nowrap;">${formatCOP(price)}</td>
+        <td style="padding: 5px 8px; border: 1px solid #111; font-size: 11px; text-align: center; vertical-align: middle;">${qty}</td>
+        <td style="padding: 5px 8px; border: 1px solid #111; font-size: 11px; text-align: right; vertical-align: middle; white-space: nowrap;">${formatCOP(lineTotal)}</td>
+      </tr>
+    `;
+  }).join('');
+
+  const finalTotal = factura?.total !== undefined ? parseFloat(factura.total) : (factura?.valor !== undefined ? parseFloat(factura.valor) : calcSubtotal);
+  const finalSubtotal = factura?.subtotal !== undefined ? parseFloat(factura.subtotal) : calcSubtotal;
+  const observacionesText = factura?.observaciones || factura?.notas || '';
+
+  const resolutionText = isDocSoporte
+    ? 'Documento Soporte Electrónico en adquisiciones efectuadas a sujetos no obligados a expedir factura de venta o documento equivalente según normatividad DIAN vigente.'
+    : 'Documento equivalente y soporte oficial de adquisición y costos para efectos contables y tributarios.';
+
+  const providerText = options?.providerText || 'Proveedor Tecnológico: Factus S.A.S. Nit:901.403.490-1 / www.factus.com.co';
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>${isDocSoporte ? 'Documento Soporte' : 'Factura de Compra'} ${docNumero}</title>
+  <style>
+    @page {
+      size: letter;
+      margin: 12mm 15mm;
+    }
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 11.5px;
+      color: #000;
+      background: #fff;
+      padding: 12px 18px;
+      width: 100%;
+      max-width: 100%;
+      margin: 0 auto;
+      line-height: 1.3;
+    }
+    .header-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 12px;
+    }
+    .header-logo {
+      width: 25%;
+      vertical-align: middle;
+      text-align: left;
+    }
+    .header-company {
+      width: 45%;
+      text-align: center;
+      vertical-align: middle;
+      font-size: 11px;
+      line-height: 1.35;
+    }
+    .company-title {
+      font-size: 13px;
+      font-weight: bold;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+    .header-meta {
+      width: 30%;
+      text-align: right;
+      vertical-align: middle;
+    }
+    .meta-container {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .meta-text-block {
+      text-align: right;
+      font-size: 9.5px;
+      line-height: 1.25;
+    }
+    .meta-text-block .doc-type {
+      font-size: 10px;
+      font-weight: normal;
+    }
+    .meta-text-block .doc-number {
+      font-size: 13px;
+      font-weight: bold;
+      margin: 1px 0;
+    }
+    .meta-text-block .doc-sub {
+      font-size: 9px;
+      color: #111;
+    }
+    .qr-container {
+      width: 82px;
+      height: 82px;
+      border: 1px solid #222;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      background: #fff;
+    }
+    .qr-container img {
+      width: 78px;
+      height: 78px;
+      display: block;
+    }
+    
+    /* INFO GRID TABLE */
+    .info-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 12px;
+    }
+    .info-table td {
+      border: 1px solid #111;
+      padding: 4.5px 7px;
+      font-size: 10.5px;
+      vertical-align: middle;
+    }
+    .info-table td.lbl {
+      background: #ffffff;
+      font-weight: bold;
+      font-size: 9.5px;
+      text-transform: uppercase;
+      color: #000;
+    }
+    .info-table td.cufe-cell {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 8.5px;
+      word-break: break-all;
+      line-height: 1.15;
+      padding: 4px 6px;
+    }
+
+    /* ITEMS TABLE */
+    .items-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 12px;
+    }
+    .items-table th {
+      border: 1px solid #111;
+      background: #ffffff;
+      font-weight: bold;
+      font-size: 10.5px;
+      padding: 5px 8px;
+      text-transform: none;
+    }
+    .items-table td {
+      border: 1px solid #111;
+    }
+
+    /* SUMMARY / TOTALS SECTION */
+    .summary-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 24px;
+    }
+    .obs-cell {
+      width: 58%;
+      vertical-align: top;
+      padding-right: 12px;
+      font-size: 10.5px;
+    }
+    .obs-title {
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+    .obs-content {
+      min-height: 40px;
+      color: #222;
+    }
+    .totals-cell {
+      width: 42%;
+      vertical-align: top;
+    }
+    .totals-inner-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .totals-inner-table td {
+      padding: 3.5px 6px;
+      font-size: 11px;
+    }
+    .totals-inner-table .tot-label {
+      text-align: left;
+      font-weight: bold;
+    }
+    .totals-inner-table .tot-val {
+      text-align: right;
+      font-weight: bold;
+      white-space: nowrap;
+    }
+
+    /* SIGNATURES TABLE */
+    .signatures-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 25px;
+      margin-bottom: 15px;
+    }
+    .signatures-table td {
+      width: 50%;
+      text-align: center;
+      vertical-align: top;
+      padding: 0 35px;
+    }
+    .sig-line {
+      border-bottom: 1px solid #000;
+      margin-bottom: 6px;
+      height: 40px;
+    }
+    .sig-title {
+      font-size: 9.5px;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    /* RESOLUTION BLOCK */
+    .resolution-block {
+      text-align: center;
+      font-size: 8.5px;
+      line-height: 1.35;
+      color: #333;
+      margin-top: 15px;
+      margin-bottom: 15px;
+      padding: 0 20px;
+    }
+
+    /* FOOTER TABLE */
+    .footer-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 8px;
+      color: #555;
+      border-top: 1px solid #ccc;
+      padding-top: 4px;
+    }
+    .footer-table td.left {
+      text-align: left;
+    }
+    .footer-table td.right {
+      text-align: right;
+    }
+
+    @media print {
+      body {
+        padding: 0;
+        margin: 0;
+        width: 100% !important;
+        max-width: 100% !important;
+      }
+      .header-table,
+      .info-table,
+      .items-table,
+      .summary-table,
+      .signatures-table,
+      .footer-table {
+        width: 100% !important;
+      }
+      .no-print {
+        display: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <table class="header-table">
+    <tr>
+      <td class="header-logo">
+        ${logoHtml}
+      </td>
+      <td class="header-company">
+        <div class="company-title">${clinicName}</div>
+        ${clinicNit ? `<div>${clinicNit}</div>` : ''}
+        ${clinicAddress || clinicCity ? `<div>${clinicAddress}${clinicCity}</div>` : ''}
+        ${clinicPhone ? `<div>${clinicPhone}</div>` : ''}
+        ${clinicEmail ? `<div>${clinicEmail}</div>` : ''}
+      </td>
+      <td class="header-meta">
+        <div class="meta-container">
+          <div class="meta-text-block">
+            <div class="doc-type">${docTituloPrincipal}</div>
+            <div class="doc-number">No. ${docNumero}</div>
+            <div class="doc-sub">${docBadge}</div>
+            <div class="doc-sub">${docSub}</div>
+          </div>
+          <div class="qr-container">
+            <img id="qrImg" src="${qrImgUrl}" alt="QR DIAN" onload="markQrLoaded();" onerror="markQrLoaded();" />
+          </div>
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <!-- INFO GRID -->
+  <table class="info-table">
+    <tr>
+      <td class="lbl" style="width: 16%;">SEÑOR(A) / PROVEEDOR</td>
+      <td style="width: 38%; font-weight: 500;">${provNombre}</td>
+      <td class="lbl" style="width: 26%;">FECHA DE EXPEDICIÓN (DD/MM/AA)</td>
+      <td style="width: 20%; text-align: center;">${fechaExpFormatted}</td>
+    </tr>
+    <tr>
+      <td class="lbl">DIRECCIÓN</td>
+      <td>${provAddress}</td>
+      <td class="lbl">FECHA DE VENCIMIENTO(DD/MM/AA)</td>
+      <td style="text-align: center;">${fechaVencFormatted}</td>
+    </tr>
+    <tr>
+      <td class="lbl">CIUDAD</td>
+      <td>${provCity}</td>
+      <td class="lbl">NIT / CÉDULA DE CIUDADANÍA</td>
+      <td style="text-align: center; font-weight: 500;">${formatDocNumber(provDoc)}</td>
+    </tr>
+    <tr>
+      <td class="lbl">ELABORADO POR</td>
+      <td>${elaboradoPor}</td>
+      <td class="lbl">MEDIO DE PAGO</td>
+      <td style="text-align: center;">${paymentMethod}</td>
+    </tr>
+    <tr>
+      <td class="lbl">${isDocSoporte ? 'CUDS' : 'REFERENCIA'}</td>
+      <td colspan="3" class="cufe-cell">${cuds || '—'}</td>
+    </tr>
+  </table>
+
+  <!-- ITEMS TABLE -->
+  <table class="items-table">
+    <thead>
+      <tr>
+        <th style="width: 60%; text-align: left;">Item</th>
+        <th style="width: 15%; text-align: right;">Precio</th>
+        <th style="width: 10%; text-align: center;">Cantidad</th>
+        <th style="width: 15%; text-align: right;">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${itemRowsHtml}
+    </tbody>
+  </table>
+
+  <!-- OBSERVACIONES & TOTALS -->
+  <table class="summary-table">
+    <tr>
+      <td class="obs-cell">
+        <div class="obs-title">Observaciones:</div>
+        <div class="obs-content">${observacionesText || '—'}</div>
+      </td>
+      <td class="totals-cell">
+        <table class="totals-inner-table">
+          <tr>
+            <td class="tot-label">Subtotal</td>
+            <td class="tot-val">${formatCOP(finalSubtotal)}</td>
+          </tr>
+          <tr>
+            <td class="tot-label">Total</td>
+            <td class="tot-val">${formatCOP(finalTotal)}</td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <!-- SIGNATURES -->
+  <table class="signatures-table">
+    <tr>
+      <td class="sig-block">
+        <div class="sig-line"></div>
+        <div class="sig-title">ELABORADO POR</div>
+      </td>
+      <td class="sig-block">
+        <div class="sig-line"></div>
+        <div class="sig-title">ACEPTADA, FIRMA Y/O SELLO Y FECHA</div>
+      </td>
+    </tr>
+  </table>
+
+  <!-- RESOLUTION -->
+  <div class="resolution-block">
+    ${resolutionText}
+  </div>
+
+  <!-- FOOTER -->
+  <table class="footer-table">
+    <tr>
+      <td class="left" style="width: 20%;">1 de 1</td>
+      <td class="right" style="width: 80%;">${providerText}</td>
+    </tr>
+  </table>
+
+  <span id="qrLoadedStatus" style="display: none;">0</span>
+  <script>
+    var isPrinting = false;
+    function markQrLoaded() {
+      document.getElementById('qrLoadedStatus').textContent = '1';
+      if (!isPrinting) {
+        isPrinting = true;
+        setTimeout(function() {
+          window.print();
+        }, 150);
+      }
+    }
+    window.onload = function() {
+      setTimeout(function() {
+        if (!isPrinting) {
+          isPrinting = true;
+          window.print();
+        }
+      }, 500);
+    };
+  </script>
+</body>
+</html>`;
+};
+
+export const printDocumentoSoporte = (data) => {
+  const html = generateDocumentoSoporteHtml(data);
+  const win = window.open('', '_blank', 'width=800,height=900');
+  if (!win) {
+    alert('Por favor permite las ventanas emergentes (popups) para imprimir el documento soporte.');
+    return;
+  }
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+};
+
 export const printElectronicInvoice = (data) => {
   const html = generateElectronicInvoiceHtml(data);
   const win = window.open('', '_blank', 'width=800,height=900');
@@ -1175,4 +1735,6 @@ export default {
   printElectronicInvoice,
   generateReciboCajaHtml,
   printReciboCaja,
+  generateDocumentoSoporteHtml,
+  printDocumentoSoporte,
 };

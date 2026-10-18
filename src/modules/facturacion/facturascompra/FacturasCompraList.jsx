@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { MOTIVOS_AJUSTE_DOCUMENTO_SOPORTE, formatTerceroNombre } from "../../../utils/dian/dianHelpers";
 import factusService from "../../../services/factusService";
 import { getConfigSection, saveConfigSection } from "../../../services/configPersistenceService";
+import { printDocumentoSoporte } from "../../../utils/electronicInvoiceTemplate";
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
@@ -581,9 +582,27 @@ export default function FacturasCompraList({ onNew }) {
     }
   };
 
-  // Imprimir Comprobante Oficial de Factura de Compra / Documento Soporte
+  // Imprimir Comprobante Oficial de Factura de Compra / Documento Soporte (1:1 Formato DIAN con QR)
   const handlePrintFactura = (factura) => {
     if (!factura) return;
+    const tenantData = {
+      ...userProfile?.tenant,
+      nombreComercial: clinicConfig?.nombreComercial || clinicConfig?.nombre || userProfile?.tenant?.nombreComercial || userProfile?.tenant?.nombre || "ATM CENTRO DEL DOLOR OROFACIAL",
+      nombre: clinicConfig?.nombre || clinicConfig?.nombreComercial || userProfile?.tenant?.nombre || "ATM CENTRO DEL DOLOR OROFACIAL",
+      nit: clinicConfig?.nit || userProfile?.tenant?.nit || "64576359-3",
+      direccion: clinicConfig?.direccion || userProfile?.tenant?.direccion || "Calle 16#17-68",
+      telefono: clinicConfig?.telefono || userProfile?.tenant?.telefono || "3103583706",
+      email: clinicConfig?.email || userProfile?.tenant?.email || "atmcentrodedolor@gmail.com",
+      ciudad: clinicConfig?.ciudad || userProfile?.tenant?.ciudad || "Sincelejo",
+      logoUrl: clinicConfig?.logo || userProfile?.tenant?.logo || ""
+    };
+
+    printDocumentoSoporte({
+      factura,
+      tenant: tenantData,
+      userProfile
+    });
+    return;
     const isDocSoporte = Boolean(factura.docSoporteDian);
     const isAnulado = factura.estado === "Anulada" || factura.estado === "Anulado";
     const docNumero = factura.nroFactura || factura.documentoNumero || factura.id?.slice(0, 8)?.toUpperCase();

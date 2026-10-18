@@ -5,7 +5,7 @@ import { isDoctorUser, getPatientAssignedDoctors } from "../../../utils/doctorHe
 import { getDoctorsList } from "../../../services/supabaseServices";
 import { getConfigItems, getConfigSection } from "../../../services/configPersistenceService";
 import { ReceiptPrintService } from "../../../services/ReceiptPrintService";
-import { printReciboCaja, printElectronicInvoice } from "../../../utils/electronicInvoiceTemplate";
+import { printReciboCaja, printElectronicInvoice, printDocumentoSoporte } from "../../../utils/electronicInvoiceTemplate";
 import { FiDollarSign, FiSearch, FiFileText, FiFilter, FiDownload, FiCheck, FiX, FiEye, FiPrinter, FiRefreshCw } from "react-icons/fi";
 import { format } from "date-fns";
 import XLSX from "xlsx-js-style";
@@ -2443,138 +2443,33 @@ export default function ReporteFinanciero() {
 
   const handlePrintFacturaCompraDoc = (fcItem, fallbackDoc) => {
     try {
-      const rawFc = fcItem.rawFacturaCompra || fallbackDoc?.rawFacturaCompra || {};
-      const valNum = Number(fcItem.valor !== undefined ? fcItem.valor : (rawFc.total || fallbackDoc?.valor || 0));
-      const nroDoc = fcItem.numeroDocumento || rawFc.numeroDocumento || fallbackDoc?.numeroDocumento || "FC-001";
-      const isDocSoporte = Boolean(rawFc.docSoporteDian || String(nroDoc).startsWith("DCS"));
-      const docTitulo = isDocSoporte ? "DOCUMENTO SOPORTE EN ADQUISICIONES" : "FACTURA DE COMPRA";
-      const cNom = clinicInfo.nombre || "ATM CENTRO DEL DOLOR OROFACIAL";
-      const cNit = clinicInfo.nit || "64576359-3";
-      const provNom = rawFc.proveedor || rawFc.tercero || fcItem.tercero || fallbackDoc?.tercero || "Proveedor";
-      const provDoc = rawFc.nit || rawFc.documentoTercero || fcItem.documentoTercero || fallbackDoc?.documentoTercero || "—";
-      const conceptoStr = fcItem.concepto || rawFc.concepto || fallbackDoc?.concepto || "Compra de insumos / Materiales";
-      const fechaStr = formatDateOnly(fcItem.fecha || rawFc.fecha || fallbackDoc?.fechaSeleccionada || new Date());
+      const rawFc = fcItem.rawFacturaCompra || fallbackDoc?.rawFacturaCompra || fcItem || {};
+      const tenantData = {
+        ...userProfile?.tenant,
+        nombreComercial: clinicInfo.nombre || userProfile?.tenant?.nombreComercial || userProfile?.tenant?.nombre || "ATM CENTRO DEL DOLOR OROFACIAL",
+        nombre: clinicInfo.nombre || userProfile?.tenant?.nombre || "ATM CENTRO DEL DOLOR OROFACIAL",
+        nit: clinicInfo.nit || userProfile?.tenant?.nit || "64576359-3",
+        direccion: userProfile?.tenant?.direccion || "Calle 16#17-68",
+        ciudad: userProfile?.tenant?.ciudad || "Sincelejo",
+        telefono: userProfile?.tenant?.telefono || "3103583706",
+        email: userProfile?.tenant?.email || "atmcentrodedolor@gmail.com",
+        logoUrl: userProfile?.tenant?.logo || userProfile?.logo || ""
+      };
 
-      const fmtMoney = (n) => `$ ${Number(n || 0).toLocaleString("es-CO")}`;
-
-      const items = Array.isArray(rawFc.items) && rawFc.items.length > 0
-        ? rawFc.items
-        : [{ concepto: conceptoStr, cantidad: 1, precioUnitario: valNum, total: valNum }];
-
-      const itemsHtml = items.map((it, idx) => `
-        <tr>
-          <td style="padding: 8px 12px; border-bottom: 1px solid #e2e8f0; text-align: center; color: #64748b;">${idx + 1}</td>
-          <td style="padding: 8px 12px; border-bottom: 1px solid #e2e8f0; font-weight: 600; color: #1e293b;">${it.concepto || it.descripcion || conceptoStr}</td>
-          <td style="padding: 8px 12px; border-bottom: 1px solid #e2e8f0; text-align: center; font-weight: 600;">${it.cantidad || 1}</td>
-          <td style="padding: 8px 12px; border-bottom: 1px solid #e2e8f0; text-align: right;">${fmtMoney(it.precioUnitario || it.total || valNum)}</td>
-          <td style="padding: 8px 12px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: 700; color: #0f172a;">${fmtMoney(it.total || valNum)}</td>
-        </tr>
-      `).join("");
-
-      const printHtml = `
-        <!DOCTYPE html>
-        <html lang="es">
-        <head>
-          <meta charset="utf-8" />
-          <title>${docTitulo} #${nroDoc}</title>
-          <style>
-            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-            @page { size: letter portrait; margin: 15mm; }
-            * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-            body { font-family: 'Inter', -apple-system, sans-serif; font-size: 12px; color: #334155; margin: 0; padding: 10px; background: #fff; }
-            .header { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 15px; border-bottom: 2px solid #009beb; }
-            .badge { display: inline-block; background: #f0f9ff; color: #009beb; font-weight: 700; font-size: 11px; padding: 4px 10px; border-radius: 4px; border: 1px solid #bae6fd; }
-            .card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-top: 15px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 11.5px; }
-            th { background: #f1f5f9; padding: 8px 12px; text-align: left; font-weight: 700; color: #475569; border-bottom: 2px solid #cbd5e1; }
-            .total-row { display: flex; justify-content: flex-end; margin-top: 15px; font-size: 14px; font-weight: 800; color: #0f172a; }
-            .footer { margin-top: 30px; padding-top: 15px; border-top: 1px dashed #cbd5e1; text-align: center; color: #94a3b8; font-size: 10px; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <div>
-              <h2 style="margin: 0 0 4px 0; color: #0f172a; font-size: 16px; font-weight: 800;">${cNom}</h2>
-              <div style="font-size: 11px; color: #64748b;">NIT: ${cNit}</div>
-            </div>
-            <div style="text-align: right;">
-              <div class="badge">${docTitulo}</div>
-              <div style="margin-top: 5px; font-size: 16px; font-weight: 800; color: #0f172a; font-family: monospace;"># ${nroDoc}</div>
-              <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Fecha: ${fechaStr}</div>
-            </div>
-          </div>
-
-          <div class="card">
-            <div style="font-weight: 700; color: #0f172a; margin-bottom: 4px; font-size: 11px; text-transform: uppercase;">Información del Proveedor / Beneficiario</div>
-            <div style="display: flex; justify-content: space-between; font-size: 11.5px;">
-              <div><strong>Tercero:</strong> ${provNom}</div>
-              <div><strong>NIT / Doc:</strong> ${provDoc}</div>
-            </div>
-          </div>
-
-          <table>
-            <thead>
-              <tr>
-                <th style="width: 40px; text-align: center;">#</th>
-                <th>Concepto / Descripción</th>
-                <th style="width: 60px; text-align: center;">Cant.</th>
-                <th style="width: 110px; text-align: right;">Precio Unit.</th>
-                <th style="width: 120px; text-align: right;">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${itemsHtml}
-            </tbody>
-          </table>
-
-          <div class="total-row">
-            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px 16px; text-align: right;">
-              <span style="font-size: 12px; font-weight: 600; color: #64748b; margin-right: 12px;">TOTAL NETO:</span>
-              <span>${fmtMoney(valNum)}</span>
-            </div>
-          </div>
-
-          <div class="footer">
-            Comprobante oficial generado desde OdontoCloud — Sistema de Gestión Clínica y Financiera
-          </div>
-        </body>
-        </html>
-      `;
-
-      let iframe = document.getElementById("oc-print-factura-iframe");
-      if (!iframe) {
-        iframe = document.createElement("iframe");
-        iframe.id = "oc-print-factura-iframe";
-        iframe.style.position = "fixed";
-        iframe.style.right = "0";
-        iframe.style.bottom = "0";
-        iframe.style.width = "0px";
-        iframe.style.height = "0px";
-        iframe.style.border = "none";
-        iframe.style.visibility = "hidden";
-        document.body.appendChild(iframe);
-      }
-      const doc = iframe.contentWindow.document;
-      doc.open();
-      doc.write(printHtml);
-      doc.close();
-      setTimeout(() => {
-        try {
-          iframe.contentWindow.focus();
-          iframe.contentWindow.print();
-        } catch {
-          const w = window.open("", "_blank");
-          if (w) {
-            w.document.open();
-            w.document.write(printHtml);
-            w.document.close();
-            w.focus();
-            setTimeout(() => w.print(), 300);
-          }
-        }
-      }, 250);
+      printDocumentoSoporte({
+        factura: {
+          ...rawFc,
+          numeroDocumento: fcItem.numeroDocumento || rawFc.numeroDocumento || rawFc.nroFactura || "DCSE-001",
+          proveedor: rawFc.proveedor || rawFc.tercero || fcItem.tercero || fallbackDoc?.tercero || "Proveedor",
+          documentoTercero: rawFc.documentoTercero || rawFc.nit || fcItem.documentoTercero || fallbackDoc?.documentoTercero || "—",
+          total: Number(fcItem.valor !== undefined ? fcItem.valor : (rawFc.total || fallbackDoc?.valor || 0)),
+          fecha: fcItem.fecha || rawFc.fecha || fallbackDoc?.fechaSeleccionada || rawFc.created_at || new Date().toISOString()
+        },
+        tenant: tenantData,
+        userProfile: userProfile
+      });
     } catch (e) {
-      console.error("Error imprimiendo factura de compra:", e);
+      console.error("Error imprimiendo documento soporte:", e);
     }
   };
 
