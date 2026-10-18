@@ -159,20 +159,8 @@ export default function ReporteLogWhatsApp() {
   return (
     <div className="flex flex-col h-full bg-slate-50 overflow-hidden font-sans text-slate-700">
       
-      {/* ─── ENCABEZADO Y BREADCRUMB (1:1 ORALDRIVE ESTILO) ─── */}
-      <div className="flex items-center justify-between px-5 py-3 bg-white border-b border-slate-100 shrink-0">
-        <div className="flex items-center gap-2">
-          <h2 className="text-base font-black text-slate-800 tracking-tight flex items-center gap-2">
-            <FiMessageSquare className="text-emerald-600" />
-            <span>Log WhatsApp Business API</span>
-          </h2>
-          <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-medium ml-2">
-            <span>🏠 Reportes</span>
-            <span>/</span>
-            <span className="text-slate-500 font-bold">Log WhatsApp Business API</span>
-          </div>
-        </div>
-
+      {/* ─── BARRA DE ACCIONES ─── */}
+      <div className="flex items-center justify-end px-5 py-2.5 bg-white border-b border-slate-100 shrink-0">
         {hasSearched && (
           <button
             onClick={handleExportExcel}

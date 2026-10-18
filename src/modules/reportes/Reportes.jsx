@@ -10,7 +10,7 @@ import {
   FiPieChart, FiUsers, FiFileText, FiDollarSign, FiAward, 
   FiTrendingUp, FiBox, FiGift, FiActivity, 
   FiList, FiClock, FiAlertTriangle, FiMessageSquare, 
-  FiMonitor, FiHelpCircle, FiDatabase, FiArrowLeft, FiGrid, FiChevronRight
+  FiMonitor, FiHelpCircle, FiDatabase, FiArrowLeft, FiChevronRight
 } from "react-icons/fi";
 import { usePermissions } from "../../hooks/usePermissions";
 
@@ -107,13 +107,6 @@ export default function Reportes() {
                 {getReportTitle(selectedReport)}
               </span>
             </div>
-            
-            <button
-              onClick={() => setSelectedReport(null)}
-              className="text-[12px] text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1.5 cursor-pointer border-0 bg-transparent"
-            >
-              <FiGrid size={14} /> Cambiar reporte
-            </button>
           </div>
 
           {/* Vista del reporte a pantalla completa */}

@@ -679,26 +679,11 @@ export default function ReporteMorbilidad() {
   return (
     <div className="flex flex-col h-full bg-slate-50/70 overflow-hidden font-sans text-slate-700">
       
-      {/* ─── ENCABEZADO Y ACCIONES PRINCIPALES (1:1 ESTÁNDAR ODONTOCLOUD) ─── */}
-      <div className="flex items-center justify-between px-6 py-3.5 bg-white border-b border-slate-200/80 shrink-0 shadow-xs print:hidden">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-            <FiActivity size={18} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-base font-black text-slate-800 tracking-tight">Reporte de morbilidad</h1>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100/70 text-emerald-700 border border-emerald-200/50">
-                Datos Clínicos Reales
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-medium">
-              <span>🏠 Reportes</span>
-              <span>/</span>
-              <span className="text-slate-600 font-bold">Reporte de morbilidad (CIE-10)</span>
-            </div>
-          </div>
-        </div>
+      {/* ─── BARRA DE ACCIONES PRINCIPALES ─── */}
+      <div className="flex items-center justify-between px-6 py-2.5 bg-white border-b border-slate-200/80 shrink-0 shadow-xs print:hidden">
+        <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+          Datos Clínicos Reales (CIE-10)
+        </span>
 
         <div className="flex items-center gap-2">
           <button

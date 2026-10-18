@@ -491,24 +491,12 @@ export default function ReporteOportunidadCitas() {
   return (
     <div className="flex flex-col h-full bg-[#f8fafc] overflow-hidden font-sans text-slate-700">
       
-      {/* ─── ENCABEZADO Y BREADCRUMB CON ACCIONES (Zip + Enviar + Actualizar) ─── */}
-      <div className="flex items-center justify-between px-6 py-3.5 bg-white border-b border-slate-200 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-sky-50 text-[#009beb] rounded-xl flex items-center justify-center font-bold border border-sky-100 shadow-xs">
-            <FiClock size={18} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-sm font-bold text-slate-800 leading-tight">Reporte de oportunidad de citas</h2>
-              <span className="text-slate-400 text-xs cursor-help" title="Mide los días entre la fecha en que el paciente solicitó la cita y la fecha asignada en la agenda (Resolución 256 de 2016 Minsalud)">ⓘ</span>
-            </div>
-            <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-medium">
-              <span>🏠 Reportes</span>
-              <span>/</span>
-              <span className="text-slate-500 font-semibold">Reporte de oportunidad de citas</span>
-            </div>
-          </div>
-        </div>
+      {/* ─── BARRA DE ACCIONES ─── */}
+      <div className="flex items-center justify-between px-6 py-2.5 bg-white border-b border-slate-200 shrink-0">
+        <span className="text-xs text-slate-500 font-medium flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 px-2.5 py-1 rounded-md">
+          Resolución 256 de 2016 Minsalud
+          <span className="text-slate-400 text-xs cursor-help" title="Mide los días entre la fecha en que el paciente solicitó la cita y la fecha asignada en la agenda">ⓘ</span>
+        </span>
 
         {/* Acciones principales */}
         <div className="flex items-center gap-2.5">

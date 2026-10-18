@@ -241,17 +241,8 @@ export default function ReporteMedicamentos() {
   return (
     <div className="flex flex-col h-full bg-[#f4f6f9] overflow-y-auto custom-scrollbar font-sans text-slate-700 pb-16">
       
-      {/* ─── ENCABEZADO Y BREADCRUMB ─── */}
-      <div className="flex items-center justify-between px-6 py-3.5 bg-white border-b border-slate-200 shrink-0">
-        <div className="flex items-center gap-3">
-          <h2 className="text-base font-bold text-slate-800 tracking-tight">Reporte medicamentos</h2>
-          <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium">
-            <span>🏠 Reportes</span>
-            <span>-</span>
-            <span className="text-slate-500 font-bold">Reporte medicamentos</span>
-          </div>
-        </div>
-
+      {/* ─── BARRA DE ACCIONES ─── */}
+      <div className="flex items-center justify-end px-6 py-2.5 bg-white border-b border-slate-200 shrink-0">
         {/* Botón Generar reporte en Excel (Azul OralDrive) */}
         <button
           onClick={handleExportExcel}

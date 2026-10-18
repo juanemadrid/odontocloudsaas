@@ -53,17 +53,6 @@ export default function ReporteUsoPlataforma() {
   return (
     <div className="flex flex-col h-full bg-slate-50 overflow-y-auto custom-scrollbar font-sans text-slate-700 pb-12">
       
-      {/* ─── ENCABEZADO Y BREADCRUMB (1:1 ORALDRIVE) ─── */}
-      <div className="flex items-center justify-between px-5 py-3 bg-white border-b border-slate-100 shrink-0">
-        <div className="flex items-center gap-2">
-          <h2 className="text-base font-black text-slate-800 tracking-tight">Indicadores de uso de la plataforma</h2>
-          <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-medium ml-2">
-            <span>🏠 Reportes</span>
-            <span>/</span>
-            <span className="text-slate-500 font-bold">Indicadores de uso de la plataforma</span>
-          </div>
-        </div>
-      </div>
 
       {/* ─── ÁREA DE FILTROS (REPLICADO 1:1 DE ORALDRIVE) ─── */}
       <div className="mx-5 mt-3 p-5 bg-white rounded-xl border border-slate-100 shadow-sm shrink-0">
