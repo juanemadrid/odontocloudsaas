@@ -109,6 +109,7 @@ export const generateElectronicInvoiceHtml = ({
   factura = {},
   patient = {},
   tenant = {},
+  items: topLevelItems = [],
   options = {},
 }) => {
   const isBilledToTercero = Boolean(factura?.tercero_nombre || (factura?.es_entidad && factura?.cliente_nombre));
@@ -219,9 +220,33 @@ export const generateElectronicInvoiceHtml = ({
     factura?.medioPago || factura?.medio_pago || '10'
   );
 
-  // Items calculation
-  const rawItems = factura?.items || [];
+  // Items calculation — prioridad: items raíz > factura.items > factura.detalles.items
+  let parsedDetalles = factura?.detalles;
+  if (typeof parsedDetalles === 'string') {
+    try {
+      parsedDetalles = JSON.parse(parsedDetalles);
+    } catch {
+      parsedDetalles = {};
+    }
+  }
+
+  const rawItems =
+    (Array.isArray(topLevelItems) && topLevelItems.length > 0 ? topLevelItems : null) ||
+    (Array.isArray(factura?.items) && factura.items.length > 0 ? factura.items : null) ||
+    (Array.isArray(parsedDetalles?.items) && parsedDetalles.items.length > 0 ? parsedDetalles.items : null) ||
+    (Array.isArray(factura?.lineas) && factura.lineas.length > 0 ? factura.lineas : null) ||
+    (Array.isArray(parsedDetalles?.lineas) && parsedDetalles.lineas.length > 0 ? parsedDetalles.lineas : null) ||
+    [];
   let calculatedSubtotal = 0;
+
+  const defaultConceptName =
+    factura?.concepto ||
+    factura?.descripcion ||
+    parsedDetalles?.concepto ||
+    parsedDetalles?.descripcion ||
+    factura?.procedimiento ||
+    parsedDetalles?.procedimiento ||
+    'Servicio Odontológico';
 
   const itemRowsHtml =
     rawItems.length > 0
@@ -239,12 +264,11 @@ export const generateElectronicInvoiceHtml = ({
                 : price * qty * (1 - discountPct / 100);
 
             calculatedSubtotal += lineTotal;
-            const desc =
-              it.descripcion ||
-              it.nombre ||
-              it.concepto ||
-              it.name ||
-              'Servicio Odontológico';
+            const candidates = [it.concepto, it.descripcion, it.nombre, it.name, it.procedimiento].filter(Boolean);
+            const specificDesc = candidates.find(
+              (c) => String(c).trim().toLowerCase() !== 'servicio odontológico' && String(c).trim().toLowerCase() !== 'servicio'
+            );
+            const desc = specificDesc || candidates[0] || defaultConceptName;
 
             return `
         <tr>
@@ -261,7 +285,7 @@ export const generateElectronicInvoiceHtml = ({
           .join('')
       : `
         <tr>
-          <td style="padding: 5px 8px; border: 1px solid #111; font-size: 11px; vertical-align: middle;">Servicio Odontológico</td>
+          <td style="padding: 5px 8px; border: 1px solid #111; font-size: 11px; vertical-align: middle;">${defaultConceptName}</td>
           <td style="padding: 5px 8px; border: 1px solid #111; font-size: 11px; text-align: right; vertical-align: middle; white-space: nowrap;">${formatCOP(
             factura?.total || 0
           )}</td>
@@ -341,25 +365,26 @@ export const generateElectronicInvoiceHtml = ({
   <title>Factura Electrónica ${facturaNumero}</title>
   <style>
     @page {
-      size: 5.5in 8.5in;
-      margin: 8mm 10mm;
+      size: letter;
+      margin: 12mm 15mm;
     }
     * {
       margin: 0;
       padding: 0;
       box-sizing: border-box;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
     body {
       font-family: Arial, Helvetica, sans-serif;
-      font-size: 11px;
+      font-size: 11.5px;
       color: #000;
       background: #fff;
-      padding: 16px 20px;
-      max-width: 780px;
+      padding: 12px 18px;
+      width: 100%;
+      max-width: 100%;
       margin: 0 auto;
-      line-height: 1.25;
-      -webkit-print-color-adjust: exact;
-      print-color-adjust: exact;
+      line-height: 1.3;
     }
     .header-table {
       width: 100%;
@@ -571,6 +596,17 @@ export const generateElectronicInvoiceHtml = ({
     @media print {
       body {
         padding: 0;
+        margin: 0;
+        width: 100% !important;
+        max-width: 100% !important;
+      }
+      .header-table,
+      .info-table,
+      .items-table,
+      .summary-table,
+      .signatures-table,
+      .footer-table {
+        width: 100% !important;
       }
       .no-print {
         display: none !important;

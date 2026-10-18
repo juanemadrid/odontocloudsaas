@@ -133,7 +133,24 @@ export default function FacturaElectronicaModule() {
           .eq("tenant_id", inquilino)
           .order("created_at", { ascending: false });
         if (feData && feData.length > 0) {
-          combined.push(...feData);
+          const normalizedFe = feData.map((fe) => {
+            let det = fe.detalles;
+            if (typeof det === "string") {
+              try { det = JSON.parse(det); } catch { det = {}; }
+            } else if (!det || typeof det !== "object") {
+              det = {};
+            }
+            return {
+              ...fe,
+              detalles: det,
+              items: (Array.isArray(fe.items) && fe.items.length > 0)
+                ? fe.items
+                : (Array.isArray(det.items) && det.items.length > 0)
+                ? det.items
+                : [],
+            };
+          });
+          combined.push(...normalizedFe);
         }
       } catch (e) {}
 
@@ -165,8 +182,16 @@ export default function FacturaElectronicaModule() {
               combined.push({
                 ...f,
                 detalles: det,
+                items: Array.isArray(f.items) && f.items.length > 0
+                  ? f.items
+                  : Array.isArray(det.items) && det.items.length > 0
+                  ? det.items
+                  : [],
                 pacienteNombre: f.pacienteNombre || f.paciente_nombre || det.pacienteNombre || "",
                 pacienteDocumento: f.pacienteDocumento || f.paciente_documento || det.pacienteDocumento || "",
+                pacienteDireccion: f.pacienteDireccion || det.pacienteDireccion || "",
+                pacienteCiudad: f.pacienteCiudad || det.pacienteCiudad || "",
+                pacienteTipoDocumento: f.pacienteTipoDocumento || det.pacienteTipoDocumento || "CC",
                 factusInvoiceNumber: f.numero || f.factusNumero || f.nroFactura || det.factusInvoiceNumber,
                 factusCufe: f.factusCufe || det.cufe || det.factusCufe,
                 factusQr: f.factusQr || det.qrCode || det.factusQr,
@@ -179,6 +204,8 @@ export default function FacturaElectronicaModule() {
                 total: f.total,
                 subtotal: f.subtotal || f.total,
                 medioPago: f.medioPago || f.medio_pago || det.medioPago || "10",
+                profesional: f.profesional_nombre || f.profesional || det.profesional_nombre || det.profesional || "",
+                observaciones: f.observaciones || det.observaciones || "",
                 createdAt: f.fecha_emision || f.fechaISO || f.created_at,
               });
             }

@@ -5,6 +5,7 @@ import { isDoctorUser, getPatientAssignedDoctors } from "../../../utils/doctorHe
 import { getDoctorsList } from "../../../services/supabaseServices";
 import { getConfigItems } from "../../../services/configPersistenceService";
 import { ReceiptPrintService } from "../../../services/ReceiptPrintService";
+import { printReciboCaja, printElectronicInvoice } from "../../../utils/electronicInvoiceTemplate";
 import { FiDollarSign, FiSearch, FiFileText, FiFilter, FiDownload, FiCheck, FiX, FiEye, FiPrinter, FiRefreshCw } from "react-icons/fi";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
@@ -418,7 +419,8 @@ export default function ReporteFinanciero() {
           usuarioCreador: d.usuario_nombre || d.creado_por || "Administración",
           observaciones: cleanObservaciones(rawObs),
           cuentaContable: isSF ? "280505 - Anticipos y Saldos a Favor" : "110505 - Caja General",
-          oficina: d.oficina || d.sucursal || d.sede || ""
+          oficina: d.oficina || d.sucursal || d.sede || "",
+          _raw: d
         };
       });
 
@@ -814,6 +816,44 @@ export default function ReporteFinanciero() {
       const snapFacturas = [...(facturasElecRes?.data || []), ...(facturasRes?.data || [])];
       const processedFacturaIds = new Set();
 
+      // Mapeo exhaustivo de Recibos para 'Documentos asociados'
+      const receiptsById = {};
+      const receiptsByFacturaId = {};
+      const receiptsByFacturaNumero = {};
+
+      combinedRecibos.forEach((rec) => {
+        const recNum = rec.numeroDocumento || rec.nroConsecutivo;
+
+        if (rec.rawId) {
+          receiptsById[rec.rawId] = rec;
+        }
+
+        const raw = rec._raw || {};
+        let det = {};
+        if (typeof raw.detalles === "string") {
+          try { det = JSON.parse(raw.detalles); } catch {}
+        } else if (raw.detalles && typeof raw.detalles === "object") {
+          det = raw.detalles;
+        }
+
+        const meta = rec._meta || (typeof raw.notas === "string" && raw.notas.trim().startsWith("{")
+          ? (() => { try { return JSON.parse(raw.notas); } catch { return {}; } })()
+          : {});
+
+        const linkedFacId = raw.factura_id || raw.facturaId || det.factura_id || det.facturaId || meta.factura_id || meta.facturaId || null;
+        const linkedFacNum = raw.factura_numero || raw.facturaNumero || raw.factura || det.factura_numero || det.facturaNumero || meta.factura_numero || meta.facturaNumero || null;
+
+        if (linkedFacId) {
+          if (!receiptsByFacturaId[linkedFacId]) receiptsByFacturaId[linkedFacId] = [];
+          receiptsByFacturaId[linkedFacId].push(rec);
+        }
+        if (linkedFacNum) {
+          const clean = String(linkedFacNum).trim().toLowerCase();
+          if (!receiptsByFacturaNumero[clean]) receiptsByFacturaNumero[clean] = [];
+          receiptsByFacturaNumero[clean].push(rec);
+        }
+      });
+
       snapFacturas.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0)).forEach((f, fIdx) => {
         if (processedFacturaIds.has(f.id)) return;
         processedFacturaIds.add(f.id);
@@ -836,23 +876,155 @@ export default function ReporteFinanciero() {
         const cleanObs = cleanObservaciones(rawObs);
         const refClean = cleanDocReferencia(f.resolucion || f.cufe, String(nroDoc));
 
-        let linkedReceiptText = "";
         let fDet = {};
         try {
           fDet = typeof f.detalles === "string" ? JSON.parse(f.detalles) : (f.detalles || {});
-          if (Array.isArray(fDet.recibos_asociados) && fDet.recibos_asociados.length > 0) {
-            linkedReceiptText = fDet.recibos_asociados.map(r => r.numero || `REC-${String(r.id || '').slice(0,6)}`).join(", ");
-          } else if (fDet.recibo_asociado?.numero) {
-            linkedReceiptText = fDet.recibo_asociado.numero;
+        } catch {
+          fDet = {};
+        }
+
+        // Extracción exhaustiva de conceptos reales (fDet.items, f.items, fDet.conceptos, etc.)
+        const fItems = (Array.isArray(f.items) && f.items.length > 0)
+          ? f.items
+          : (Array.isArray(fDet.items) && fDet.items.length > 0)
+          ? fDet.items
+          : (Array.isArray(f.conceptos) && f.conceptos.length > 0)
+          ? f.conceptos
+          : (Array.isArray(fDet.conceptos) && fDet.conceptos.length > 0)
+          ? fDet.conceptos
+          : (Array.isArray(f.lineas) && f.lineas.length > 0)
+          ? f.lineas
+          : (Array.isArray(fDet.lineas) && fDet.lineas.length > 0)
+          ? fDet.lineas
+          : [];
+
+        const conceptoCandidates = fItems.map((it) => {
+          if (typeof it === "string") return it.trim();
+          const list = [it.concepto, it.descripcion, it.nombre, it.name, it.procedimiento].filter(Boolean);
+          const nonGeneric = list.find((c) => {
+            const clean = String(c).trim().toLowerCase();
+            return clean !== "servicio odontológico" &&
+                   clean !== "servicio" &&
+                   clean !== "consulta / tratamiento odontológico";
+          });
+          return nonGeneric || list[0];
+        }).filter(Boolean);
+
+        const conceptoFinal = (conceptoCandidates.length > 0 ? conceptoCandidates.join(", ") : null)
+          || f.concepto
+          || fDet.concepto
+          || f.descripcion
+          || fDet.descripcion
+          || "Consulta / Tratamiento Odontológico";
+
+        // Extracción exhaustiva de recibos asociados con objetos enriquecidos para el modal
+        const foundReceipts = new Set();
+        const associatedDocs = [];
+        const seenRecNumbers = new Set();
+
+        const addDoc = (recNum, monto, rawRec) => {
+          if (!recNum) return;
+          const cleanNum = String(recNum).trim().replace(/^REC-?/i, "");
+          if (seenRecNumbers.has(cleanNum)) return;
+          seenRecNumbers.add(cleanNum);
+
+          const rDisplay = `REC-${cleanNum}`;
+          foundReceipts.add(rDisplay);
+
+          associatedDocs.push({
+            id: rawRec?.rawId || rawRec?.id || `rec_${cleanNum}`,
+            numeroDocumento: cleanNum,
+            tipoDocumento: "Recibo de caja",
+            valor: Number(monto || rawRec?.total || rawRec?.valor || totalNum),
+            fecha: rawRec?.fechaSeleccionada || rawRec?.fechaCreacion || rawRec?.fecha || f.created_at,
+            reciboObj: rawRec || null,
+            pacienteObj: pac,
+            concepto: rawRec?.concepto || conceptoFinal,
+          });
+        };
+
+        // 1. Vía índice inverso (recibo -> factura)
+        if (f.id && receiptsByFacturaId[f.id]) {
+          receiptsByFacturaId[f.id].forEach((r) => {
+            const num = r.numeroDocumento || r.nroConsecutivo;
+            addDoc(num, r.total, r);
+          });
+        }
+        if (nroDoc && receiptsByFacturaNumero[String(nroDoc).trim().toLowerCase()]) {
+          receiptsByFacturaNumero[String(nroDoc).trim().toLowerCase()].forEach((r) => {
+            const num = r.numeroDocumento || r.nroConsecutivo;
+            addDoc(num, r.total, r);
+          });
+        }
+        if (f.numero && receiptsByFacturaNumero[String(f.numero).trim().toLowerCase()]) {
+          receiptsByFacturaNumero[String(f.numero).trim().toLowerCase()].forEach((r) => {
+            const num = r.numeroDocumento || r.nroConsecutivo;
+            addDoc(num, r.total, r);
+          });
+        }
+
+        // 2. Vía datos guardados en la factura (detalles.recibos_asociados / recibo_asociado)
+        const rawRecList = [
+          ...(Array.isArray(fDet.recibos_asociados) ? fDet.recibos_asociados : []),
+          ...(Array.isArray(f.recibos_asociados) ? f.recibos_asociados : []),
+          ...(fDet.recibo_asociado ? [fDet.recibo_asociado] : []),
+          ...(f.recibo_asociado ? [f.recibo_asociado] : []),
+          ...(fDet.recibo ? [fDet.recibo] : []),
+          ...(f.recibo ? [f.recibo] : []),
+          ...(fDet.recibo_numero ? [fDet.recibo_numero] : []),
+          ...(f.recibo_numero ? [f.recibo_numero] : []),
+          ...(fDet.recibo_id ? [{ id: fDet.recibo_id }] : []),
+          ...(f.recibo_id ? [{ id: f.recibo_id }] : [])
+        ];
+
+        rawRecList.forEach((recItem) => {
+          if (!recItem) return;
+          if (typeof recItem === "string" || typeof recItem === "number") {
+            const strVal = String(recItem).trim();
+            if (strVal.length > 25 && strVal.includes("-") && receiptsById[strVal]) {
+              const matched = receiptsById[strVal];
+              addDoc(matched.numeroDocumento || matched.nroConsecutivo, matched.total, matched);
+            } else if (strVal) {
+              const matched = combinedRecibos.find((r) =>
+                String(r.numeroDocumento || r.nroConsecutivo).trim() === strVal.replace(/^REC-?/i, "")
+              );
+              addDoc(strVal, matched?.total || totalNum, matched);
+            }
+          } else if (typeof recItem === "object") {
+            const num = recItem.numero || recItem.nroConsecutivo || recItem.consecutivo || recItem.nro_consecutivo || recItem.numeroRecibo || recItem.nroRecibo;
+            const recId = recItem.id || recItem.recibo_id;
+            const matched = (recId && receiptsById[recId])
+              ? receiptsById[recId]
+              : (num ? combinedRecibos.find((r) => String(r.numeroDocumento || r.nroConsecutivo).trim() === String(num).replace(/^REC-?/i, "")) : null);
+
+            if (num) {
+              addDoc(num, recItem.monto || recItem.total || matched?.total, matched || recItem);
+            } else if (recId && matched) {
+              addDoc(matched.numeroDocumento || matched.nroConsecutivo, matched.total, matched);
+            } else if (recId) {
+              addDoc(`REC-${String(recId).slice(0, 6)}`, recItem.monto || totalNum, recItem);
+            }
           }
-        } catch {}
+        });
+
+        // 3. Fallback inteligente por paciente y monto
+        if (associatedDocs.length === 0 && pacId) {
+          const matchRec = combinedRecibos.find((r) =>
+            (r.pacienteId === pacId || r._raw?.paciente_id === pacId) &&
+            Math.abs(Number(r.total || 0) - totalNum) < 1
+          );
+          if (matchRec) {
+            const rNum = matchRec.numeroDocumento || matchRec.nroConsecutivo;
+            addDoc(rNum, matchRec.total, matchRec);
+          }
+        }
+
+        const linkedReceiptText = foundReceipts.size > 0 ? Array.from(foundReceipts).join(", ") : "";
+        const docAsocFinal = linkedReceiptText ? `Recibo: ${linkedReceiptText}` : "—";
 
         const profRaw = f.profesional_nombre || f.profesionalNombre || fDet.profesional_nombre || f.profesional || fDet.profesional || f.doctor || fDet.doctor || "";
         const profIdRaw = f.profesional_id || f.profesionalId || fDet.profesional_id || f.doctorId || "";
         const profFinal = resolveDoctorName(profRaw, profIdRaw, pac);
-
-        const cufeText = (f.factusCufe || f.cufe) ? `CUFE: ${String(f.factusCufe || f.cufe).slice(0, 10)}...` : "";
-        const docAsocFinal = [linkedReceiptText ? `Recibo: ${linkedReceiptText}` : null, cufeText || null].filter(Boolean).join(" | ") || "—";
 
         allRows.push({
           id: `fac_${f.id}`,
@@ -861,11 +1033,14 @@ export default function ReporteFinanciero() {
           tipoDocumento: "Factura de venta+",
           fechaCreacion: f.created_at || f.fechaISO || new Date().toISOString(),
           fechaSeleccionada: f.fecha || f.fechaISO || f.created_at || new Date().toISOString(),
-          concepto: f.concepto || (Array.isArray(f.items) && f.items[0]?.descripcion) || (Array.isArray(f.conceptos) && f.conceptos[0]?.concepto) || f.descripcion || "Consulta / Tratamiento Odontológico",
+          concepto: conceptoFinal,
           valor: totalNum,
           consecutivo: "Principal",
           docReferencia: refClean,
           documentosAsociados: docAsocFinal,
+          associatedDocs: associatedDocs,
+          rawFactura: f,
+          pacienteObj: pac,
           estado: isAnulado ? "Anulado" : "Activo",
           tercero: pacNom,
           documentoTercero: pacDoc,
@@ -1333,6 +1508,218 @@ export default function ReporteFinanciero() {
     XLSX.writeFile(workbook, `Reporte_Facturacion_${cleanClinic}_${fileNameSuffix}.xlsx`);
   };
 
+  // Helper para resolver documentos asociados de una fila (1:1 con OralDrive)
+  const getAssociatedDocs = (doc) => {
+    if (!doc) return [];
+    if (Array.isArray(doc.associatedDocs) && doc.associatedDocs.length > 0) {
+      return doc.associatedDocs;
+    }
+    // Si documentosAsociados contiene texto (ej: "Recibo: REC-2085" o "REC-2085")
+    if (typeof doc.documentosAsociados === "string" && doc.documentosAsociados !== "—") {
+      const matches = doc.documentosAsociados.match(/(?:REC-?|RC-?|Recibo:?\s*(?:REC-?)?)(\d+)/gi);
+      if (matches) {
+        return matches.map((m) => {
+          const num = m.replace(/[^\d]/g, "");
+          return {
+            id: `rec_${num}`,
+            numeroDocumento: num,
+            tipoDocumento: "Recibo de caja",
+            valor: Number(doc.valor || 0),
+            fecha: doc.fechaSeleccionada || doc.fechaCreacion,
+            pacienteObj: doc.pacienteObj,
+            concepto: doc.concepto
+          };
+        });
+      }
+    }
+    // Si es recibo y tiene factura de referencia
+    if (doc.tipoDocumento?.toLowerCase().includes("recibo") && doc.docReferencia) {
+      return [{
+        id: `fac_${doc.docReferencia}`,
+        numeroDocumento: doc.docReferencia,
+        tipoDocumento: "Factura de venta",
+        valor: Number(doc.valor || 0),
+        fecha: doc.fechaSeleccionada || doc.fechaCreacion,
+        pacienteObj: doc.pacienteObj,
+        concepto: doc.concepto
+      }];
+    }
+    return [];
+  };
+
+  const handlePrintReceiptDoc = async (recItem, fallbackDoc) => {
+    try {
+      const rawRec = recItem.reciboObj || {};
+      const pac = recItem.pacienteObj || fallbackDoc?.pacienteObj || {};
+      const rawCons = recItem.numeroDocumento || rawRec.numeroDocumento || rawRec.nroConsecutivo || fallbackDoc?.nroConsecutivo || "2085";
+      const consecutive = String(rawCons).replace(/^REC-?/i, "");
+      const conceptoStr = recItem.concepto || rawRec.concepto || fallbackDoc?.concepto || "Consulta / Tratamiento Odontológico";
+      const valNum = Number(recItem.valor !== undefined ? recItem.valor : (rawRec.total || fallbackDoc?.valor || 0));
+
+      const nombreElaborador = (userProfile?.nombreCompleto && !userProfile.nombreCompleto.includes("@"))
+        ? userProfile.nombreCompleto
+        : (userProfile?.nombre && !userProfile.nombre.includes("@"))
+        ? userProfile.nombre
+        : (rawRec.usuarioCreador && !rawRec.usuarioCreador.includes("@") && rawRec.usuarioCreador !== "Administración")
+        ? rawRec.usuarioCreador
+        : (fallbackDoc?.usuarioCreador && !fallbackDoc.usuarioCreador.includes("@") && fallbackDoc.usuarioCreador !== "Administración")
+        ? fallbackDoc.usuarioCreador
+        : "Administración";
+
+      const recData = {
+        ...rawRec,
+        nroConsecutivo: consecutive,
+        consecutivo: consecutive,
+        numero: consecutive,
+        consecutivoNumero: consecutive,
+        fecha: recItem.fecha || rawRec.fechaSeleccionada || rawRec.fechaCreacion || fallbackDoc?.fechaSeleccionada || fallbackDoc?.fechaCreacion || new Date(),
+        pacienteNombre: pac.nombreCompleto || fallbackDoc?.tercero || "Paciente Clínica",
+        pacienteDocumento: pac.nroDocumento || fallbackDoc?.documentoTercero || "—",
+        pacienteTipoDocumento: pac.tipoDocumento || "CC",
+        pacienteDireccion: (pac.direccion && pac.direccion !== "—") ? pac.direccion : (pac.barrio || "—"),
+        pacienteCiudad: (pac.ciudad && pac.ciudad !== "—") ? pac.ciudad : "Sincelejo",
+        pacienteTelefono: (pac.celular && pac.celular !== "—") ? pac.celular : (pac.telefono || "—"),
+        profesionalNombre: rawRec.profesional || fallbackDoc?.profesional || "Administración",
+        registradoPor: nombreElaborador,
+        medioPago: rawRec.formaPago || fallbackDoc?.formaPago || "Efectivo",
+        medio: rawRec.formaPago || fallbackDoc?.formaPago || "Efectivo",
+        metodo: rawRec.formaPago || fallbackDoc?.formaPago || "Efectivo",
+        concepto: conceptoStr,
+        total: valNum,
+        monto: valNum,
+        subtotal: valNum,
+        observaciones: rawRec.observaciones || fallbackDoc?.observaciones || "",
+        conceptos: [
+          {
+            concepto: conceptoStr,
+            descripcion: conceptoStr,
+            precioUnitario: valNum,
+            cantidad: 1,
+            total: valNum,
+            monto: valNum
+          }
+        ],
+        itemPayments: [
+          {
+            desc: conceptoStr,
+            precioUnitario: valNum,
+            cantidad: 1,
+            monto: valNum
+          }
+        ],
+        planTitle: conceptoStr,
+        estado: recItem.estado || rawRec.estado || fallbackDoc?.estado || "Activo"
+      };
+
+      const patientData = {
+        id: pac.id || fallbackDoc?.pacienteId || "",
+        nombreCompleto: pac.nombreCompleto || fallbackDoc?.tercero || "Paciente Clínica",
+        documento: pac.nroDocumento || fallbackDoc?.documentoTercero || "—",
+        nroDocumento: pac.nroDocumento || fallbackDoc?.documentoTercero || "—",
+        tipoDocumento: pac.tipoDocumento || "CC",
+        direccion: (pac.direccion && pac.direccion !== "—") ? pac.direccion : (pac.barrio || "—"),
+        ciudad: (pac.ciudad && pac.ciudad !== "—") ? pac.ciudad : "Sincelejo",
+        telefono: (pac.celular && pac.celular !== "—") ? pac.celular : (pac.telefono || "—")
+      };
+
+      const tenantData = {
+        inquilino: userProfile?.inquilino || "",
+        logo: userProfile?.tenant?.logo || userProfile?.logo || "",
+        nombreComercial: userProfile?.tenant?.nombreComercial || userProfile?.tenant?.nombre || "CLÍNICA DENTAL",
+        nit: userProfile?.tenant?.nit || "",
+        direccion: userProfile?.tenant?.direccion || "",
+        telefono: userProfile?.tenant?.telefono || "",
+        email: userProfile?.tenant?.email || ""
+      };
+
+      const planFinancials = {
+        planTitle: conceptoStr,
+        totalPlan: valNum,
+        totalPagado: valNum,
+        saldo: 0
+      };
+
+      await printReciboCaja({
+        recibo: recData,
+        patient: patientData,
+        userProfile: userProfile,
+        tenant: tenantData,
+        planInfo: planFinancials
+      });
+    } catch (err) {
+      console.error("Error al imprimir recibo de caja:", err);
+    }
+  };
+
+  const handlePrintInvoiceDoc = (facItem, fallbackDoc) => {
+    try {
+      const rawFac = facItem.rawFactura || fallbackDoc?.rawFactura || {};
+      const pac = facItem.pacienteObj || fallbackDoc?.pacienteObj || {};
+      const valNum = Number(facItem.valor !== undefined ? facItem.valor : (fallbackDoc?.valor || 0));
+      const nroFactura = facItem.numeroDocumento || fallbackDoc?.numeroDocumento || "FCEV-0001";
+      const conceptoStr = facItem.concepto || fallbackDoc?.concepto || "Consulta / Tratamiento Odontológico";
+
+      const facturaPayload = {
+        ...rawFac,
+        nro_factura: nroFactura,
+        factusInvoiceNumber: nroFactura,
+        numero_factura: nroFactura,
+        total: valNum,
+        monto: valNum,
+        subtotal: valNum,
+        fecha: facItem.fecha || fallbackDoc?.fechaSeleccionada || fallbackDoc?.fechaCreacion,
+        pacienteNombre: pac.nombreCompleto || fallbackDoc?.tercero || "Paciente",
+        pacienteDocumento: pac.nroDocumento || fallbackDoc?.documentoTercero || "—",
+        pacienteDireccion: pac.direccion || "—",
+        pacienteCiudad: pac.ciudad || "Sincelejo",
+        profesionalNombre: fallbackDoc?.profesional || "Administración",
+        doctor: fallbackDoc?.profesional || "Administración",
+        items: (Array.isArray(rawFac.items) && rawFac.items.length > 0)
+          ? rawFac.items
+          : [
+              {
+                concepto: conceptoStr,
+                descripcion: conceptoStr,
+                cantidad: 1,
+                precioUnitario: valNum,
+                total: valNum
+              }
+            ]
+      };
+
+      printElectronicInvoice({
+        factura: facturaPayload,
+        patient: pac,
+        userProfile,
+        tenant: userProfile?.tenant
+      });
+    } catch (err) {
+      console.error("Error al imprimir factura electrónica:", err);
+    }
+  };
+
+  const handlePrintAssociatedDoc = async (docItem) => {
+    if (!docItem) return;
+    const tipo = (docItem.tipoDocumento || "").toLowerCase();
+    if (tipo.includes("recibo")) {
+      await handlePrintReceiptDoc(docItem, selectedDoc);
+    } else {
+      handlePrintInvoiceDoc(docItem, selectedDoc);
+    }
+  };
+
+  const handlePrintMainDoc = async (r) => {
+    if (!r) return;
+    const tipo = (r.tipoDocumento || "").toLowerCase();
+    if (tipo.includes("factura de venta")) {
+      handlePrintInvoiceDoc(r, r);
+    } else if (tipo.includes("recibo") || tipo.includes("saldo a favor") || tipo.includes("anticipo")) {
+      await handlePrintReceiptDoc(r, r);
+    } else {
+      setSelectedDoc(r);
+    }
+  };
+
   return (
     <div className="flex flex-col min-h-full bg-[#f4f7fb] font-sans text-slate-700 pb-12">
       
@@ -1744,7 +2131,11 @@ export default function ReporteFinanciero() {
                       </td>
 
                       {visibleColumns.numeroDocumento && (
-                        <td className="px-3.5 py-2 border-r border-slate-100 font-mono font-bold text-[#009beb] hover:underline cursor-pointer">
+                        <td
+                          onClick={() => handlePrintMainDoc(r)}
+                          className="px-3.5 py-2 border-r border-slate-100 font-mono font-bold text-[#009beb] hover:underline cursor-pointer"
+                          title="Imprimir soporte de documento"
+                        >
                           {r.numeroDocumento}
                         </td>
                       )}
@@ -1928,157 +2319,85 @@ export default function ReporteFinanciero() {
       </div>
       )}
 
-      {/* ─── MODAL DETALLE DE DOCUMENTO DE REFERENCIA (OJITO) ─── */}
+      {/* ─── MODAL DOCUMENTOS ASOCIADOS (1:1 CON ORALDRIVE) ─── */}
       {selectedDoc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-fadeIn">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="bg-white rounded-lg shadow-2xl border border-slate-200 w-full max-w-xl overflow-hidden flex flex-col">
             
             {/* Header del modal */}
-            <div className="px-6 py-4 bg-gradient-to-r from-[#009beb] to-[#0077b6] text-white flex items-center justify-between">
-              <div>
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-sky-100">Documento de Referencia</span>
-                <h3 className="text-base font-bold flex items-center gap-2">
-                  <span>{selectedDoc.tipoDocumento}</span>
-                  <span className="text-sky-200 text-sm font-mono font-normal">#{selectedDoc.numeroDocumento}</span>
-                </h3>
-              </div>
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-white">
+              <h3 className="text-base font-semibold text-slate-800">
+                Documentos asociados
+              </h3>
               <button
+                type="button"
                 onClick={() => setSelectedDoc(null)}
-                className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center transition-colors cursor-pointer"
+                className="text-slate-400 hover:text-slate-600 transition-colors cursor-pointer text-lg leading-none"
+                title="Cerrar"
               >
                 ✕
               </button>
             </div>
 
-            {/* Contenido del modal */}
-            <div className="p-6 space-y-4 overflow-y-auto custom-scrollbar text-xs">
-              
-              {/* Estado y Monto */}
-              <div className="flex items-center justify-between p-3.5 bg-slate-50 rounded-xl border border-slate-200">
-                <div>
-                  <span className="text-slate-400 text-[11px] block font-medium">Estado del Movimiento</span>
-                  <span className={`inline-block mt-0.5 px-2.5 py-0.5 rounded-full text-xs font-bold ${selectedDoc.estado === 'Anulado' ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                    {selectedDoc.estado}
-                  </span>
-                </div>
-                <div className="text-right">
-                  <span className="text-slate-400 text-[11px] block font-medium">Monto Total</span>
-                  <span className="text-base font-mono font-black text-slate-800">
-                    $ {Number(selectedDoc.valor || 0).toLocaleString('es-CO')}
-                  </span>
-                </div>
+            {/* Contenido / Tabla de Documentos Asociados */}
+            <div className="p-6">
+              <div className="border border-slate-200 rounded overflow-hidden">
+                <table className="w-full text-xs text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50/70 text-slate-600 font-medium">
+                      <th className="py-2.5 px-4 text-center font-semibold w-1/4">Número documento</th>
+                      <th className="py-2.5 px-4 font-semibold w-1/4">Tipo documento</th>
+                      <th className="py-2.5 px-4 text-center font-semibold w-1/4">Valor</th>
+                      <th className="py-2.5 px-4 text-center font-semibold w-1/4">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 text-slate-700 bg-white">
+                    {(() => {
+                      const docs = getAssociatedDocs(selectedDoc);
+                      if (docs.length === 0) {
+                        return (
+                          <tr>
+                            <td colSpan={4} className="py-8 text-center text-slate-400 italic">
+                              No hay documentos asociados disponibles
+                            </td>
+                          </tr>
+                        );
+                      }
+                      return docs.map((doc, idx) => (
+                        <tr key={doc.id || idx} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-3 px-4 text-center font-medium text-slate-800">
+                            {doc.numeroDocumento}
+                          </td>
+                          <td className="py-3 px-4 text-slate-700">
+                            {doc.tipoDocumento}
+                          </td>
+                          <td className="py-3 px-4 text-center font-mono text-slate-800 font-medium">
+                            {Number(doc.valor || 0).toLocaleString('es-CO')}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handlePrintAssociatedDoc(doc)}
+                              className="inline-flex items-center justify-center w-7 h-7 bg-[#009beb] hover:bg-[#0087cd] active:scale-95 text-white rounded transition-all cursor-pointer shadow-xs"
+                              title="Imprimir soporte oficial"
+                            >
+                              <FiPrinter size={14} />
+                            </button>
+                          </td>
+                        </tr>
+                      ));
+                    })()}
+                  </tbody>
+                </table>
               </div>
-
-              {/* Datos Generales */}
-              <div className="grid grid-cols-2 gap-3 text-slate-600">
-                <div className="p-3 bg-white border border-slate-100 rounded-xl">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Fecha de Emisión</span>
-                  <span className="font-semibold text-slate-800 mt-0.5 block">{formatDateTime(selectedDoc.fechaCreacion)}</span>
-                </div>
-                <div className="p-3 bg-white border border-slate-100 rounded-xl">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Forma de Pago</span>
-                  <span className="font-semibold text-slate-800 mt-0.5 block">{selectedDoc.formaPago || "Efectivo"}</span>
-                </div>
-                <div className="p-3 bg-white border border-slate-100 rounded-xl col-span-2">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Tercero / Paciente</span>
-                  <span className="font-semibold text-slate-800 mt-0.5 block uppercase">
-                    {selectedDoc.tercero} {selectedDoc.documentoTercero ? `(${selectedDoc.documentoTercero})` : ''}
-                  </span>
-                </div>
-                <div className="p-3 bg-white border border-slate-100 rounded-xl col-span-2">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Concepto</span>
-                  <span className="font-semibold text-slate-800 mt-0.5 block">{selectedDoc.concepto}</span>
-                </div>
-                <div className="p-3 bg-white border border-slate-100 rounded-xl col-span-2">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Doc. Referencia</span>
-                  <span className="font-mono font-bold text-[#009beb] mt-0.5 block">{selectedDoc.docReferencia || selectedDoc.numeroDocumento}</span>
-                </div>
-              </div>
-
-              {/* Observaciones */}
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Observaciones / Notas</span>
-                <p className="text-slate-700 italic">
-                  {selectedDoc.observaciones ? selectedDoc.observaciones : "Sin observaciones registradas para este documento."}
-                </p>
-              </div>
-
-              {/* Información Contable */}
-              <div className="flex items-center justify-between px-3 py-2 bg-sky-50/60 border border-sky-100 rounded-xl text-sky-800 text-[11px]">
-                <span className="font-semibold">Cuenta Contable:</span>
-                <span className="font-mono">{selectedDoc.cuentaContable || "110505 - Caja General"}</span>
-              </div>
-
             </div>
 
             {/* Footer del modal */}
-            <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={async () => {
-                  if (!selectedDoc) return;
-                  try {
-                    const isEgreso = (selectedDoc.tipoDocumento || "").toLowerCase().includes("egreso") || (selectedDoc.tipoDocumento || "").toLowerCase().includes("compra");
-                    const consecutiveNumber = selectedDoc.numeroDocumento || selectedDoc.docReferencia || (isEgreso ? "EGR-0001" : "RC-0001");
-                    
-                    const pObj = selectedDoc.pacienteObj || {};
-                    const patientData = {
-                      nombreCompleto: pObj.nombreCompleto || selectedDoc.tercero || "Paciente Clínica",
-                      nroDocumento: pObj.nroDocumento || selectedDoc.documentoTercero || "—",
-                      tipoDocumento: pObj.tipoDocumento || pObj.tipo_documento || "CC",
-                      lugarResidencia: (pObj.direccion && pObj.direccion !== "—") ? pObj.direccion : (pObj.barrio || "—"),
-                      ciudadDomicilio: (pObj.ciudad && pObj.ciudad !== "—") ? pObj.ciudad : (pObj.ciudadDomicilio || "Montería"),
-                      celular: (pObj.celular && pObj.celular !== "—") ? pObj.celular : (pObj.telefono || "—"),
-                    };
-
-                    const conceptoStr = (selectedDoc.tipoDocumento === "Recibo de caja+" || selectedDoc.tipoDocumento === "Factura de venta+")
-                      ? (selectedDoc.documentosAsociados && selectedDoc.documentosAsociados !== "—" ? `Abono a ${selectedDoc.documentosAsociados}` : "Abono a Tratamiento Odontológico")
-                      : (selectedDoc.tipoDocumento || "Comprobante de Caja");
-
-                    const nombreElaborador = (userProfile?.nombreCompleto && !userProfile.nombreCompleto.includes("@"))
-                      ? userProfile.nombreCompleto
-                      : (userProfile?.nombre && !userProfile.nombre.includes("@"))
-                      ? userProfile.nombre
-                      : (selectedDoc.usuarioCreador && !selectedDoc.usuarioCreador.includes("@") && selectedDoc.usuarioCreador !== "Administración")
-                      ? selectedDoc.usuarioCreador
-                      : "Administración";
-
-                    const pagoData = {
-                      monto: Number(selectedDoc.valor || 0),
-                      medio: selectedDoc.formaPago || "Efectivo",
-                      concepto: conceptoStr,
-                      notas: selectedDoc.observaciones || "Sin observaciones adicionales",
-                      fecha: selectedDoc.fechaSeleccionada || selectedDoc.fechaCreacion || new Date().toISOString(),
-                      nroConsecutivo: consecutiveNumber,
-                      registradoPor: nombreElaborador,
-                      planTitle: selectedDoc.documentosAsociados && selectedDoc.documentosAsociados !== "—" ? selectedDoc.documentosAsociados : "Tratamiento Odontológico",
-                      planId: selectedDoc.planId || null
-                    };
-
-                    const clinicData = {
-                      inquilino: userProfile?.inquilino || "",
-                      logo: userProfile?.tenant?.logo || userProfile?.logo || "",
-                      nombreComercial: userProfile?.tenant?.nombreComercial || userProfile?.tenant?.nombre || "CLÍNICA DENTAL",
-                      nit: userProfile?.tenant?.nit || "900251327",
-                      direccion: userProfile?.tenant?.direccion || "Sede Principal",
-                      telefono: userProfile?.tenant?.telefono || "",
-                      email: userProfile?.tenant?.email || "",
-                    };
-
-                    await ReceiptPrintService.generatePDF(pagoData, patientData, clinicData, userProfile);
-                  } catch (err) {
-                    console.error("Error generando PDF de soporte:", err);
-                  }
-                }}
-                className="flex items-center gap-1.5 px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-semibold rounded-xl transition-all cursor-pointer text-xs shadow-sm active:scale-95"
-              >
-                <FiPrinter size={13} />
-                <span>Imprimir Soporte Oficial</span>
-              </button>
+            <div className="px-6 py-3 border-t border-slate-100 flex justify-end bg-white">
               <button
                 type="button"
                 onClick={() => setSelectedDoc(null)}
-                className="px-5 py-2 bg-[#009beb] hover:bg-[#0087cd] text-white font-bold rounded-xl transition-all cursor-pointer text-xs"
+                className="px-5 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded transition-colors cursor-pointer"
               >
                 Cerrar
               </button>

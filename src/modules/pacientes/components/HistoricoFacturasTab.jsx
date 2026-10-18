@@ -45,11 +45,13 @@ import { printElectronicInvoice } from '../../../utils/electronicInvoiceTemplate
 /*  Print helper                                                        */
 /* ------------------------------------------------------------------ */
 const printInvoice = (fact, patient, tenant) => {
+    const rawDetalles = typeof fact?.detalles === 'string' ? JSON.parse(fact.detalles || '{}') : (fact?.detalles || {});
+    const items = fact?.items?.length ? fact.items : (rawDetalles?.items || []);
     printElectronicInvoice({
         factura: fact,
         patient: patient,
         tenant: tenant,
-        items: fact.items || []
+        items: items
     });
 };
 
@@ -58,7 +60,8 @@ const printInvoice = (fact, patient, tenant) => {
 /* ------------------------------------------------------------------ */
 function InvoiceDetailModal({ fact, patient, tenant, onClose }) {
     if (!fact) return null;
-    const items    = fact.items || [];
+    const rawDetalles = typeof fact?.detalles === 'string' ? JSON.parse(fact.detalles || '{}') : (fact?.detalles || {});
+    const items    = (fact.items && fact.items.length) ? fact.items : (rawDetalles?.items || []);
     const total    = parseFloat(fact.total || 0);
     const payLabel = PAYMENT_LABELS[String(fact.medioPago || fact.medio_pago)] || fact.medioPago || fact.medio_pago || 'Efectivo';
     const isEmit   = fact.factusEstado === 'Emitido' || (fact.estado || '').toLowerCase() === 'emitido';
