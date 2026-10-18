@@ -9,7 +9,7 @@ import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
 
-import { printReciboCaja } from "../../../utils/electronicInvoiceTemplate";
+import { printReciboCaja, printElectronicInvoice } from "../../../utils/electronicInvoiceTemplate";
 import { getReceiptPlanFinancials } from "../../../services/billingService";
 import { getConfigSection, getConfigItems } from "../../../services/configPersistenceService";
 import { isDoctorUser } from "../../../utils/doctorHelpers";
@@ -190,6 +190,140 @@ export default function ReciboCajaList({ onNew }) {
         } catch (printErr) {
             console.error("Error al imprimir recibo de caja:", printErr);
             toast && toast.error("Error al preparar la impresión del recibo");
+        }
+    };
+
+    // --- IMPRESIÓN DOCUMENTO ASOCIADO (Factura de Venta / Factura Electrónica) ---
+    const handlePrintAssociatedDoc = async (recibo) => {
+        try {
+            if (!recibo) return;
+            const assoc = recibo.associatedDoc || {};
+            let rawFac = assoc.rawFactura;
+
+            // Si aún no tenemos rawFactura completa, buscar en Supabase por número o ID
+            if (!rawFac) {
+                const targetNum = assoc.numero || recibo.docRefNumber || recibo.fevNumero;
+                const targetId = assoc.id || recibo.factura_id || recibo._raw?.factura_id || recibo._meta?.factura_id;
+                
+                if (targetNum || targetId) {
+                    try {
+                        let query = supabase.from("facturas").select("*").eq("tenant_id", inquilino);
+                        if (targetId && targetNum) {
+                            query = query.or(`id.eq.${targetId},numero.eq.${targetNum}`);
+                        } else if (targetId) {
+                            query = query.eq("id", targetId);
+                        } else {
+                            query = query.eq("numero", targetNum);
+                        }
+                        const { data: foundFac } = await query.maybeSingle();
+                        if (foundFac) {
+                            rawFac = foundFac;
+                        } else {
+                            let qElec = supabase.from("facturas_electronicas").select("*").eq("tenant_id", inquilino);
+                            if (targetId && targetNum) {
+                                qElec = qElec.or(`id.eq.${targetId},numero.eq.${targetNum}`);
+                            } else if (targetId) {
+                                qElec = qElec.eq("id", targetId);
+                            } else {
+                                qElec = qElec.eq("numero", targetNum);
+                            }
+                            const { data: foundElec } = await qElec.maybeSingle();
+                            if (foundElec) rawFac = foundElec;
+                        }
+                    } catch (e) {
+                        console.warn("Aviso al consultar factura para impresión:", e);
+                    }
+                }
+            }
+
+            const tenantData = companyInfo || {
+                nombreComercial: userProfile?.tenant?.nombreComercial || userProfile?.tenantNombre || "ATM Centro del Dolor Orofacial",
+                nit: userProfile?.tenant?.nit || "64576359-3",
+                direccion: userProfile?.tenant?.direccion || "Calle 16#17-68",
+                ciudad: userProfile?.tenant?.ciudad || "Sincelejo",
+                telefono: userProfile?.tenant?.telefono || "3103583706",
+                email: userProfile?.tenant?.email || "atmcentrodedolor@gmail.com",
+                logoUrl: userProfile?.tenant?.logo_url || userProfile?.tenant?.logoUrl || ""
+            };
+
+            const pacData = {
+                id: recibo.pacienteId || recibo.paciente_id || recibo._raw?.paciente_id,
+                nombreCompleto: recibo.pacienteNombre,
+                nombres: recibo.pacienteNombre,
+                documento: recibo.pacienteDocumento,
+                nroDocumento: recibo.pacienteDocumento,
+                tipoDocumento: recibo.pacienteTipoDocumento || "CC",
+                tipo_documento: recibo.pacienteTipoDocumento || "CC",
+                direccion: recibo.pacienteDireccion,
+                ciudad: recibo.pacienteCiudad,
+                telefono: recibo.pacienteTelefono
+            };
+
+            const numFactura = rawFac?.numero || (rawFac?.prefix && rawFac?.number ? `${rawFac.prefix}${rawFac.number}` : null) || assoc.numero || recibo.docRefNumber || "FCEV-0001";
+            const totalFactura = Number(rawFac?.total || assoc.total || recibo.total || 0);
+
+            let parsedDet = rawFac?.detalles;
+            if (typeof parsedDet === "string") {
+                try { parsedDet = JSON.parse(parsedDet); } catch {}
+            }
+
+            let invoiceItems = [];
+            if (Array.isArray(rawFac?.items) && rawFac.items.length > 0) {
+                invoiceItems = rawFac.items;
+            } else if (Array.isArray(parsedDet?.items) && parsedDet.items.length > 0) {
+                invoiceItems = parsedDet.items;
+            } else if (Array.isArray(recibo.conceptos) && recibo.conceptos.length > 0) {
+                invoiceItems = recibo.conceptos;
+            } else if (recibo.concepto) {
+                invoiceItems = [{
+                    concepto: recibo.concepto,
+                    precioUnitario: totalFactura,
+                    cantidad: 1,
+                    total: totalFactura
+                }];
+            } else {
+                invoiceItems = [{
+                    concepto: "Tratamiento Odontológico",
+                    precioUnitario: totalFactura,
+                    cantidad: 1,
+                    total: totalFactura
+                }];
+            }
+
+            const facturaPayload = {
+                ...rawFac,
+                id: rawFac?.id || assoc.id || recibo.id,
+                numero: numFactura,
+                factusNumero: rawFac?.factusNumero || numFactura,
+                fecha: rawFac?.fecha || rawFac?.fecha_emision || rawFac?.created_at || recibo.rawDate || recibo.fecha || new Date(),
+                fecha_emision: rawFac?.fecha_emision || rawFac?.fecha || rawFac?.created_at || recibo.rawDate || recibo.fecha || new Date(),
+                fecha_vencimiento: rawFac?.fecha_vencimiento || rawFac?.vencimiento || rawFac?.fecha || new Date(),
+                total: totalFactura,
+                subtotal: rawFac?.subtotal !== undefined ? Number(rawFac.subtotal) : totalFactura,
+                formaPago: rawFac?.formaPago || rawFac?.metodo_pago || recibo.medioPago || "10",
+                medioPago: rawFac?.medioPago || recibo.medioPago || "Efectivo",
+                observaciones: rawFac?.observaciones || rawFac?.notas || recibo.observaciones || "",
+                items: invoiceItems,
+                cufe: rawFac?.cufe || rawFac?.factusCufe || "",
+                qrCode: rawFac?.qrCode || rawFac?.factusQr || rawFac?.qr || "",
+                pacienteNombre: pacData.nombreCompleto,
+                pacienteDocumento: pacData.documento,
+                pacienteTipoDocumento: pacData.tipoDocumento,
+                pacienteDireccion: pacData.direccion,
+                pacienteCiudad: pacData.ciudad,
+                pacienteTelefono: pacData.telefono
+            };
+
+            printElectronicInvoice({
+                factura: facturaPayload,
+                patient: pacData,
+                userProfile,
+                tenant: tenantData,
+                items: invoiceItems
+            });
+        } catch (err) {
+            console.error("Error al imprimir factura asociada:", err);
+            toast && toast.error("Error al preparar la impresión de la factura asociada");
         }
     };
 
@@ -531,12 +665,12 @@ export default function ReciboCajaList({ onNew }) {
                 if (data && data.length > 0) dataPagosRaw = data;
             } catch (e) {}
 
-            // 4. Mapeo de Facturas Electrónicas vinculadas a recibos (P1-FEV1)
+            // 4. Mapeo de Facturas vinculadas a recibos (P1-FEV1 / Facturas de Venta)
             let invoiceMap = {};
             try {
                 const [factsRes, fevRes] = await Promise.all([
-                    Promise.resolve(supabase.from("facturas").select("id, numero, detalles, total").eq("tenant_id", inquilino)).catch(() => ({ data: [] })),
-                    Promise.resolve(supabase.from("facturas_electronicas").select("id, numero, detalles, total, prefix, number").eq("tenant_id", inquilino)).catch(() => ({ data: [] }))
+                    Promise.resolve(supabase.from("facturas").select("*").eq("tenant_id", inquilino)).catch(() => ({ data: [] })),
+                    Promise.resolve(supabase.from("facturas_electronicas").select("*").eq("tenant_id", inquilino)).catch(() => ({ data: [] }))
                 ]);
                 const allInvoices = [...(factsRes?.data || []), ...(fevRes?.data || [])];
                 allInvoices.forEach((f) => {
@@ -550,7 +684,8 @@ export default function ReciboCajaList({ onNew }) {
                         id: f.id,
                         numero: numFact,
                         tipo: isFev ? "Factura Electrónica" : "Factura de venta",
-                        total: Number(f.total || det?.total || 0)
+                        total: Number(f.total || det?.total || 0),
+                        rawFactura: f
                     };
 
                     const linked = Array.isArray(det?.recibos_asociados)
@@ -569,6 +704,12 @@ export default function ReciboCajaList({ onNew }) {
                     }
                     if (f.id) {
                         invoiceMap[f.id] = invObj;
+                    }
+                    if (f.pago_id) {
+                        invoiceMap[f.pago_id] = invObj;
+                    }
+                    if (numFact) {
+                        invoiceMap[numFact] = invObj;
                     }
                 });
             } catch (e) {
@@ -847,7 +988,14 @@ export default function ReciboCajaList({ onNew }) {
                 const rawC = item.nroConsecutivo || item._meta?.nroConsecutivo || item.consecutivo || item.numero || item.nro_consecutivo;
                 const n = (!isNaN(Number(rawC)) && Number(rawC) > 0) ? Number(rawC) : (rawC || "—");
 
-                const rawInv = invoiceMap[item.id] || (item.fevNumero ? { numero: item.fevNumero, tipo: "Factura Electrónica" } : null);
+                const fid = item.factura_id || item._raw?.factura_id || item._meta?.factura_id || item.facturaId || item._raw?.facturaId || item._meta?.facturaId;
+                const fnum = item.factura_numero || item._raw?.factura_numero || item._meta?.factura_numero || item.facturaNumero;
+
+                const rawInv = (typeof item.fevNumero === "object" && item.fevNumero) ||
+                               invoiceMap[item.id] ||
+                               (fid ? invoiceMap[fid] : null) ||
+                               (fnum ? invoiceMap[fnum] : null) ||
+                               (item.fevNumero ? invoiceMap[item.fevNumero] || { numero: item.fevNumero, tipo: "Factura de venta" } : null);
                 const docRefNum = typeof rawInv === "object" ? rawInv?.numero : (rawInv || item.fevNumero || null);
 
                 return {
@@ -1300,7 +1448,7 @@ export default function ReciboCajaList({ onNew }) {
                                                 <td className="py-3 px-4 text-center">
                                                     <button 
                                                         type="button"
-                                                        onClick={() => handlePrint(associatedDocsModal.recibo)}
+                                                        onClick={() => handlePrintAssociatedDoc(associatedDocsModal.recibo)}
                                                         className="w-7 h-7 bg-sky-500 hover:bg-sky-600 text-white rounded flex items-center justify-center mx-auto transition-colors shadow-xs cursor-pointer border-0"
                                                         title="Imprimir documento asociado"
                                                     >

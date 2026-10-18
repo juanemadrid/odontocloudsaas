@@ -1577,8 +1577,6 @@ export const generateDocumentoSoporteHtml = ({
           <div class="meta-text-block">
             <div class="doc-type">${docTituloPrincipal}</div>
             <div class="doc-number">No. ${docNumero}</div>
-            <div class="doc-sub">${docBadge}</div>
-            <div class="doc-sub">${docSub}</div>
           </div>
             ${showQr && qrImgUrl ? `
             <div class="qr-container">
@@ -1673,10 +1671,7 @@ export const generateDocumentoSoporteHtml = ({
     </tr>
   </table>
 
-  <!-- RESOLUTION -->
-  <div class="resolution-block">
-    ${resolutionText}
-  </div>
+
 
   <!-- FOOTER -->
   <table class="footer-table">
