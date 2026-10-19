@@ -1,0 +1,72 @@
+Protocolo de Seguridad - Salud Drive S.A.S.
+
+-- 1 of 4 --
+
+Tabla de contenido
+Protocolo de Seguridad - Salud Drive S.A.S. .................................................................... 3
+Introducción ................................................................................................................... 3
+Almacenes de Servicios de recuperación / Azure Backup ......................................................... 3
+¿Por qué usamos Azure Backup? .............................................................................................................. 3
+Azure Export............................................................................................................................ 4
+Claves de Acceso ..................................................................................................................... 4
+
+-- 2 of 4 --
+
+Protocolo de Seguridad - Salud Drive S.A.S.
+Introducción
+Para una mayor seguridad y respaldo de los datos, en SaludDrive trabajamos con
+herramientas de ultima generación provistas por Microsoft Azure para la gestión de
+Backups y Replicación de datos, con lo cual podemos ofrecer el mejor servicio disponible en
+la actualidad a nuestros clientes. Entre las herramientas destacadas que implementamos
+en nuestras plataformas contamos con:
+o 	Almacenes de Servicios de recuperación / Azure Backup
+o 	Azure Export
+Almacenes de Servicios de recuperación / Azure Backup
+En SaludDrive por medio de la herramienta Azure Backup, desplegamos el servicio con el
+cual realizamos copias de seguridad de los datos y recuperación de estos en tiempo real en
+la nube de Microsoft. Con esto reemplazamos su solución de copia de seguridad local o
+remota existente por una solución confiable, segura y rentable basada en la nube.
+¿Por qué usamos Azure Backup?
+Un aspecto de alta disponibilidad es la replicación del almacenamiento. En SaludDrive
+usamos el almacenamiento con redundancia geográfica (GRS), garantizando así, el poder
+continuar con la disponibilidad del servicio, incluso si hay una interrupción regional. Con el
+GRS de Azure Backup, replicamos los datos en una región secundaria (a cientos de
+kilómetros de la ubicación principal de los datos de origen). Lo cual nos proporciona un
+mayor nivel de respaldo y durabilidad de los datos.
+El cifrado de datos que nos brinda Azure Backup, nos permite en SaludDrive, la transmisión
+y el almacenamiento seguro de los datos en la nube pública. La frase de contraseña de
+cifrado se almacena localmente y nunca se transmite ni se almacena en Azure. Si es
+necesario restaurar algunos de los datos, solo cuenta con la frase de contraseña o clave de
+cifrado.
+Contamos con copias de seguridad coherentes con la aplicación. A través de puntos de
+recuperación que tienen todos los datos necesarios para restaurar la copia de seguridad.
+Con Azure Backup proporcionamos copias de seguridad coherentes con la aplicación, lo que
+garantiza que no se necesitarán correcciones adicionales para restaurar los datos. La
+restauración de datos coherentes con la aplicación reduce el tiempo de restauración, lo que
+nos permite volver rápidamente a un estado de ejecución.
+
+-- 3 of 4 --
+
+Azure Export
+Con esta herramienta, en Salud Drive gestionamos copias de seguridad locales 1 vez por
+semana de todos nuestros recursos, como son, BDs, Aplicaciones, y otros componentes de
+vital importancia para reestablecer el sistema de ser necesario al punto deseado.
+Además de ser una herramienta muy útil para migrar grandes conjuntos de datos con
+eficacia, la confidencialidad es uno de los factores claves en SaludDrive, por tal razón,
+cuando se utiliza el servicio de Azure Export, los datos están muy protegidos en todo
+momento. Los discos cuentan con Cifrado de unidad BitLocker de Microsoft, mientras que
+las claves de cifrado se administran en Azure Portal o en la API de REST de Azure con SSL.
+En el centro de datos, migramos los datos de la nube a la unidad local con un vínculo de
+carga en la red rápido y privado.
+Por ultimo, con el fin de poder garantizar la integridad de los datos, con el servicio de Azure
+Export, contamos con las sumas de comprobación integradas y un hash de MD5
+Claves de Acceso
+Por ultimo y no siendo de menor importancia, nuestros clientes son responsables del uso y
+cuidado de sus credenciales de acceso, dado que de ser conocidos por terceras personas o
+en los casos en los que deje su sesión abierta en la plataforma, podrá estar expuesto a robo
+de información, manipulación de la información, situaciones que pueden llegar a ser
+perjudiciales 	para 	el 	sistema 	del 	cliente 	y 	que 	bajo 	ninguna 	circunstancia 	serán
+responsabilidad de SaludDrive.
+
+-- 4 of 4 --
+

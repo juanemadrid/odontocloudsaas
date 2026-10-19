@@ -18,7 +18,8 @@
     "test:ci": "npm run security:check && npm run test:help && npm run test:agenda && npm run test:config && npm run test:odontograma && npm run test:production && npm run build",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist --dotfiles --repo https://github.com/juanemadrid/odontocloudsaas.git -f",
-    "test:help": "node scripts/test-help-assistant.mjs"
+    "test:help": "node scripts/test-help-assistant.mjs",
+    "test:demo": "node scripts/test-product-demo.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

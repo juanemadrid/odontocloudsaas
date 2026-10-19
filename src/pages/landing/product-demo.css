@@ -1,0 +1,134 @@
+.product-demo { background: #f8fafc; color: #334155; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+.product-demo-toolbar { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:10px 12px; background:#fff; border-bottom:1px solid #e2e8f0; font-size:11px; font-weight:600; }
+.product-demo-toolbar > span { display:flex; align-items:center; gap:6px; }
+.product-demo-toolbar small { color:#64748b; font-weight:400; font-size:10px; }
+.product-demo-dot { width:6px; height:6px; border-radius:50%; background:#2563eb; }
+.product-demo-toolbar button { display:flex; align-items:center; gap:6px; padding:6px 8px; border-radius:6px; color:#1d4ed8; background:#eff6ff; font-size:11px; white-space:nowrap; cursor:pointer; }
+.product-demo button:focus-visible, .product-demo-dialog button:focus-visible { outline:2px solid #2563eb; outline-offset:2px; }
+.product-demo-frame { position:relative; width:100%; aspect-ratio:1440/880; overflow:hidden; text-align:left; background:#f8fafc; }
+.product-demo-canvas { position:absolute; inset:0 auto auto 0; width:1440px; height:880px; transform-origin:top left; display:flex; font-family:Inter, ui-sans-serif, system-ui, sans-serif; color:#334155; background:#f8fafc; }
+.product-demo-canvas h1,.product-demo-canvas h2,.product-demo-canvas h3 { font-family:inherit; }
+.product-demo-sidebar { width:256px; flex-shrink:0; display:flex; flex-direction:column; background:linear-gradient(150deg,#f8fafc,#fff); border-right:1px solid #e2e8f0; }
+.product-demo-brand { min-height:210px; padding:22px 16px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; border-bottom:1px solid #e2e8f0; }
+.product-demo-brand img { width:80px; height:80px; object-fit:contain; padding:8px; background:#fff; border-radius:16px; border:1px solid #f1f5f9; box-shadow:0 8px 18px #0f172a0d; }
+.product-demo-brand strong { font-size:14px; font-weight:900; text-transform:uppercase; letter-spacing:-.5px; }
+.product-demo-brand > span { font-size:10px; color:#64748b; }
+.product-demo-search { display:flex; align-items:center; gap:12px; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:12px; margin:16px; padding:10px 16px; color:#94a3b8; font-size:10px; font-weight:700; text-transform:uppercase; }
+.product-demo-search small { margin-left:auto; font-size:8px; }
+.product-demo-menu-label { padding:0 28px 12px; font-size:9px; letter-spacing:3px; color:#94a3b8; font-weight:900; text-transform:uppercase; }
+.product-demo-sidebar nav { padding:0 12px; display:grid; gap:8px; }
+.product-demo-sidebar nav button { position:relative; display:flex; align-items:center; gap:12px; width:100%; padding:12px 16px; border-radius:12px; background:transparent; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:#64748b; cursor:pointer; text-align:left; }
+.product-demo-sidebar nav button svg { width:18px; height:18px; }
+.product-demo-sidebar nav button:hover { background:#f1f5f9; color:#0f172a; }
+.product-demo-sidebar nav button.is-active { color:#2563eb; background:#2563eb0d; }
+.product-demo-sidebar nav button.is-active::before { content:''; position:absolute; left:0; width:4px; height:20px; background:#2563eb; border-radius:0 4px 4px 0; }
+.product-demo-sidebar-note { margin-top:auto; padding:24px; color:#94a3b8; font-size:11px; line-height:1.6; border-top:1px solid #e2e8f0; }
+.product-demo-workspace { min-width:0; flex:1; display:flex; flex-direction:column; }
+.product-demo-appbar { height:60px; flex-shrink:0; display:flex; align-items:center; justify-content:space-between; padding:0 28px; border-bottom:1px solid #e2e8f0; background:#fff; font-size:11px; font-weight:700; }
+.product-demo-appbar > span,.product-demo-appbar > div { display:flex; align-items:center; gap:14px; }
+.product-demo-avatar { display:grid; place-items:center; width:28px; height:28px; color:#2563eb; background:#eff6ff; border-radius:50%; }
+.product-demo-view { flex:1; min-height:0; overflow:auto; }
+.product-demo-inert { height:100%; }
+.product-demo-inert .print-only { display:none !important; }
+.product-demo-caption { margin:0; padding:8px 10px; text-align:center; background:#fff; color:#64748b; font-size:10px; line-height:1.5; }
+.product-demo-placeholder { aspect-ratio:1440/880; display:grid; place-items:center; }
+.product-demo-placeholder button { color:#2563eb; font-size:12px; }
+.product-demo-dialog { position:fixed; margin:auto; padding:0; border:1px solid #e2e8f0; border-radius:16px; width:min(96vw,1600px); max-width:96vw; max-height:94dvh; overflow:auto; background:#f8fafc; color:#334155; box-shadow:0 30px 100px #02061766; font-family:Inter, ui-sans-serif, system-ui,sans-serif; }
+.product-demo-dialog::backdrop { background:#0f172ab3; backdrop-filter:blur(6px); }
+.product-demo-dialog .product-demo-toolbar { position:sticky; top:0; z-index:2; padding:14px 20px; font-size:14px; }
+.product-demo-dialog-body { overflow:auto; max-height:calc(94dvh - 110px); }
+@media(max-width:1023px) {
+  .product-demo-toolbar small { display:none; }
+  .product-demo-dialog .product-demo-toolbar { padding:12px; font-size:12px; }
+}
+@media(prefers-reduced-motion:no-preference) {
+  .product-demo-inert { animation:product-view-in 180ms ease-out; }
+  @keyframes product-view-in { from { opacity:.6; } to { opacity:1; } }
+}
+.product-demo-menu-toggle { display:grid; place-items:center; width:34px; height:34px; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:8px; color:#475569; cursor:pointer; flex-shrink:0; }
+.product-demo-menu-toggle:hover { color:#2563eb; background:#eff6ff; }
+.product-demo-sidebar[hidden] { display:none; }
+.product-demo-frame.is-collapsed:not(.is-compact) .product-demo-sidebar { width:80px; }
+.product-demo-frame.is-collapsed:not(.is-compact) .product-demo-brand { min-height:120px; padding:16px 8px; }
+.product-demo-frame.is-collapsed:not(.is-compact) .product-demo-brand img { width:44px; height:44px; padding:4px; }
+.product-demo-frame.is-collapsed:not(.is-compact) .product-demo-brand strong,
+.product-demo-frame.is-collapsed:not(.is-compact) .product-demo-brand > span,
+.product-demo-frame.is-collapsed:not(.is-compact) .product-demo-search span,
+.product-demo-frame.is-collapsed:not(.is-compact) .product-demo-search small,
+.product-demo-frame.is-collapsed:not(.is-compact) .product-demo-menu-label,
+.product-demo-frame.is-collapsed:not(.is-compact) .product-demo-sidebar nav button span,
+.product-demo-frame.is-collapsed:not(.is-compact) .product-demo-sidebar-note { display:none; }
+.product-demo-frame.is-collapsed:not(.is-compact) .product-demo-search { padding:10px; margin:12px; }
+.product-demo-frame.is-collapsed:not(.is-compact) .product-demo-sidebar nav button { justify-content:center; padding:12px 0; }
+.product-demo-frame.is-compact { aspect-ratio:auto; height:620px; }
+.product-demo-frame.is-compact .product-demo-canvas { position:relative; inset:auto; width:100%; height:100%; }
+.product-demo-frame.is-compact .product-demo-sidebar { position:absolute; z-index:4; inset:0 auto 0 0; width:250px; background:white; overflow-y:auto; box-shadow:15px 0 40px #0f172a26; }
+.product-demo-frame.is-compact .product-demo-brand { min-height:145px; padding:16px; }
+.product-demo-frame.is-compact .product-demo-brand img { width:56px; height:56px; }
+.product-demo-frame.is-compact .product-demo-brand strong { font-size:12px; }
+.product-demo-frame.is-compact .product-demo-sidebar nav button { min-height:42px; }
+.product-demo-menu-backdrop { position:absolute; inset:0; background:#0f172a66; z-index:3; cursor:pointer; }
+.product-demo-drawer-close { position:absolute; right:8px; top:8px; display:grid; place-items:center; width:32px; height:32px; color:#475569; border-radius:8px; background:#f1f5f9; cursor:pointer; }
+.product-demo-frame.is-compact .product-demo-appbar { height:54px; padding:0 12px; }
+.product-demo-frame.is-compact .product-demo-appbar > span { gap:8px; }
+.product-demo-frame.is-compact .product-demo-appbar > div { font-size:0; gap:0; }
+.product-demo-frame.is-compact .product-demo-appbar > div > svg { display:none; }
+.product-demo-frame.is-compact .product-demo-avatar { font-size:12px; }
+.product-demo-view { overscroll-behavior:contain; }
+.product-demo-frame.is-compact .product-demo-inert { height:auto; min-height:100%; }
+.product-demo-frame.is-compact .demo-home { padding:16px; }
+.product-demo-frame.is-compact .demo-home .relative.z-10 { padding:20px; flex-direction:column; align-items:flex-start; gap:16px; }
+.product-demo-frame.is-compact .demo-home h1 { font-size:24px !important; }
+.product-demo-frame.is-compact .demo-admin { padding:12px; }
+.product-demo-frame.is-compact .demo-admin .grid,
+.product-demo-frame.is-compact .demo-reports .grid { grid-template-columns:minmax(0,1fr); }
+.product-demo-frame.is-compact .demo-reports > div { padding:12px; }
+.product-demo-frame.is-compact .demo-reports .grid button span { white-space:normal; }
+.product-demo-frame.is-compact .demo-admin .grid h2 { white-space:normal; }
+.product-demo-frame.is-compact .demo-agenda { height:auto; padding-top:16px; }
+.product-demo-frame.is-compact .demo-agenda > div:first-child { padding:0 12px 16px; }
+.product-demo-frame.is-compact .demo-agenda > div:first-child button { display:none; }
+.product-demo-frame.is-compact .demo-agenda > div:first-child div:has(> button) { display:none; }
+.product-demo-frame.is-compact .demo-agenda > div:first-child .text-3xl { font-size:22px; }
+.product-demo-frame.is-compact .demo-agenda > div:first-child .flex.items-end { flex-wrap:wrap; gap:10px; }
+.product-demo-frame.is-compact .demo-agenda-content { display:block; padding:0 10px 16px; }
+.product-demo-frame.is-compact .demo-agenda-sidebar { display:none; }
+.product-demo-frame.is-compact .demo-agenda-table { min-height:400px; }
+.product-demo-frame.is-compact .demo-agenda-table > div:first-child { padding:12px 8px; }
+.product-demo-frame.is-compact .demo-agenda-table > div:first-child span { font-size:9px; }
+.product-demo-frame.is-compact .demo-agenda-table th:nth-child(3),
+.product-demo-frame.is-compact .demo-agenda-table td:nth-child(3),
+.product-demo-frame.is-compact .demo-agenda-table th:nth-child(4),
+.product-demo-frame.is-compact .demo-agenda-table td:nth-child(4),
+.product-demo-frame.is-compact .demo-agenda-table th:nth-child(6),
+.product-demo-frame.is-compact .demo-agenda-table td:nth-child(6) { display:none; }
+.product-demo-frame.is-compact .demo-agenda-table td { padding:12px 6px; }
+.product-demo-frame.is-compact .demo-agenda-table td:nth-child(2) div { min-width:0; }
+.product-demo-frame.is-compact .demo-agenda-table td:nth-child(2) p { max-width:110px; }
+.product-demo-frame.is-compact .demo-patients > div { padding:12px; }
+.product-demo-frame.is-compact .demo-patients > div > div:first-child { align-items:flex-start; flex-direction:column; }
+.product-demo-frame.is-compact .demo-patients > div > div:first-child > div:last-child { display:none; }
+.product-demo-frame.is-compact .demo-patients th:nth-child(3),
+.product-demo-frame.is-compact .demo-patients td:nth-child(3),
+.product-demo-frame.is-compact .demo-patients th:nth-child(4),
+.product-demo-frame.is-compact .demo-patients td:nth-child(4),
+.product-demo-frame.is-compact .demo-patients th:last-child,
+.product-demo-frame.is-compact .demo-patients td:last-child { display:none; }
+.product-demo-frame.is-compact .demo-patients > div > div:last-of-type > div:last-child { flex-wrap:wrap; gap:8px; }
+.product-demo-frame.is-compact .demo-cash { height:auto; min-height:560px; }
+.product-demo-frame.is-compact .demo-cash > aside { display:none; }
+.product-demo-frame.is-compact .demo-cash > div > div:first-child { padding:16px; }
+.product-demo-frame.is-compact .demo-cash > div > div:last-child { padding:12px; }
+.product-demo-frame.is-compact .demo-cash input { width:90px; }
+.product-demo-frame.is-compact .demo-cash th:nth-child(2),
+.product-demo-frame.is-compact .demo-cash td:nth-child(2),
+.product-demo-frame.is-compact .demo-cash th:nth-child(3),
+.product-demo-frame.is-compact .demo-cash td:nth-child(3),
+.product-demo-frame.is-compact .demo-cash th:nth-child(4),
+.product-demo-frame.is-compact .demo-cash td:nth-child(4),
+.product-demo-frame.is-compact .demo-cash th:nth-child(5),
+.product-demo-frame.is-compact .demo-cash td:nth-child(5),
+.product-demo-frame.is-compact .demo-cash th:last-child,
+.product-demo-frame.is-compact .demo-cash td:last-child { display:none; }
+.product-demo-dialog .product-demo-frame.is-compact { height:calc(90dvh - 110px); min-height:420px; }
+

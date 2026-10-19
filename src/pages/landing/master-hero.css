@@ -1,0 +1,72 @@
+/* Proportions belong to the marketing hero, independently of the clinic pages. */
+.master-hero.master-hero {
+  min-height: min(100svh, 980px);
+  padding: 112px 0 48px;
+  background: linear-gradient(135deg, #f5f9ff, #edf6ff 55%, #f8fbff);
+}
+.master-hero .master-hero__container {
+  max-width: 1920px;
+  padding: 0 clamp(24px, 4vw, 88px);
+}
+.master-hero .master-hero__title {
+  font-size: clamp(32px, 3.2vw, 60px);
+  line-height: 1.12;
+  text-wrap: balance;
+}
+.master-hero .master-hero__copy > p {
+  font-size: clamp(15px, 1.15vw, 20px);
+}
+@media (min-width: 1024px) {
+  .master-hero.master-hero {
+    padding-top: 120px;
+    padding-bottom: 64px;
+  }
+  .master-hero .master-hero__grid {
+    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.3fr);
+    gap: clamp(40px, 4.5vw, 88px);
+  }
+  .master-hero .master-hero__copy,
+  .master-hero .master-hero__devices {
+    grid-column: auto;
+    min-width: 0;
+  }
+  .master-hero .master-hero__copy > div:has(> button) {
+    gap: 12px;
+  }
+  .master-hero .master-hero__copy > div > button {
+    padding: 14px 22px;
+    font-size: clamp(13px, 0.95vw, 16px);
+  }
+}
+@media (min-width: 1024px) and (max-height: 800px) {
+  .master-hero.master-hero { padding-top: 104px; padding-bottom: 44px; }
+  .master-hero .master-hero__title { font-size: clamp(32px, 3vw, 48px); }
+}
+@media (max-width: 1023px) {
+  .master-hero .master-hero__grid { gap: 28px; }
+  .master-hero .master-hero__copy { max-width: 680px; margin-inline: auto; }
+  .master-hero .master-hero__title { font-size: clamp(32px, 5.6vw, 48px); }
+}
+@media (max-width: 480px) {
+  .master-hero.master-hero { padding-top: 100px; padding-bottom: 36px; }
+  .master-hero .master-hero__container { padding-inline: 20px; }
+  .master-hero .master-hero__copy > div > button { padding-inline: 20px; font-size: 14px; }
+  .master-hero .master-hero__copy > div:first-child { font-size: 10px; letter-spacing: 0; }
+}
+
+/* Quiet ambient movement; the product demonstration remains the focus. */
+.master-hero > .pointer-events-none {
+  animation: hero-ambient 24s ease-in-out infinite alternate;
+  transform-origin: 65% 45%;
+}
+@keyframes hero-ambient {
+  from { transform: scale(1); }
+  to { transform: scale(1.035) translate3d(-0.35%, 0, 0); }
+}
+@media (min-width: 1024px) {
+  .master-hero .master-hero__container { transform: translateY(-16px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .master-hero > .pointer-events-none,
+  .master-hero .animate-pulse { animation: none; }
+}

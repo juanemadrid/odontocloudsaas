@@ -1,0 +1,436 @@
+1
+Términos del Servicio
+El presente documento (Los términos) regula las condiciones de uso que aplican al uso y
+acceso a la aplicación “SaludDrive” puesto a disposición en la dirección
+www.saluddrive.com y sus aplicaciones oraldrive.com, sanadrive.com , vetedrive.com las
+versiones móviles y el API.
+El usuario acepta, al momento de empezar a utilizar el servicio, respetar todas las
+condiciones impuestas por este contrato.
+Definiciones
+▪ El término “contrato” o “acuerdo” hace referencia a este contrato y a sus Términos
+y Condiciones.
+▪ El término “leyes aplicables” hace referencia a las leyes que se aplican en Colombia
+para este tipo de contratos.
+▪ El término “sitio” o “sitio web” hace referencia al sitio donde se prestan todos los
+servicios que SaludDrive ofrece, sin tener en cuenta posibles terceros relacionados
+con SaludDrive.
+▪ El término “servicio” o “servicios” hace referencia a las aplicaciones que ofrece
+SaludDrive en sus sitios web y que opera desde los dominios oraldrive.com,
+sanadrive.com, vetedrive.com. También hace referencia a el uso de la página web
+de SaludDrive y su centro de soporte ayuda.saluddrive.com
+▪ El Término “SaludDrive”, “nosotros”, “nuestro(a)” hace referencia a SaludDrive S.A.S
+y todos sus asociados.
+▪ El término “Sistema” hace referencia a las plataformas web usadas por SaludDrive
+para prestar su servicio, incluido el software que usan las plataformas y todos sus
+contenidos.
+▪ El término “Aplicación” hace referencia al software que ofrece SaludDrive como
+servicio (SaaS) en sus sitios oraldrive.com, sanadrive.com, vetedrive.com.
+▪ El término “titular de la cuenta” hace referencia a la persona o empresa a nombre
+de quien se genera la factura.
+▪ El término “usuario” hace referencia a la persona que visita y usa el sitio web de
+SaludDrive y sus aplicaciones, sea o no “titular de cuenta”
+▪ El término “Plan” hace referencia a las condiciones de uso que tienen un usuario
+según el pago que haya efectuado.
+
+-- 1 of 11 --
+
+2
+Aceptación
+El usuario de este sitio acepta por simple causal de uso del sistema SaludDrive lo dispuesto
+en este contrato y en sus Términos y Condiciones, susceptible de cambio sin previo aviso
+por parte de SaludDrive. Si el usuario representa una organización, está dando por
+entendido que la organización acepta ceñirse a este contrato y que tiene las facultades para
+actuar en nombre de aquella y por lo tanto, obligarla frente a SaludDrive y aceptar las
+obligaciones establecidas en el presente contrato. El usuario que no esté de acuerdo con
+esto no podrá hacer uso de los servicios prestados por SaludDrive.
+Descripción del Servicio
+A través de nuestras plataformas web, suministramos servicios de sitio web, aplicativos,
+módulos de apoyo para profesionales, clínicas y consultorios a través del cual puedan
+gestionar toda la atención de sus pacientes desde la asignación de la cita hasta la atención,
+evolución y proceso administrativo que tenga lugar a través de las plataformas SanaDrive,
+OralDrive y VeteDrive. Dentro de las posibilidades en la herramienta, se cuenta con los
+siguientes módulos.
+Modulo clínico
+- Historia clínica
+- Consulta medica
+- Evoluciones y remisiones
+- Planes de tratamiento
+- Gestión de cobros
+Modulo Agenda
+- Gestión de Agenda
+- Agenda con vista día, semana y detalle
+Modulo Administrativo
+- Recaudos
+- Pagos
+- Facturas
+- Notas Crédito
+- Notas debito
+- Rips
+Modulo Logístico
+- Inventarios
+- Alertas
+- Reabastecimiento
+- Stocks Mínimos y Máximos
+Modulo de Analítica de Data
+- DashBoard
+
+-- 2 of 11 --
+
+3
+- Reporte de facturación
+- Reporte de pacientes
+- Reporte de planes de tratamiento
+SaludDrive presta el servicio de su aplicación web por suscripción con pago anticipado. EL
+USUARIO podrá usar los servicios del sistema SaludDrive según las condiciones del plan que
+haya elegido al momento de pagar por el servicio, o si es el caso acepta las condiciones que
+tiene al ser un usuario gratis, pero en ningún momento adquiere propiedad sobre las
+plataformas.
+Los derechos de autor sobre las obras de software que componen las plataformas y los
+Servicios serán de titularidad de SaludDrive y bajo ninguna interpretación de estos términos
+de servicio se entenderán transferidos al usuario. Mismos que se encuentran registrados
+bajo el código 13-78-103 del Ministerio del Interior en la Dirección Nacional de Derechos de
+Autor.
+El servicio de SaludDrive se inicia al momento de registrar una cuenta en alguno de los
+sistemas, tras haber aceptado las condiciones expresadas en este contrato. El servicio
+consiste en el uso del software SaludDrive disponible en oraldrive.com, sanadrive.com,
+vetedrive.com y todos los servicios disponibles en sitios web asociados en saluddrive.com,
+aplicaciones móviles y Api.
+El usuario se hace conocedor de los servicios por los que está pagando a la hora de usar
+alguno de los planes que ofrece SaludDrive. SaludDrive no se hará responsable en ningún
+caso por los errores cometidos por el usuario a la hora de elegir su plan, así como tampoco
+al momento de digitar o ingresar su información tanto personal, como de la operación y
+marcha de su actividad empresarial ni tampoco de la clasificación que realice de la misma
+lo que afectará irremediablemente los resultados arrojados por el Software.
+SaludDrive da por entendido que el titular de la cuenta y los usuarios conocen cualquier
+cambio que se haga en la configuración de ésta, así como que realizará los cambios que
+considere pertinentes. SaludDrive no se responsabilizará por la pérdida de información que
+ocurra por fuerza mayor, caso fortuito o hecho de un tercero tal y como se explica bajo el
+título “Operación del Sitio”.
+Durante la vigencia del plan adquirido SaludDrive garantiza al usuario el libre acceso a los
+sitios web oraldrive.com, sanadrive.com, vetedrive.com y saluddrive.com y aplicación móvil
+y API para ver la información allí disponible, bajo condiciones normales, sin embargo, el
+usuario acepta que existan circunstancias técnicas por las que ésta información puede llegar
+a estar inaccesible de manera temporal y por lo tanto, exonera a SaludDrive de cualquier
+tipo de responsabilidad por este hecho, bajo el entendido de que esto puede obedecer a
+limitaciones inherentes al estado de la tecnología en la actualidad, hechos de un tercero,
+caso fortuito.
+
+-- 3 of 11 --
+
+4
+Registro de Cuentas y Usuarios
+SaludDrive presta un servicio de software que se accede a través de sus sitios web
+oraldrive.com, sanadrive.com, vetedrive.com y saluddrive.com. Los usuarios que accedan a
+estos servicios deberán registrar una cuenta y brindar la información solicitada en los
+formularios que se habilitan a la hora de registrar una cuenta. SaludDrive da por entendido
+que cualquier información ingresada en estos formularios es hecha bajo juramento y por lo
+tanto exonera a SaludDrive de poseer información falsa sobre cualquier usuario.
+SaludDrive permite el ingreso de una cantidad limitada de usuarios según el plan que cada
+titular o usuario de cuenta haya elegido al momento de registrar su cuenta. SaludDrive no
+permite, en ninguna circunstancia, que estos usuarios sean distintos de aquellos que el
+titular de la cuenta haya decidido habilitar como tales para el uso de las plataformas y estos
+no podrán ser reemplazados por otras personas que conozcan las credenciales para ingresar
+a las plataformas. De suceder una situación como ésta, SaludDrive no se hace responsable
+por el uso indebido de la información de la cuenta en contra del titular, ni frente al usuario
+ni frente a terceros.
+Operación del Sitio y nivel de servicio
+En condiciones normales, la plataforma de SaludDrive tiene un “Down time” de
+aproximadamente 1%, de modo que la plataforma se encuentra disponible el 99% del
+tiempo. SaludDrive adelantará las gestiones que a su juicio estime conducentes, para que
+la aplicación esté disponible para el usuario, pero no garantiza lo anterior, por cuanto
+pueden existir eventos como daños en las comunicaciones, actos de terceros,
+mantenimiento o reestructuración de la aplicación, entre otros, que escapen al control y
+responsabilidad de SaludDrive. No obstante, lo anterior, SaludDrive garantiza a los usuarios
+que la aplicación estará disponible en circunstancias normales, según lo anunciado, desde
+cualquier lugar del mundo que permita una conexión a internet, siempre y cuando el
+usuario recuerde las credenciales de su cuenta y las condiciones de prestación del servicio
+de conexión a Internet por parte de cada proveedor local, lo permitan.
+De manera tal que, si no se pudiera acceder por el tipo de conexión o por el deficiente
+servicio del mencionado proveedor, ello no implica en ningún momento incumplimiento de
+la prestación del servicio prestado por parte de SaludDrive.
+En cuanto al mantenimiento y reestructuración de la aplicación, SaludDrive se reserva el
+derecho de llevar a cabo las gestiones necesarias, sin previo aviso a los usuarios, pero
+procurará que se les brinde un aviso con la antelación que a su juicio considere conveniente
+o prudente para evitar incomodidades o eventuales perjuicios en el procesamiento de datos
+o de información.
+SaludDrive se reserva el derecho a decidir si el contenido publicado por los usuarios, al igual
+que el material de texto o fotográfico que sea cargado a la página web de SaludDrive resulta
+apropiado y se ajusta a las Condiciones. En este sentido, SaludDrive podrá impedir la
+publicación y comercialización de contenido que infrinja derechos de imagen, de habeas
+
+-- 4 of 11 --
+
+5
+data y de privacidad de terceros, así como aquellos que resulten ofensivos, difamatorios o
+que constituyan infracciones a la ley.
+Pagos
+El usuario podrá elegir el plan y periodo de pago al momento de realizar el primer pago.
+Según el periodo elegido: mensual o anual, el próximo cobro se realizará el mismo día del
+mes en que se inscribió.
+El pago de SaludDrive es anticipado y el usuario acepta que se realicen cobros recurrentes
+según los periodos elegidos. Además, se compromete a notificar a SaludDrive en caso tal de
+que no quiera que se genere el siguiente cobro, mínimo 2 días hábiles antes de su próxima
+fecha de cobro.
+Las tarifas establecidas por SaludDrive para la prestación del servicio, aumentaran al inicio
+de cada año en un porcentaje igual al IPC + 2 puntos. Así mismo, EL USUARIO conoce que
+SaludDrive en cualquier momento podrá actualizar los planes y tarifas ofrecidas en sus
+plataformas comerciales. Por lo tanto, si el usuario quiere hacer algún cambio sobre su
+negociación, debe ser sobre los planes y tarifas vigentes en la plataforma comercial. Las
+modificaciones realizadas por SaludDrive en las tarifas y/o condiciones de los servicios serán
+notificadas previamente a EL USUARIO.
+En caso de que el usuario no notifique a SaludDrive con anticipación sobre su deseo de no
+generar el cobro recurrente, este tendrá 10 días hábiles para pedir la devolución del dinero
+en caso tal se debitará automáticamente o la anulación de la factura pendiente de pago con
+la renovación del servicio.
+SaludDrive ofrece los medios de pago que se reseñan en su página web. Sin embargo, para
+acceder a SaludDrive a través de algunos de estos sistemas de pago, puede ser necesario
+registrar por parte del titular de la cuenta alguna información, como por ejemplo un número
+de cuenta o tarjeta de crédito expedida por parte de una entidad financiera que se
+encuentre vigente, para poder realizar el cobro por los servicios prestados en nuestro
+software online disponible en oraldrive.com, sanadrive.com, vetedrive.com,
+saluddrive.com, en la aplicación móvil o API. Si existen retenciones en la fuente y/o
+comisiones de cualquier tipo estas tendrán que ser asumidas por el usuario.
+SaludDrive es consciente que poseer información de tarjetas de crédito o cuentas bancarias
+de los usuarios es de carácter reservado. Por lo tanto, está comprometido con mantener
+esta información segura y aislada de usos inadecuados.
+SaludDrive da por hecho que la información de la tarjeta de crédito ingresada para crear
+una cuenta es conocida por el titular de la cuenta, por lo tanto, no se hace responsable por
+el uso inadecuado de tarjetas de crédito al momento de esta ser usada para registrar una
+cuenta, entendiéndose como uso irresponsable, la falsificación y suplantación de la
+identidad del titular la cuenta.
+SaludDrive no puede verificar la correspondencia o veracidad de los datos personales o de
+pago de la cuenta de usuario con los datos que proporciona el usuario en el medio de pago,
+
+-- 5 of 11 --
+
+6
+por lo tanto. El usuario será exclusivamente responsable por el uso inadecuado o indebido
+de los medios de pago que proporciona.
+Propiedad Intelectual y Derechos de Autor.
+El USUARIO reconoce y acepta que pertenecen a SaludDrive la totalidad de los derechos de
+propiedad intelectual y de autor de contenido patrimonial sobre las obras y creaciones
+realizadas por sus colaboradores y/o empleados y/o subcontratistas en virtud del desarrollo
+del objeto, bien sea de manera directa o indirecta, bien se trate de creaciones encargadas
+o de herramientas que facilitan la prestación de servicios, bajo el entendido de que se trata
+de creaciones realizadas con sus propios recursos.
+DERECHOS DE PROPIEDAD INTELECTUAL DE CONTENIDO PATRIMONIAL. Las partes
+acuerdan que la expresión “derechos de propiedad intelectual de contenido patrimonial”
+acá contenida incluye la totalidad de los derechos patrimoniales de autor y los derechos de
+propiedad industrial que recaen sobre las creaciones realizadas por SALUDDRIVE entre
+otros y sin limitarse a ellos, uso, reproducción, divulgación (en cualquier medio incluyendo
+Internet), comercialización, distribución y transformación.
+Autorización para Consulta, Procesamiento, Reporte a centrales de Información y
+financieras.
+De manera voluntaria y expresa, EL USUARIO autoriza a SALUDDRIVE para que consulte,
+solicite, suministre, reporte, procese y divulgue toda la información que se refiera a mi
+comportamiento comercial, crediticio, financiero, comercial, de servicios y la que provenga
+de terceros países de la misma naturaleza, ante los operadores de información. Autorizo
+para que la notificación previa al reporte en las centrales de riesgo se realice por cualquiera
+de los siguientes medios: mensaje de texto, correo electrónico, llamada telefónica o
+comunicación escrita o cualquier otro medio de comunicación electrónica.
+Lavado de activos.
+El usuario afirma bajo la gravedad de juramento, que no está incluido en la Lista Clinton y
+que sus ingresos no tienen relación con ningún tipo de actos de aquellos que la legislación
+colombiana e internacional determinan para el lavado de activos, narcotráfico, terrorismo
+ni otro delito y que son adquiridos de manera lícita.
+Información de la cuenta
+SanaDrive, OralDrive y VeteDrive son aplicativos Web propiedad de SaludDrive, los cuales
+proporcionan un sitio donde se alojan datos que el usuario administra bajo su cuenta y
+riesgo. SaludDrive vela por mantener la información de los usuarios, segura y toma las
+precauciones a su juicio necesarias para ello, más no se responsabiliza por actos mal
+intencionados de terceros y las consecuencias de ello frente al usuario o frente a terceros.
+
+-- 6 of 11 --
+
+7
+SaludDrive pone en conocimiento de sus usuarios, que la información que suministre se
+albergará en servidores de terceros, específicamente Microsoft Azure, que cumplen con los
+más altos estándares de seguridad e idoneidad.
+SaludDrive tampoco se hace responsable por el tipo de información ingresada por cada
+usuario en su cuenta ni por los resultados inadecuados si la misma se ingresó de manera
+inadecuada de acuerdo con los parámetros médicos, odontológicos, veterinarios, afines,
+además de datos contables y fiscales aplicables a la materia en cada caso. Se da a entender
+que el usuario, al usar los servicios de SaludDrive, hará un uso sano y legal de todas las
+herramientas que se ponen a su disposición y esto exonera a SaludDrive de cualquier uso
+indebido de su información por parte de cualquier usuario, entendiéndose por ello el usar
+información para evadir casos médicos, obligaciones sanitarias, obligaciones tributarias,
+entre otras.
+SaludDrive no estará obligada a velar por la legalidad del contenido e información que los
+usuarios alberguen en su cuenta a través de los Servicios prestados, sin embargo, podrá
+tomar los correctivos en contra de información ilegal, cuando lo considere pertinente.
+El usuario se obliga a (i) no causar daño físico, moral o mental a otros usuarios del servicio
+(ii) no utilizar el servicio con fines maliciosos o de mala voluntad, ni para beneficiarse en
+perjuicio de terceros y mucho menos del Estado entendiendo por éste, aquel que de
+acuerdo con la normatividad que le sea aplicable, sea quien deba recibir dinero por
+concepto de impuestos bajo cualquier denominación por el resultado de la operación
+mercantil del usuario. (iii) no usar el servicio con fines criminales o ilegales ni para sacar
+provecho o beneficio ilícito para sí o para terceros, bien sea remunerado o no, (iv) no
+publicar información que vulnere derechos de terceros, tales como derechos de reserva
+doctor paciente, consulta médica e historia clínica, propiedad intelectual, resultados de
+laboratorio, secretos industriales o cualquier otro que sea de propiedad de terceros y
+respecto de los cuales no se encuentre autorizado (v) publicar información sensible que ya
+no es vigente o que pueda inducir a error a terceros o al Estado
+El usuario de SaludDrive manifiesta ser dueño de la información que ingresa en el sistema
+y en ninguna circunstancia esta información pasará a ser propiedad de SaludDrive S.A.S., y
+de manera inversa, esta última sociedad es la única dueña de la plataforma sobre la cual el
+usuario ingresa la información, sin que respecto de ésta se considera surtida transferencia
+alguna en razón de este contrato. Si el usuario da por terminado el contrato tendrá la
+información a su alcance, la podrá consultar por los diferentes reportes habilitados en la
+plataforma y en algunos casos exportar a Excel o PDF si el reporte lo permite, pero en ningún
+momento SaludDrive se obliga a entregar la misma en formato alguno ni a llevar a cabo
+ningún tipo de proceso de migración, ni mucho menos a efectuar un desarrollo para que la
+información pueda ser analizada, ingresada o digitalizada en cualquier otro software, pues
+sólo se ingresan datos, para su consulta y procesamiento en aras de su funcionamiento y
+uso. El periodo de consulta luego de terminar el contrato será de 1 mes contado a partir de
+la fecha de terminación del contrato.
+
+-- 7 of 11 --
+
+8
+Adicional a lo anterior, SaludDrive no se responsabiliza por el mal diligenciamiento de un
+formulario o por la información que erróneamente suministre el usuario al momento de
+realizar un trámite o de ingresar la información al software.
+Seguridad de la Cuenta
+SaludDrive vela por la seguridad de la contraseña que provea el titular de cuenta y los
+usuarios a la hora de registrar una cuenta con SaludDrive y garantiza que tomará las
+medidas que se encuentren a su alcance para que esta contraseña no sea vista por terceros,
+mas no puede arrogarse la responsabilidad de garantizar su confidencialidad. Por otro lado
+SaludDrive no se responsabiliza por el mal uso de la contraseña por parte del usuario ni por
+el uso de contraseñas que sean fáciles de descifrar, asumiendo que siempre que se acceda
+al sistema, lo hace el usuario directamente.
+Limitaciones
+EL CLIENTE no podrá aplicar técnicas de ingeniería inversa, descompilar o desensamblar el
+software, aplicativos, o módulos, ni realizar cualquier otra operación que tienda a descubrir
+el código fuente. Además, queda prohibida la separación de los componentes. SALUDDRIVE
+autoriza el uso del software como un producto único. Las partes que lo componen no se
+podrán separar, ni hacer uso de ellas por separado. El usuario comprende que faltar a lo
+dispuesto en esta cláusula constituye un delito de acuerdo al artículo 272 del Código Penal
+Colombiano.
+Interrupción y Terminación del Servicio
+SaludDrive se reserva el derecho de suspender la prestación de los servicios al usuario y de
+inhabilitar su acceso al Software, así como a cualquiera de los módulos creados para el
+usuario si luego de dos intentos de cobro del servicio el recaudo resulta fallido, o en caso
+de no recibir el pago del servicio en la forma acordada.
+En caso de suspensión, la cuenta del usuario no será reactivada hasta que el pago de todas
+aquellas deudas que en ese momento se encuentren a cargo del usuario se hayan realizado
+por completo. El usuario podrá realizar el pago a través de las plataformas habilitadas en el
+estado de cuenta que se envía en el correo o por consignación bancaria a la cuenta y/o
+convenio de recaudo detallado en la factura.
+La suspensión de la cuenta del usuario no elimina su obligación de pagar las deudas
+pendientes, así como tampoco el porcentaje cobrado impide la generación de los gastos de
+cobranza e indemnización de perjuicios que se pudiesen generar a favor de SaludDrive por
+tal incumplimiento.
+En caso de falta de pago anticipado del periodo en curso, o uso indebido de la cuenta, el
+usuario tendrá un periodo de gracia de 1 mes calendario durante el cual podrá consultar su
+cuenta y la información que hasta el momento se encuentre almacenada en ella, pero sin
+la posibilidad de agregar nueva información. El usuario será responsable de exportar o
+generar PDFs de dicha información, por cuanto una vez venza este periodo, SaludDrive
+
+-- 8 of 11 --
+
+9
+dejará de ser responsable de la información albergada en la cuenta y esta podrá ser
+eliminada o archivada libremente de acuerdo a como lo indique la ley.
+SaludDrive podrá terminar de manera unilateral la cuenta de un usuario en los siguientes
+escenarios: (i) Cuando actúa en contravía a lo dispuesto en el presente documento (ii) En
+caso de que el USUARIO utilice los servicios prestados por SaludDrive para fines contrarios
+a la ley, especialmente aquellos que contraríen derechos de propiedad intelectual de
+terceros y sobre todo de SaludDrive y de otros usuarios; (iii) En caso de que SaludDrive
+encuentre que el USUARIO está haciendo uso de su cuenta para la transmisión de
+programas malignos como virus, malwares, spywares, troyanos o similares, que puedan
+comprometer el debido funcionamiento de la plataformas de SaludDrive o que perjudiquen
+a terceros; (iv) Cuando existan elementos que permitan inferir a SaludDrive que el USUARIO
+no cuenta con la edad mínima para contratar los Servicios, en los términos del artículo
+segundo de estas Condiciones.
+Modo de uso de las cookies
+EL USUARIO autoriza para que mediante la instalación de cookies e identificadores propios
+y de terceros y a través de herramientas para el análisis de uso de cuenta, podrá realizar
+actividades de seguimiento a los usuarios que utilizan su aplicación. Con estas herramientas,
+SaludDrive podrá recopilar información de cada usuario para el análisis de estadísticas e
+implementación de estrategias de comunicación y publicidad. Estas herramientas podrán
+realizar seguimiento de la configuración del usuario y hacen que su experiencia en la
+aplicación sea más práctica, reconociendo y recordando sus preferencias y ajustes.
+En esta medida, SaludDrive podrá recopilar datos de uso, como la duración de uso, o datos
+demográficos como el origen, el sexo y la edad. SaludDrive usa esta información para fines
+analíticos y estadísticos.
+Las actividades de seguimiento adelantadas por SaludDrive también podrán realizarse
+dentro de la aplicación, para análisis interno, ejemplo, pero no exclusivamente para
+determinar tendencias y participación en la aplicación, tiempo de uso, preferencia, entre
+otros. Estas herramientas podrán ser desactivadas por el usuario ‘para conservar su
+privacidad. Ver más en https://tools.google.com/dlpage/gaoptout/
+Análisis de datos
+El usuario al crear su cuenta y hacer uso de las aplicaciones de SaludDrive, acepta que LA
+EMPRESA puede suministrar, transferir, compartir y analizar los datos del giro ordinario de
+su negocio, con empresas aliadas, filiales, vinculadas o subordinadas de LA EMPRESA en
+Colombia o cualquier otro país, esta información podrá ser usada para fines comerciales
+por parte de los terceros.
+El usuario en cualquier momento puede solicitar a LA EMPRESA que detenga de forma
+indefinida el proceso de compartir sus datos con terceros, para esto debe realizar su
+solicitud al correo admin@saluddrive.com o comunicarse a través del chat de atención al
+cliente.
+
+-- 9 of 11 --
+
+10
+Política Comunicacional
+Al registrar una cuenta con SaludDrive el titular de la cuenta debe introducir un email y un
+teléfono de contacto, así como registrar todos aquellos datos que el software le solicite a
+fin de determinar no solo su identificación, sino aquello que le permita al software procesar
+la información que el mismo usuario diligencie o ingrese. Al hacer esto, acepta según
+nuestra política de tratamiento de datos personales a recibir todos los correos y llamadas
+con información sobre el uso de SaludDrive, información promocional u otro tipo de
+información procesada o enviada por SaludDrive.
+Esta cláusula se interpretará en concordancia con nuestra política de tratamiento de datos
+personales se refiere el título “Política de Tratamiento de Datos Personales”. La autorización
+a que se refiere esta cláusula podrá ser revocada por el usuario en cualquier tiempo
+escribiendo a la siguiente dirección de correo electrónico: admin@saluddrive.com
+Adicionalmente los usuarios tendrán habilitada la posibilidad de comunicarse con el equipo
+de SaludDrive en caso de que tengan preguntas o dudas por resolver, preguntas generales
+sobre su cuenta o sobre el software como tal. Para los casos anteriores, deberán utilizar la
+pestaña de soporte disponible en la aplicación.
+Legislación Aplicable y Jurisdicción
+Este contrato se rige por las leyes de la República de Colombia. Si cualquier parte de este
+contrato se declara nula o contraria a la ley, entonces la provisión inválida o no exigible se
+considerará sustituida por una disposición válida y aplicable que más se acerque a la
+intención del contrato original y el resto del acuerdo entre SaludDrive y el usuario
+continuará en efecto. A menos que se especifique lo contrario en este documento, estas
+Condiciones constituyen el acuerdo completo entre usted y SaludDrive con respecto a los
+Servicios de SaludDrive y reemplaza a todas las comunicaciones previas y propuestas, tanto
+de manera electrónica, oral o escrita, entre el usuario y SaludDrive con respecto a los
+Servicios de SaludDrive.
+Así mismo, SaludDrive dará cumplimiento a las normas emitidas por el Ministerio de Salud
+o entidad competente, en lo relativo a la custodia, conservación, archivo, y privacidad de
+las historias clínicas.
+Autorización para el Tratamiento de Datos Personales
+Protección de Datos Personales: El comprador(a) declara que conoce los derechos y deberes
+que le asisten como titular de sus datos personales, derechos que se encuentran
+consagrados en Ley Estatutaria 1581 de Protección de Datos, sus decretos reglamentarios
+y aquellas que la modifiquen o complementen y especialmente aquellos a conocer,
+rectificar y actualizar sus datos personales que reposan en las bases de datos de
+SALUDDRIVE. Así mismo, da su consentimiento previo, expreso e informado y autoriza a
+SALUDRDRIVE, como responsable del tratamiento, para: a) recolectar, almacenar y archivar
+los datos personales que proporcionará en desarrollo de la relación comercial para el
+desarrollo de su actividad económica y comercial; b) realizar actividades de minería de
+datos, perfilamiento de clientes, estadísticos b) que le sea enviada información en medios
+
+-- 10 of 11 --
+
+11
+físicos, de audio o digitales (correo electrónico, mensajes de texto, redes sociales, etc.)
+sobre los productos y las actividades comerciales de SALUDDRIVE; c) ser contactada con
+fines administrativa/comercial/ de cobranza, recaudo, capacitaciones, así mismo, para
+compartir la información personal del USUARIO con empresas que tengan vinculo comercial
+con SALUDDRIVE, o fines de mercadeo y demás compañías necesarias para lograr el
+cumplimiento del presente contrato. EL USUARIO declara que conoce la Política de
+Tratamiento de Datos personales de SALUDDRIVE, la cual puede consultar en
+www.saluddrive.com
+EL USUARIO garantizará el cumplimiento de la ley 1581 de 2012, como responsable de los
+datos personales de sus pacientes, usuarios o clientes, igualmente, en lo relativo a la
+administración de los datos sensibles de las personas naturales que ingrese en los Sistemas.
+Comentarios y Preguntas
+En caso de existir consultas, quejas o reclamos sobre la información contenida en el
+presente documento de Términos y Condiciones, por favor escribir al correo
+admin@saluddrive.com, utilizando como asunto: Comentario Términos y Condiciones.
+
+-- 11 of 11 --
+
