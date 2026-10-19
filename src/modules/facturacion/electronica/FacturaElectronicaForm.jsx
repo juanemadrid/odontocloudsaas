@@ -1128,6 +1128,12 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
         monto_pagado: paymentCalc.totalPagado,
         saldo_pendiente: paymentCalc.saldoPendiente,
         estado_pago: paymentCalc.estadoPago,
+        creado_por: initialDetalles?.creado_por || userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administración",
+        creadoPor: initialDetalles?.creadoPor || userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administración",
+        elaborado_por: initialDetalles?.elaborado_por || userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administración",
+        elaboradoPor: initialDetalles?.elaboradoPor || userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administración",
+        usuario_nombre: initialDetalles?.usuario_nombre || userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administración",
+        usuarioNombre: initialDetalles?.usuarioNombre || userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administración",
       };
 
       const currentOperation = initialFactura?.id ? FEV_OPERATION.RETRY : FEV_OPERATION.EMIT;
@@ -1162,6 +1168,7 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
 
       const dbFactura = {
         tenant_id: inquilino,
+        usuario_id: user?.id || userProfile?.uid || null,
         paciente_id: targetTercero.tipo === "paciente" ? targetTercero.id : null,
         numero: finalNumero,
         subtotal: subtotalBruto,

@@ -571,7 +571,13 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                 estado: totalNetoPagar === 0 ? "Pagada" : "Pendiente",
                 observaciones,
                 created_at: new Date().toISOString(),
-                created_by: user?.id || userProfile?.uid
+                created_by: user?.id || userProfile?.uid,
+                creado_por: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administrador",
+                creadoPor: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administrador",
+                elaborado_por: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administrador",
+                elaboradoPor: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administrador",
+                usuarioCreador: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administrador",
+                usuario_nombre: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administrador"
             };
 
             // Transmisión inmediata a Factus / DIAN si el usuario lo solicitó

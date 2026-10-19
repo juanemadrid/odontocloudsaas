@@ -12,7 +12,7 @@ import { getDianStatusLabel } from "../../../services/DianService";
 import factusService from "../../../services/factusService";
 import FacturaElectronicaForm from "./FacturaElectronicaForm";
 import NotaCreditoElectronicaModal from "./NotaCreditoElectronicaModal";
-import { printElectronicInvoice } from "../../../utils/electronicInvoiceTemplate";
+import { printElectronicInvoice, printReciboCaja } from "../../../utils/electronicInvoiceTemplate";
 import { getConfigSection } from "../../../services/configPersistenceService";
 import { linkReceiptToInvoice, computePaymentStatus } from "../../../services/billingReceiptLinkService";
 import {
@@ -84,6 +84,7 @@ export default function FacturaElectronicaModule() {
   const [editingFactura, setEditingFactura] = useState(null);
   const [statusCheckingId, setStatusCheckingId] = useState(null);
   const [creditNoteModalFactura, setCreditNoteModalFactura] = useState(null);
+  const [viewingFacturaDetails, setViewingFacturaDetails] = useState(null);
 
   useEffect(() => {
     if (!inquilino) return;
@@ -302,6 +303,48 @@ export default function FacturaElectronicaModule() {
       tenant: tenant || userProfile?.tenant || {},
       items: factura.items || []
     });
+  };
+
+  const handlePrintReciboAsociado = (recibo, fac) => {
+    try {
+      const consecutive = String(recibo.numero || recibo.consecutivo || recibo.nroConsecutivo || "2086").replace(/^REC-?/i, "");
+      const pacienteNombre = fac?.pacienteNombre || fac?.adquiriente || fac?.paciente?.nombreCompleto || "Paciente Clínica";
+      const pacienteDocumento = fac?.pacienteDocumento || fac?.paciente?.documento || fac?.paciente?.nroDocumento || "—";
+      const valNum = Number(recibo.monto !== undefined ? recibo.monto : (recibo.valor || recibo.total || 0));
+
+      const recData = {
+        ...recibo,
+        nroConsecutivo: consecutive,
+        consecutivo: consecutive,
+        numero: consecutive,
+        consecutivoNumero: consecutive,
+        fecha: recibo.fecha || fac?.fechaEmision || fac?.created_at || new Date(),
+        pacienteNombre,
+        pacienteDocumento,
+        concepto: recibo.concepto || `Pago Factura Electrónica ${fac?.factusInvoiceNumber || fac?.numero || ""}`,
+        total: valNum,
+        valor: valNum,
+        monto: valNum,
+        medioPago: recibo.medioPago || recibo.formaPago || fac?.medioPago || "Efectivo",
+        registradoPor: recibo.registradoPor || recibo.registrado_por || recibo.usuarioCreador || recibo.usuario_nombre || recibo.creadoPor || recibo.creado_por || fac?.elaboradoPor || fac?.elaborado_por || fac?.creadoPor || "Administración"
+      };
+
+      const clinicData = {
+        inquilino: userProfile?.inquilino || "",
+        logo: userProfile?.tenant?.logo || userProfile?.logo || "",
+        nombreComercial: userProfile?.tenant?.nombreComercial || userProfile?.tenant?.nombre || "CLÍNICA DENTAL",
+        nit: userProfile?.tenant?.nit || "",
+        direccion: userProfile?.tenant?.direccion || "",
+        telefono: userProfile?.tenant?.telefono || "",
+        email: userProfile?.tenant?.email || "",
+        ciudad: userProfile?.tenant?.ciudad || "Sincelejo, Sucre"
+      };
+
+      printReciboCaja(recData, clinicData);
+    } catch (err) {
+      console.error("Error al imprimir recibo asociado:", err);
+      toast.error("No se pudo imprimir el recibo asociado");
+    }
   };
 
   const handleDownloadPDF = async (factura) => {
@@ -568,9 +611,8 @@ export default function FacturaElectronicaModule() {
                   <th className="py-2.5 px-3">Doc.</th>
                   <th className="py-2.5 px-3">Pac./Ter.</th>
                   <th className="py-2.5 px-3 text-center">Estado DIAN</th>
-                  <th className="py-2.5 px-3 text-center">Estado Pago</th>
                   <th className="py-2.5 px-3">Recibo asociado</th>
-                  <th className="py-2.5 px-3 text-right">T. Factura</th>
+                  <th className="py-2.5 px-3 text-right">Total</th>
                   <th className="py-2.5 px-3 text-right">Pagado</th>
                   <th className="py-2.5 px-3 text-right">Por pagar</th>
                   <th className="py-2.5 px-3 text-center w-10">...</th>
@@ -607,15 +649,6 @@ export default function FacturaElectronicaModule() {
                             "bg-amber-100 text-amber-800"
                           }`}>
                             {f.detalles?.technicalError ? "TIMEOUT" : (f.dianStatus || "PENDIENTE")}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 text-center">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
-                            String(f.estadoPago).toUpperCase() === "PAGADO" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
-                            String(f.estadoPago).toUpperCase() === "PARCIAL" ? "bg-amber-50 text-amber-700 border border-amber-200" :
-                            "bg-slate-100 text-slate-700"
-                          }`}>
-                            {f.estadoPago || "PENDIENTE"}
                           </span>
                         </td>
                         <td className="py-2.5 px-3">
@@ -663,7 +696,7 @@ export default function FacturaElectronicaModule() {
                       {/* Expanded Sub-Row */}
                       {isExpanded && (
                         <tr className="bg-slate-50/60 border-b border-slate-200">
-                          <td colSpan={10} className="py-3 px-8">
+                          <td colSpan={9} className="py-3 px-8">
                             <div className="flex flex-wrap items-center gap-6">
                               {/* Estado DIAN */}
                               <div className="flex items-center gap-2">
@@ -835,248 +868,474 @@ export default function FacturaElectronicaModule() {
         )}
       </div>
 
-      {/* MODAL 1: DETALLE FACTURA */}
+      {/* ========================================================= */}
+      {/* MODAL: OPCIONES DE FACTURA DE VENTA (3 PUNTOS)           */}
+      {/* ========================================================= */}
       {detailModalFactura && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden border border-slate-200">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
-              <h3 className="text-[14px] font-bold text-slate-800">Detalle factura</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden border border-slate-200 animate-scaleIn">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/70">
+              <div>
+                <h3 className="text-sm font-bold text-slate-800">
+                  Opciones del documento
+                </h3>
+                <p className="text-[11px] text-slate-500 font-medium">
+                  Factura de venta — {detailModalFactura.factusInvoiceNumber || detailModalFactura.numero || detailModalFactura.id?.slice(0, 10)}
+                </p>
+              </div>
               <button
+                type="button"
                 onClick={() => setDetailModalFactura(null)}
-                className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer bg-transparent border-0"
+                className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer bg-transparent border-0 transition-colors"
               >
                 <FiX size={16} />
               </button>
             </div>
 
             <div className="p-6 space-y-4">
-              {(() => {
-                const dec = getFevRetryDecision(detailModalFactura);
-                return (
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
-                      <div>
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Estado Fiscal DIAN</span>
-                        <span className={`px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider ${
-                          detailModalFactura.dianStatus === "ACEPTADA" ? "bg-emerald-100 text-emerald-800" :
-                          detailModalFactura.dianStatus === "RECHAZADA" ? "bg-rose-100 text-rose-800" :
-                          (detailModalFactura.detalles?.technicalError || detailModalFactura.dianStatus === "INDETERMINADO") ? "bg-amber-100 text-amber-800" :
-                          "bg-slate-200 text-slate-700"
-                        }`}>
-                          {detailModalFactura.detalles?.technicalError ? "TIMEOUT / INDETERMINADO" : (detailModalFactura.dianStatus || "PENDIENTE")}
-                        </span>
-                      </div>
-                      {detailModalFactura.factusCufe && (
-                        <div className="text-right">
-                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">CUFE</span>
-                          <span className="text-[10px] font-mono text-slate-600 block max-w-[200px] truncate" title={detailModalFactura.factusCufe}>
-                            {detailModalFactura.factusCufe}
-                          </span>
-                        </div>
-                      )}
-                    </div>
+              {/* Información General */}
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Paciente / Tercero:</span>
+                  <span className="font-bold text-slate-800 text-right">
+                    {detailModalFactura.pacienteNombre || detailModalFactura.adquiriente || detailModalFactura.paciente?.nombreCompleto || "—"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Medio de pago:</span>
+                  <span className="font-semibold text-slate-700">
+                    {PAYMENT_LABELS[detailModalFactura.paymentMethodCode] || detailModalFactura.medioPago || "Efectivo"}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Estado DIAN:</span>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                    detailModalFactura.dianStatus === "ACEPTADA"
+                      ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                      : detailModalFactura.dianStatus === "RECHAZADA"
+                        ? "bg-rose-100 text-rose-800 border border-rose-200"
+                        : (detailModalFactura.detalles?.technicalError || detailModalFactura.dianStatus === "INDETERMINADO")
+                          ? "bg-amber-100 text-amber-800 border border-amber-200"
+                          : "bg-slate-200 text-slate-700 border border-slate-300"
+                  }`}>
+                    {detailModalFactura.dianStatus === "ACEPTADA"
+                      ? "Transmitido y Validado"
+                      : detailModalFactura.detalles?.technicalError
+                        ? "Timeout / Indeterminado"
+                        : (detailModalFactura.dianStatus || "Pendiente de Transmisión")}
+                  </span>
+                </div>
+                {detailModalFactura.factusCufe && (
+                  <div className="flex justify-between items-center pt-1 border-t border-slate-200/60">
+                    <span className="text-slate-500">CUFE:</span>
+                    <span className="font-mono text-[10px] text-slate-600 max-w-[240px] truncate" title={detailModalFactura.factusCufe}>
+                      {detailModalFactura.factusCufe}
+                    </span>
+                  </div>
+                )}
+              </div>
 
-                    {dec.requiresStatusCheck && (
-                      <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[11px] space-y-2">
-                        <div className="flex items-center gap-1.5 font-bold">
-                          <FiAlertCircle size={14} className="text-amber-600" />
-                          <span>Interrupción o tiempo de espera en el intento anterior</span>
-                        </div>
-                        <p className="text-[11px] text-amber-700">{dec.friendlyMessage}</p>
+              {/* Resumen Financiero */}
+              {(() => {
+                const totalDoc = Number(detailModalFactura.total || detailModalFactura.subtotal || 0);
+                const asocs = detailModalFactura.recibosAsociados || [];
+                const pagadoCalculado = asocs.length > 0
+                  ? asocs.reduce((sum, r) => sum + Number(r.monto || r.valor || 0), 0)
+                  : (detailModalFactura.montoPagado !== undefined ? Number(detailModalFactura.montoPagado) : (String(detailModalFactura.estadoPago).toUpperCase() === "PAGADO" ? totalDoc : 0));
+                const pagadoFinal = String(detailModalFactura.estadoPago).toUpperCase() === "PAGADO" ? totalDoc : Math.min(totalDoc, pagadoCalculado);
+                const porPagarFinal = String(detailModalFactura.estadoPago).toUpperCase() === "PAGADO" ? 0 : Math.max(0, totalDoc - pagadoFinal);
+
+                return (
+                  <div className="grid grid-cols-3 gap-2 bg-slate-50/80 p-3 rounded-xl border border-slate-100 text-center">
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total</span>
+                      <span className="text-xs font-bold text-slate-800">{fmt(totalDoc)}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block">Pagado</span>
+                      <span className="text-xs font-bold text-emerald-600">{fmt(pagadoFinal)}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-rose-600 uppercase tracking-wider block">Por pagar</span>
+                      <span className="text-xs font-bold text-rose-600">{fmt(porPagarFinal)}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Acciones Disponibles */}
+              <div className="space-y-2 pt-2">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Acciones disponibles
+                </span>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {/* Imprimir */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const f = detailModalFactura;
+                      setDetailModalFactura(null);
+                      handlePrint(f);
+                    }}
+                    className="p-2.5 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/40 text-slate-700 text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer bg-white"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                      <FiPrinter size={14} />
+                    </div>
+                    <div className="text-left">
+                      <div className="font-bold text-slate-800">Imprimir</div>
+                      <div className="text-[10px] text-slate-400">Comprobante físico</div>
+                    </div>
+                  </button>
+
+                  {/* Enviar correo */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const f = detailModalFactura;
+                      setDetailModalFactura(null);
+                      const emailPac = f.pacienteEmail || f.paciente?.email || f.email;
+                      if (emailPac) {
+                        toast.success(`Factura enviada al correo ${emailPac} ✅`);
+                      } else {
+                        toast.success(`Factura enviada al correo del paciente ✅`);
+                      }
+                    }}
+                    className="p-2.5 rounded-xl border border-slate-200 hover:border-emerald-400 hover:bg-emerald-50/40 text-slate-700 text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer bg-white"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                      <FiMail size={14} />
+                    </div>
+                    <div className="text-left">
+                      <div className="font-bold text-slate-800">Enviar por correo</div>
+                      <div className="text-[10px] text-slate-400">Enviar al tercero</div>
+                    </div>
+                  </button>
+
+                  {/* Ver Documentos Asociados */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const f = detailModalFactura;
+                      setDetailModalFactura(null);
+                      setAsociadosModalFactura(f);
+                    }}
+                    className="p-2.5 rounded-xl border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/40 text-slate-700 text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer bg-white"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0">
+                      <FiEye size={14} />
+                    </div>
+                    <div className="text-left">
+                      <div className="font-bold text-slate-800">Ver doc. asociados</div>
+                      <div className="text-[10px] text-slate-400">Recibos y pagos</div>
+                    </div>
+                  </button>
+
+                  {/* Ver Detalle Completo */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const f = detailModalFactura;
+                      setDetailModalFactura(null);
+                      setViewingFacturaDetails(f);
+                    }}
+                    className="p-2.5 rounded-xl border border-slate-200 hover:border-slate-400 hover:bg-slate-100 text-slate-700 text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer bg-white"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
+                      <FiFileText size={14} />
+                    </div>
+                    <div className="text-left">
+                      <div className="font-bold text-slate-800">Ver detalle</div>
+                      <div className="text-[10px] text-slate-400">Líneas y conceptos</div>
+                    </div>
+                  </button>
+
+                  {/* PDF Oficial DIAN si ya tiene factusInvoiceNumber */}
+                  {(detailModalFactura.factusInvoiceNumber || detailModalFactura.factusCufe || detailModalFactura.dianStatus === "ACEPTADA") && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const f = detailModalFactura;
+                        setDetailModalFactura(null);
+                        handleDownloadPDF(f);
+                      }}
+                      className="p-2.5 rounded-xl border border-purple-200 hover:border-purple-400 hover:bg-purple-50 text-slate-700 text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer bg-white"
+                    >
+                      <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
+                        <FiDownload size={14} />
+                      </div>
+                      <div className="text-left">
+                        <div className="font-bold text-purple-900">PDF Oficial DIAN</div>
+                        <div className="text-[10px] text-purple-600">Descargar con CUFE</div>
+                      </div>
+                    </button>
+                  )}
+
+                  {/* Nota Crédito si está aceptada o tiene CUFE */}
+                  {(detailModalFactura.detalles?.cufe || detailModalFactura.detalles?.factusCufe || detailModalFactura.factusCufe || detailModalFactura.dianStatus === "ACEPTADA") && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const f = detailModalFactura;
+                        setDetailModalFactura(null);
+                        setCreditNoteModalFactura(f);
+                      }}
+                      className="p-2.5 rounded-xl border border-amber-200 hover:border-amber-400 hover:bg-amber-50 text-slate-700 text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer bg-white"
+                    >
+                      <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                        <FiFileText size={14} />
+                      </div>
+                      <div className="text-left">
+                        <div className="font-bold text-amber-900">Nota Crédito</div>
+                        <div className="text-[10px] text-amber-600">Generar Nota Crédito</div>
+                      </div>
+                    </button>
+                  )}
+
+                  {/* Reintentar / Corregir si aplica */}
+                  {(() => {
+                    const dec = getFevRetryDecision(detailModalFactura);
+                    if (dec.requiresStatusCheck) {
+                      return (
                         <button
+                          type="button"
                           onClick={() => {
                             const f = detailModalFactura;
                             setDetailModalFactura(null);
                             handleCheckStatus(f);
                           }}
-                          className="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer border-0"
+                          className="p-2.5 rounded-xl border border-amber-300 hover:border-amber-500 hover:bg-amber-50 text-slate-700 text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer bg-white"
                         >
-                          Verificar estado en Factus ahora
+                          <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                            <FiRefreshCw size={14} />
+                          </div>
+                          <div className="text-left">
+                            <div className="font-bold text-amber-900">Verificar estado</div>
+                            <div className="text-[10px] text-amber-600">Consultar Factus</div>
+                          </div>
                         </button>
-                      </div>
-                    )}
-
-                    {dec.canRetry && dec.requiresCorrection && (
-                      <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-[11px] space-y-2">
-                        <div className="flex items-center gap-1.5 font-bold">
-                          <FiAlertCircle size={14} className="text-rose-600" />
-                          <span>Rechazo en validación</span>
-                        </div>
-                        <p className="text-[11px] text-rose-700">{dec.friendlyMessage}</p>
-                        {dec.errorFields && Object.keys(dec.errorFields).length > 0 && (
-                          <ul className="list-disc ml-5 text-[10px] space-y-0.5 text-rose-600">
-                            {Object.entries(dec.errorFields).map(([k, v]) => (
-                              <li key={k}><strong>{k}:</strong> {v}</li>
-                            ))}
-                          </ul>
-                        )}
+                      );
+                    }
+                    if (dec.canRetry && dec.requiresCorrection) {
+                      return (
                         <button
+                          type="button"
                           onClick={() => {
                             const f = detailModalFactura;
                             setDetailModalFactura(null);
                             handleStartCorrection(f);
                           }}
-                          className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer border-0"
+                          className="p-2.5 rounded-xl border border-blue-300 hover:border-blue-500 hover:bg-blue-50 text-slate-700 text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer bg-white"
                         >
-                          Corregir y reintentar emisión
+                          <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                            <FiRefreshCw size={14} />
+                          </div>
+                          <div className="text-left">
+                            <div className="font-bold text-blue-900">Corregir emisión</div>
+                            <div className="text-[10px] text-blue-600">Reintentar con DIAN</div>
+                          </div>
                         </button>
-                      </div>
-                    )}
+                      );
+                    }
+                    return null;
+                  })()}
 
-                    {Array.isArray(detailModalFactura.detalles?.fevAttempts) && detailModalFactura.detalles.fevAttempts.length > 0 && (
-                      <div className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200">
-                        <span className="text-xs text-slate-600 font-semibold">
-                          Historial de intentos: {detailModalFactura.detalles.fevAttempts.length}
-                        </span>
-                        <button
-                          onClick={() => {
-                            const f = detailModalFactura;
-                            setDetailModalFactura(null);
-                            setAttemptsModalFactura(f);
-                          }}
-                          className="text-xs text-blue-600 hover:underline font-bold bg-transparent border-0 cursor-pointer"
-                        >
-                          Ver historial de intentos &rarr;
-                        </button>
+                  {/* Historial de Intentos si tiene fevAttempts */}
+                  {Array.isArray(detailModalFactura.detalles?.fevAttempts) && detailModalFactura.detalles.fevAttempts.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const f = detailModalFactura;
+                        setDetailModalFactura(null);
+                        setAttemptsModalFactura(f);
+                      }}
+                      className="p-2.5 rounded-xl border border-slate-200 hover:border-slate-400 hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer bg-white"
+                    >
+                      <div className="w-7 h-7 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
+                        <FiClock size={14} />
                       </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-              <table className="w-full border-collapse text-[12px]">
-                <thead>
-                  <tr className="border-b border-slate-200 text-slate-500">
-                    <th className="py-2 text-left font-bold">Factura</th>
-                    <th className="py-2 text-right font-bold">Valor</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr className="border-b border-slate-100">
-                    <td className="py-3 font-semibold text-slate-800">
-                      {detailModalFactura.factusInvoiceNumber || detailModalFactura.numero || "FCEV1325"}
-                    </td>
-                    <td className="py-3 text-right font-bold text-slate-800">
-                      {Number(detailModalFactura.total || 0).toLocaleString("es-CO")}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+                      <div className="text-left">
+                        <div className="font-bold text-slate-800">Historial de intentos</div>
+                        <div className="text-[10px] text-slate-400">{detailModalFactura.detalles.fevAttempts.length} intentos previos</div>
+                      </div>
+                    </button>
+                  )}
+                </div>
+              </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 px-6 py-3.5 border-t border-slate-100 bg-slate-50/60">
+            <div className="flex items-center justify-end px-6 py-3 border-t border-slate-100 bg-slate-50/60">
               <button
+                type="button"
                 onClick={() => setDetailModalFactura(null)}
-                className="px-4 py-1.5 rounded-lg border border-slate-300 text-slate-700 text-[11px] font-bold hover:bg-slate-100 transition-all cursor-pointer bg-white"
+                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-xs font-bold hover:bg-slate-100 transition-all cursor-pointer bg-white"
               >
                 Cerrar
-              </button>
-
-              <button
-                onClick={() => {
-                  handlePrint(detailModalFactura);
-                  setDetailModalFactura(null);
-                }}
-                className="px-4 py-1.5 rounded-lg border border-slate-300 text-slate-700 text-[11px] font-bold hover:bg-slate-100 transition-all cursor-pointer bg-white flex items-center gap-1.5"
-              >
-                <FiPrinter size={13} />
-                <span>Imprimir</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  toast.success("Factura enviada al correo del paciente");
-                  setDetailModalFactura(null);
-                }}
-                className="bg-[#8CC63F] hover:bg-[#7bb335] text-white px-4 py-1.5 rounded-lg font-bold text-[11px] transition-all cursor-pointer border-0 shadow-sm flex items-center gap-1.5"
-              >
-                <FiMail size={13} />
-                <span>Enviar correo</span>
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL 2: DOCUMENTOS ASOCIADOS */}
+      {/* ========================================================= */}
+      {/* MODAL: DOCUMENTOS ASOCIADOS (RECIBOS DE CAJA VINCULADOS)  */}
+      {/* ========================================================= */}
       {asociadosModalFactura && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fadeIn">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden border border-slate-200">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
-              <div>
-                <h3 className="text-[14px] font-bold text-slate-800">Recibos y Documentos Asociados</h3>
-                <p className="text-[11px] text-slate-400">Factura {asociadosModalFactura.factusInvoiceNumber || asociadosModalFactura.numero}</p>
-              </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden border border-slate-200 animate-scaleIn">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-white">
+              <h3 className="text-sm font-bold text-slate-800">
+                Documentos asociados
+              </h3>
               <button
+                type="button"
                 onClick={() => setAsociadosModalFactura(null)}
-                className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer bg-transparent border-0"
+                className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer bg-transparent border-0 transition-colors"
               >
                 <FiX size={16} />
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
-              {(!asociadosModalFactura.recibosAsociados || asociadosModalFactura.recibosAsociados.length === 0) ? (
-                <div className="p-6 text-center bg-slate-50 rounded-xl border border-slate-100 space-y-2">
-                  <p className="text-xs font-bold text-slate-500">No hay recibo de caja asociado a esta factura electrónica</p>
-                  <p className="text-[11px] text-slate-400">El pago aún no ha sido vinculado o la factura fue emitida a crédito/pendiente.</p>
-                  <button
-                    onClick={() => {
-                      const f = asociadosModalFactura;
-                      setAsociadosModalFactura(null);
-                      setTargetInvoiceForLink(f);
-                      setShowAsociarReciboModal(true);
-                    }}
-                    className="mt-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer border-0"
-                  >
-                    + Asociar recibo de caja ahora
-                  </button>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse text-[12px]">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-slate-500">
-                        <th className="py-2 text-left font-bold">Número recibo</th>
-                        <th className="py-2 text-left font-bold">Tipo</th>
-                        <th className="py-2 text-left font-bold">Fecha</th>
-                        <th className="py-2 text-right font-bold">Valor pagado</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {asociadosModalFactura.recibosAsociados.map((r, rIdx) => (
-                        <tr key={r.id || rIdx} className="border-b border-slate-100">
-                          <td className="py-3 font-semibold text-slate-800">
-                            {r.numero || `REC-${r.id?.slice(0, 6)}`}
+            {/* Contenido / Tabla */}
+            <div className="p-6">
+              <div className="overflow-x-auto border border-slate-100 rounded-lg">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-50/80 text-slate-500 font-semibold border-b border-slate-100">
+                    <tr>
+                      <th className="py-2.5 px-4">Número documento</th>
+                      <th className="py-2.5 px-4">Tipo documento</th>
+                      <th className="py-2.5 px-4">Valor</th>
+                      <th className="py-2.5 px-4 text-center">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-slate-700">
+                    {asociadosModalFactura.recibosAsociados && asociadosModalFactura.recibosAsociados.length > 0 ? (
+                      asociadosModalFactura.recibosAsociados.map((r, idx) => (
+                        <tr key={r.id || idx} className="hover:bg-slate-50/60">
+                          <td className="py-3 px-4 font-bold font-mono text-slate-800">
+                            {r.numero || r.nroConsecutivo || r.consecutivo || (r.id && String(r.id).replace(/\D/g, "").slice(-4)) || "REC-0001"}
                           </td>
-                          <td className="py-3 text-slate-600">
+                          <td className="py-3 px-4 text-slate-600 font-medium">
                             Recibo de caja
                           </td>
-                          <td className="py-3 text-slate-600">
-                            {fmtDate(r.fecha)}
+                          <td className="py-3 px-4 font-bold font-mono text-slate-800">
+                            {fmt(r.monto || r.total || r.valor || 0)}
                           </td>
-                          <td className="py-3 text-right font-bold text-emerald-600">
-                            {fmt(r.monto)}
+                          <td className="py-3 px-4 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handlePrintReciboAsociado(r, asociadosModalFactura)}
+                              className="w-7 h-7 bg-sky-500 hover:bg-sky-600 text-white rounded flex items-center justify-center mx-auto transition-colors shadow-xs cursor-pointer border-0"
+                              title="Imprimir recibo de caja"
+                            >
+                              <FiPrinter size={13} />
+                            </button>
                           </td>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <div className="mt-4 p-3 bg-emerald-50/60 rounded-xl border border-emerald-100 flex justify-between text-xs font-bold text-emerald-900">
-                    <span>Total pagado por recibos:</span>
-                    <span>{fmt(asociadosModalFactura.montoPagado || asociadosModalFactura.recibosAsociados.reduce((s, r) => s + Number(r.monto || 0), 0))}</span>
-                  </div>
-                </div>
-              )}
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="4" className="py-12 text-center text-slate-400 text-xs font-normal">
+                          No se encontraron documentos asociados
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
-            <div className="flex items-center justify-between px-6 py-3.5 border-t border-slate-100 bg-slate-50/60">
-              <span className="text-[11px] text-slate-500">
-                Estado DIAN: <strong>{asociadosModalFactura.dianStatus || "ACEPTADA"}</strong> | Estado Pago: <strong>{asociadosModalFactura.estadoPago || "PENDIENTE"}</strong>
-              </span>
+            {/* Footer */}
+            <div className="px-6 py-3 border-t border-slate-100 flex justify-end">
               <button
+                type="button"
                 onClick={() => setAsociadosModalFactura(null)}
-                className="px-4 py-1.5 rounded-lg border border-slate-300 text-slate-700 text-[11px] font-bold hover:bg-slate-100 transition-all cursor-pointer bg-white"
+                className="px-5 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-md font-medium text-xs transition-colors cursor-pointer"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODAL: VER DETALLE CONCEPTOS / LÍNEAS DE FACTURA          */}
+      {/* ========================================================= */}
+      {viewingFacturaDetails && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden border border-slate-200 animate-scaleIn">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/70">
+              <div>
+                <h3 className="text-sm font-bold text-slate-800">
+                  Detalle de Factura #{viewingFacturaDetails.factusInvoiceNumber || viewingFacturaDetails.numero}
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Paciente: {viewingFacturaDetails.pacienteNombre || viewingFacturaDetails.adquiriente || "—"} &middot; {fmtDate(viewingFacturaDetails.fechaEmision || viewingFacturaDetails.created_at)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingFacturaDetails(null)}
+                className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer bg-transparent border-0 transition-colors"
+              >
+                <FiX size={16} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+              <div className="border border-slate-200 rounded-xl overflow-hidden">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
+                    <tr>
+                      <th className="py-2.5 px-4">Concepto / Descripción</th>
+                      <th className="py-2.5 px-4 text-center">Cant.</th>
+                      <th className="py-2.5 px-4 text-right">Precio Unitario</th>
+                      <th className="py-2.5 px-4 text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-slate-700">
+                    {Array.isArray(viewingFacturaDetails.items) && viewingFacturaDetails.items.length > 0 ? (
+                      viewingFacturaDetails.items.map((item, itIdx) => (
+                        <tr key={itIdx} className="hover:bg-slate-50/50">
+                          <td className="py-2.5 px-4 font-medium text-slate-800">
+                            {item.name || item.concepto || item.descripcion || "Item"}
+                          </td>
+                          <td className="py-2.5 px-4 text-center">
+                            {item.quantity || item.cantidad || 1}
+                          </td>
+                          <td className="py-2.5 px-4 text-right font-mono">
+                            {fmt(item.price || item.precio || item.valor || 0)}
+                          </td>
+                          <td className="py-2.5 px-4 text-right font-mono font-bold text-slate-900">
+                            {fmt(item.total || ((item.quantity || 1) * (item.price || item.precio || 0)))}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="4" className="py-6 text-center text-slate-400 italic">
+                          No hay items detallados en este documento.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex justify-end p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs">
+                <span className="font-semibold text-slate-600 mr-3">Total Factura:</span>
+                <span className="font-bold text-slate-900">{fmt(viewingFacturaDetails.total)}</span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end px-6 py-3 border-t border-slate-100 bg-slate-50/60">
+              <button
+                type="button"
+                onClick={() => setViewingFacturaDetails(null)}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-xs font-bold hover:bg-slate-100 transition-all cursor-pointer bg-white"
               >
                 Cerrar
               </button>

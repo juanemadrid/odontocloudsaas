@@ -279,25 +279,31 @@ export const ReceiptPrintService = {
                 String(pago.observaciones || "").includes("[ANULADO") ||
                 String(pago.notas || "").includes("ANULADO");
 
-            // Usuario que registra el recibo/egreso (Cajero / Auxiliar / Usuario en sesión, NO el odontólogo asignado)
+            // Usuario que registró el documento originalmente
             let usuarioRegistro = "";
             const rawRegCandidates = [
                 pago.registradoPor,
                 pago.registrado_por,
+                pago.usuarioCreador,
                 pago.usuario_nombre,
                 pago.usuarioNombre,
                 pago.creadoPor,
                 pago.creado_por,
+                pago.elaboradoPor,
+                pago.elaborado_por,
                 pago.cajero,
                 pago.usuario,
                 pago.usuarioRegistro,
                 parsedMetadata?.registradoPor,
+                parsedMetadata?.registrado_por,
+                parsedMetadata?.usuarioCreador,
                 parsedMetadata?.usuarioNombre,
                 parsedMetadata?.creadoPor,
+                parsedMetadata?.creado_por,
+                parsedMetadata?.elaboradoPor,
+                parsedMetadata?.elaborado_por,
                 parsedMetadata?.cajero,
-                parsedMetadata?.usuario,
-                userProfile?.nombreCompleto,
-                userProfile?.nombre
+                parsedMetadata?.usuario
             ].filter(Boolean);
 
             for (const cand of rawRegCandidates) {
@@ -312,36 +318,25 @@ export const ReceiptPrintService = {
 
             // Si es un email o UUID o no se encontró, buscar en profiles
             if (!usuarioRegistro) {
-                const identifier = rawRegCandidates.find(c => typeof c === "string" && (c.includes("@") || (c.length === 36 && c.includes("-"))));
+                const identifier = rawRegCandidates.find(c => typeof c === "string" && (c.includes("@") || (c.length === 36 && c.includes("-"))))
+                    || pago.created_by || pago.usuario_id || parsedMetadata?.created_by || parsedMetadata?.usuario_id;
                 if (identifier) {
                     try {
-                        const query = identifier.includes("@")
-                            ? supabase.from("profiles").select("full_name, nombre, apellido").eq("email", identifier.trim()).maybeSingle()
-                            : supabase.from("profiles").select("full_name, nombre, apellido").eq("id", identifier.trim()).maybeSingle();
+                        const strId = String(identifier).trim();
+                        const query = strId.includes("@")
+                            ? supabase.from("profiles").select("full_name, nombre, apellido").eq("email", strId).maybeSingle()
+                            : supabase.from("profiles").select("full_name, nombre, apellido").eq("id", strId).maybeSingle();
                         const { data: prof } = await query;
                         if (prof?.full_name) usuarioRegistro = prof.full_name.trim();
                         else if (prof?.nombre) usuarioRegistro = `${prof.nombre} ${prof.apellido || ''}`.trim();
-                        else if (identifier.includes("@")) usuarioRegistro = identifier.split("@")[0].toUpperCase();
+                        else if (strId.includes("@")) usuarioRegistro = strId.split("@")[0].toUpperCase();
                     } catch (_) {}
                 }
             }
 
-            // Fallback al usuario autenticado actual de la sesión activa
+            // Fallback final SÓLO si el documento no tiene ningún creador guardado en la base de datos
             if (!usuarioRegistro) {
-                try {
-                    const { data: { user } } = await supabase.auth.getUser();
-                    if (user) {
-                        const { data: prof } = await supabase.from("profiles").select("full_name, nombre, apellido").eq("id", user.id).maybeSingle();
-                        if (prof?.full_name) usuarioRegistro = prof.full_name.trim();
-                        else if (prof?.nombre) usuarioRegistro = `${prof.nombre} ${prof.apellido || ''}`.trim();
-                        else if (user.user_metadata?.full_name) usuarioRegistro = user.user_metadata.full_name.trim();
-                        else if (user.email) usuarioRegistro = user.email.split("@")[0].toUpperCase();
-                    }
-                } catch (_) {}
-            }
-
-            if (!usuarioRegistro) {
-                usuarioRegistro = "Cajero / Auxiliar";
+                usuarioRegistro = userProfile?.nombreCompleto || userProfile?.nombre || "Administración";
             }
 
             const html = `

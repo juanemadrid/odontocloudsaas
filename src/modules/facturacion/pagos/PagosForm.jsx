@@ -1009,7 +1009,13 @@ export default function PagosForm({ onCancel, onSuccess }) {
                     return obsStr;
                 })(),
                 created_at: new Date().toISOString(),
-                created_by: user?.id || userProfile?.uid
+                created_by: user?.id || userProfile?.uid,
+                registradoPor: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administrador",
+                registrado_por: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administrador",
+                creadoPor: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administrador",
+                creado_por: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administrador",
+                usuarioCreador: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administrador",
+                usuario_nombre: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administrador"
             };
 
             // 1. Guardar en tabla pagos_proveedor

@@ -640,7 +640,7 @@ export default function PagosList({ onNew }) {
         concepto: (itemsList && itemsList[0]?.desc) || pago.concepto || "Egreso / Pago a proveedor",
         nroConsecutivo: pago.consecutivo || pago.numero || (pago.id && String(pago.id).replace(/\D/g, "").slice(-4)) || "S/N",
         medio: pago.medioPago || pago.bancoCaja || "Efectivo",
-        registradoPor: (userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administrador"),
+        registradoPor: pago?.registradoPor || pago?.registrado_por || pago?.usuarioCreador || pago?.usuario_nombre || pago?.usuarioNombre || pago?.creadoPor || pago?.creado_por || pago?.cajero || pago?.usuario || userProfile?.nombreCompleto || "Administrador",
         itemPayments: itemsList,
         observaciones: isAnulado
           ? `*** DOCUMENTO ANULADO: ${motivoAnulacionTexto || "Anulado por administración"} ***${obsFinal ? ` — ${obsFinal}` : ""}`

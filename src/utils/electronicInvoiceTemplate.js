@@ -206,12 +206,17 @@ export const generateElectronicInvoiceHtml = ({
     qrData
   )}&bgcolor=ffffff&color=000000&margin=0`;
 
-  // Elaborado por / Doctor
+  // Elaborado por
   const elaboradoPor =
+    factura?.elaboradoPor ||
+    factura?.elaborado_por ||
+    factura?.creadoPor ||
+    factura?.creado_por ||
+    factura?.usuarioCreador ||
+    factura?.usuarioNombre ||
+    factura?.usuario_nombre ||
     factura?.profesional ||
     factura?.doctor ||
-    factura?.elaboradoPor ||
-    factura?.usuarioNombre ||
     tenant?.nombreComercial ||
     '—';
 
@@ -846,12 +851,19 @@ export const generateReciboCajaHtml = ({
 
   const userProfile = data?.userProfile || null;
   const elaboradoPor = (() => {
-    const reg = recibo?.registradoPor || recibo?.registrado_por || recibo?.usuario_nombre || recibo?.cajero || recibo?.usuario || recibo?.usuarioRegistro || userProfile?.nombreCompleto || userProfile?.nombre;
+    const reg =
+      recibo?.registradoPor ||
+      recibo?.registrado_por ||
+      recibo?.creadoPor ||
+      recibo?.creado_por ||
+      recibo?.usuarioCreador ||
+      recibo?.usuario_nombre ||
+      recibo?.usuarioNombre ||
+      recibo?.cajero ||
+      recibo?.usuario ||
+      recibo?.usuarioRegistro;
     if (reg && typeof reg === "string" && !reg.includes("@")) {
       return reg.trim();
-    }
-    if (recibo?.creadoPor && typeof recibo.creadoPor === "string" && !recibo.creadoPor.includes("@")) {
-      return recibo.creadoPor.trim();
     }
     if (reg && typeof reg === "string" && reg.includes("@")) {
       return reg.split("@")[0].toUpperCase();

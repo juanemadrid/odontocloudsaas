@@ -331,15 +331,24 @@ export default function ReporteFinanciero() {
         if (doc) pacDict[doc] = pacObj;
       });
 
-      // 3. Catálogo de Profesionales
+      // 3. Catálogo de Profesionales y Usuarios
       const listProfs = [];
       const profDict = {};
+      const usersDict = {};
       const nonDoctorIdentifiers = new Set();
 
       (profilesRes?.data || []).forEach((u) => {
         const primerNombre = u.nombre || u.nombres || u.displayName || u.full_name || u.email || "";
         const primerApellido = u.apellido || u.apellidos || "";
         const nombreCompleto = `${primerNombre} ${primerApellido}`.trim() || u.email;
+
+        if (u.id) {
+          usersDict[u.id] = nombreCompleto;
+          usersDict[String(u.id).toLowerCase()] = nombreCompleto;
+        }
+        if (u.email) {
+          usersDict[u.email.toLowerCase()] = nombreCompleto;
+        }
 
         if (isDoctorUser(u)) {
           listProfs.push({
@@ -362,6 +371,50 @@ export default function ReporteFinanciero() {
           if (u.email) nonDoctorIdentifiers.add(u.email.toLowerCase());
         }
       });
+
+      const resolveCreatorName = (item, meta = {}) => {
+        const candidates = [
+          item?.registradoPor,
+          item?.registrado_por,
+          item?.usuarioCreador,
+          item?.usuario_nombre,
+          item?.usuario,
+          item?.creadoPor,
+          item?.creado_por,
+          item?.elaboradoPor,
+          item?.elaborado_por,
+          meta?.registradoPor,
+          meta?.registrado_por,
+          meta?.usuarioCreador,
+          meta?.creadoPor,
+          meta?.creado_por,
+          meta?.elaboradoPor,
+          meta?.elaborado_por,
+          item?.usuario_id,
+          item?.created_by,
+          meta?.usuario_id,
+          meta?.created_by
+        ];
+
+        for (const c of candidates) {
+          if (!c) continue;
+          const str = String(c).trim();
+          if (usersDict[str]) return usersDict[str];
+          if (usersDict[str.toLowerCase()]) return usersDict[str.toLowerCase()];
+          if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)) continue;
+          if (str && !str.startsWith("{") && !str.includes("@") && str.toLowerCase() !== "administración" && str.toLowerCase() !== "facturación") {
+            return str;
+          }
+        }
+        for (const c of candidates) {
+          if (!c) continue;
+          const str = String(c).trim();
+          if (str.includes("@")) {
+            return str.split("@")[0].replace(/\./g, " ").replace(/\b\w/g, l => l.toUpperCase());
+          }
+        }
+        return "Administración";
+      };
 
       (docsFromService || []).forEach(d => {
         const nom = d.nombreCompleto || d.nombre || "";
@@ -505,7 +558,7 @@ export default function ReporteFinanciero() {
           iva: 0,
           retencion: 0,
           total: montoNum,
-          usuarioCreador: d.usuario_nombre || d.creado_por || "Administración",
+          usuarioCreador: resolveCreatorName(d),
           observaciones: cleanObservaciones(rawObs),
           cuentaContable: isSF ? "280505 - Anticipos y Saldos a Favor" : "110505 - Caja General",
           oficina: d.oficina || d.sucursal || d.sede || "",
@@ -567,7 +620,7 @@ export default function ReporteFinanciero() {
           iva: 0,
           retencion: 0,
           total: montoNum,
-          usuarioCreador: pData.usuario_nombre || pData.creado_por || "Administración",
+          usuarioCreador: resolveCreatorName(pData, metadata),
           observaciones: cleanObservaciones(rawObs),
           cuentaContable: isSF ? "280505 - Anticipos y Saldos a Favor" : "110505 - Caja General",
           oficina: pData.oficina || pData.sucursal || pData.sede || "",
@@ -802,7 +855,7 @@ export default function ReporteFinanciero() {
           iva: 0,
           retencion: Number(pp.retencion || 0),
           total: montoNum,
-          usuarioCreador: pp.usuario_nombre || pp.creado_por || "Administración",
+          usuarioCreador: resolveCreatorName(pp),
           observaciones: cleanObservaciones(rawObs),
           cuentaContable: "510506 - Gastos y Pagos a Proveedores",
           oficina: pp.oficina || pp.sucursal || pp.sede || "",
@@ -878,7 +931,7 @@ export default function ReporteFinanciero() {
           iva: 0,
           retencion: 0,
           total: montoNum,
-          usuarioCreador: m.usuario_nombre || m.creado_por || "Administración",
+          usuarioCreador: resolveCreatorName(m),
           observaciones: cleanObservaciones(rawObs),
           cuentaContable: "510506 - Gastos Operativos Caja Menor",
           oficina: m.oficina || m.sucursal || m.sede || "",
@@ -1202,7 +1255,7 @@ export default function ReporteFinanciero() {
           iva: ivaNum,
           retencion: Number(f.retencion || 0),
           total: totalNum,
-          usuarioCreador: f.usuario_nombre || "Facturación",
+          usuarioCreador: resolveCreatorName(f),
           observaciones: cleanObs,
           cuentaContable: "410505 - Ingresos por Servicios",
           oficina: f.oficina || f.sucursal || f.sede || ""
@@ -1271,7 +1324,7 @@ export default function ReporteFinanciero() {
           iva: ivaNum,
           retencion: retNum,
           total: totalNum,
-          usuarioCreador: fc.creado_por || fc.usuario_nombre || "Administración",
+          usuarioCreador: resolveCreatorName(fc),
           observaciones: cleanObservaciones(fc.observaciones || fc.notas || fc.descripcion || ""),
           cuentaContable: "220505 - Proveedores Nacionales",
           oficina: fc.oficina || fc.sucursal || fc.sede || "",
@@ -2281,14 +2334,14 @@ export default function ReporteFinanciero() {
       const conceptoStr = recItem.concepto || rawRec.concepto || fallbackDoc?.concepto || "Consulta / Tratamiento Odontológico";
       const valNum = Number(recItem.valor !== undefined ? recItem.valor : (rawRec.total || fallbackDoc?.valor || 0));
 
-      const nombreElaborador = (userProfile?.nombreCompleto && !userProfile.nombreCompleto.includes("@"))
-        ? userProfile.nombreCompleto
-        : (userProfile?.nombre && !userProfile.nombre.includes("@"))
-        ? userProfile.nombre
-        : (rawRec.usuarioCreador && !rawRec.usuarioCreador.includes("@") && rawRec.usuarioCreador !== "Administración")
+      const nombreElaborador = (rawRec.usuarioCreador && !rawRec.usuarioCreador.includes("@") && rawRec.usuarioCreador !== "Administración")
         ? rawRec.usuarioCreador
         : (fallbackDoc?.usuarioCreador && !fallbackDoc.usuarioCreador.includes("@") && fallbackDoc.usuarioCreador !== "Administración")
         ? fallbackDoc.usuarioCreador
+        : (userProfile?.nombreCompleto && !userProfile.nombreCompleto.includes("@"))
+        ? userProfile.nombreCompleto
+        : (userProfile?.nombre && !userProfile.nombre.includes("@"))
+        ? userProfile.nombre
         : "Administración";
 
       const recData = {
@@ -2441,7 +2494,11 @@ export default function ReporteFinanciero() {
         notas: rawEgr.observaciones || fallbackDoc?.observaciones || "",
         fecha: egrItem.fecha || fallbackDoc?.fechaSeleccionada || fallbackDoc?.fechaCreacion || new Date().toISOString(),
         nroConsecutivo: nroDoc,
-        registradoPor: rawEgr.usuarioCreador || fallbackDoc?.usuarioCreador || userProfile?.nombreCompleto || "Administración",
+        registradoPor: (rawEgr.usuarioCreador && rawEgr.usuarioCreador !== "Administración")
+          ? rawEgr.usuarioCreador
+          : (fallbackDoc?.usuarioCreador && fallbackDoc.usuarioCreador !== "Administración")
+          ? fallbackDoc.usuarioCreador
+          : userProfile?.nombreCompleto || "Administración",
         planTitle: conceptoStr,
         tercero: rawEgr.proveedor || rawEgr.tercero || fallbackDoc?.tercero || "Proveedor",
         proveedor: rawEgr.proveedor || rawEgr.tercero || fallbackDoc?.tercero || "Proveedor",

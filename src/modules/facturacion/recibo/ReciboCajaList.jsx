@@ -162,7 +162,7 @@ export default function ReciboCajaList({ onNew }) {
                     pacienteDireccion: recibo.pacienteDireccion,
                     pacienteCiudad: recibo.pacienteCiudad,
                     profesionalNombre: profName,
-                    registradoPor: recibo.registradoPor || userProfile?.nombreCompleto || "",
+                    registradoPor: recibo.registradoPor || recibo.registrado_por || recibo.usuarioCreador || recibo.usuario_nombre || recibo.usuarioNombre || recibo.creadoPor || recibo.creado_por || recibo.cajero || recibo.usuario || userProfile?.nombreCompleto || "",
                     medioPago: recibo.medioPago || "Efectivo",
                     conceptos: conceptosList,
                     total: Number(recibo.total || 0),

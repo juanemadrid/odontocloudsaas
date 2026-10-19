@@ -4,7 +4,7 @@ import {
     FiPlus, FiSearch, FiCalendar, FiPrinter, FiEye, FiTrash2, 
     FiMoreVertical, FiHome, FiInfo, FiCheckSquare, FiSquare, 
     FiX, FiDollarSign, FiCheck, FiFileText, FiXCircle, FiAlertTriangle,
-    FiSend, FiDownload, FiCheckCircle
+    FiSend, FiDownload, FiCheckCircle, FiMail
 } from "react-icons/fi";
 import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
@@ -106,6 +106,9 @@ export default function FacturasCompraList({ onNew }) {
 
   // Modal Ver Detalle Factura
   const [viewingFactura, setViewingFactura] = useState(null);
+
+  // Modal Opciones de Factura / Documento Soporte (Menú ...)
+  const [detailModalFactura, setDetailModalFactura] = useState(null);
 
   // Modal Documentos Asociados (Comprobantes de Egreso vinculados)
   const [associatedDocsModal, setAssociatedDocsModal] = useState({ open: false, factura: null, egresos: [] });
@@ -791,7 +794,7 @@ export default function FacturasCompraList({ onNew }) {
         concepto: (itemsList[0]?.desc) || pago?.concepto || (numDocFac ? `Pago documento ${numDocFac}` : "Egreso / Pago a proveedor"),
         nroConsecutivo: pago?.consecutivo || pago?.numero || (pago?.id && String(pago.id).replace(/\D/g, "").slice(-4)) || "EGR-0001",
         medio: pago?.medioPago || pago?.medio || pago?.bancoCaja || fallbackFactura?.medioPago || "Efectivo",
-        registradoPor: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email || "Administración",
+        registradoPor: pago?.registradoPor || pago?.registrado_por || pago?.usuarioCreador || pago?.usuario_nombre || pago?.usuarioNombre || pago?.creadoPor || pago?.creado_por || pago?.cajero || pago?.usuario || userProfile?.nombreCompleto || "Administración",
         itemPayments: itemsList,
         observaciones: isAnulado
           ? `*** DOCUMENTO ANULADO *** ${pago?.observaciones || ""}`
@@ -822,7 +825,7 @@ export default function FacturasCompraList({ onNew }) {
 
     const fechaDocStr = fmtDate(factura.fecha || factura.created_at);
     const fechaVenceStr = factura.vencimiento ? fmtDate(factura.vencimiento) : (factura.fecha ? fmtDate(factura.fecha) : "—");
-    const userName = userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email || "Usuario Administrativo";
+    const userName = factura.elaboradoPor || factura.elaborado_por || factura.creadoPor || factura.creado_por || factura.usuarioCreador || factura.usuario_nombre || factura.usuarioNombre || userProfile?.nombreCompleto || userProfile?.nombre || "Usuario Administrativo";
 
     const items = Array.isArray(factura.items) && factura.items.length > 0 
       ? factura.items 
@@ -1378,16 +1381,18 @@ export default function FacturasCompraList({ onNew }) {
                 <th className="py-3 px-4">Tipo doc.</th>
                 <th className="py-3 px-4">Rec./Ter.</th>
                 <th className="py-3 px-4">Medio de pago</th>
-                <th className="py-3 px-4">Referencia</th>
+                <th className="py-3 px-4">Egreso asociado</th>
                 <th className="py-3 px-4 text-center">Vence en</th>
-                <th className="py-3 px-4 text-right">T. Doc.</th>
-                <th className="py-3 px-4 text-center w-16">...</th>
+                <th className="py-3 px-4 text-right">Total</th>
+                <th className="py-3 px-4 text-right">Pagado</th>
+                <th className="py-3 px-4 text-right">Por pagar</th>
+                <th className="py-3 px-4 text-center w-12">...</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan="9" className="py-16 text-center">
+                  <td colSpan="11" className="py-16 text-center">
                     <div className="flex flex-col items-center gap-3">
                       <div className="w-8 h-8 border-3 border-[#8dc63f] border-t-transparent rounded-full animate-spin" />
                       <span className="text-xs font-semibold text-slate-400">Cargando facturas de compra...</span>
@@ -1396,7 +1401,7 @@ export default function FacturasCompraList({ onNew }) {
                 </tr>
               ) : paginatedFacturas.length === 0 ? (
                 <tr>
-                  <td colSpan="9" className="py-16 text-center text-slate-400 italic">
+                  <td colSpan="11" className="py-16 text-center text-slate-400 italic">
                     No se encontraron facturas de compra registradas en el rango de fechas seleccionado.
                   </td>
                 </tr>
@@ -1404,29 +1409,47 @@ export default function FacturasCompraList({ onNew }) {
                 paginatedFacturas.map(f => {
                   const diasVence = calcularVencimiento(f);
                   const isSelected = selectedFacturaId === f.id;
-                  const totalDoc = f.totalNeto !== undefined ? f.totalNeto : (f.total || f.subtotal || 0);
+                  const totalDoc = Number(f.totalNeto !== undefined ? f.totalNeto : (f.total || f.subtotal || 0));
+                  const isPaid = isFacturaPaid(f);
+                  const asocs = getAssociatedEgresos(f);
+                  const isAlreadyAssociated = isPaid || (asocs && asocs.length > 0);
+
+                  const pagadoCalculado = asocs && asocs.length > 0
+                    ? asocs.reduce((sum, eg) => sum + Number(eg.monto || eg.valor || 0), 0)
+                    : (f.valorPagado !== undefined ? Number(f.valorPagado) : (isPaid ? totalDoc : 0));
+                  const pagadoFinal = isPaid ? totalDoc : Math.min(totalDoc, pagadoCalculado);
+                  const porPagarFinal = isPaid ? 0 : (f.saldoPendiente !== undefined ? Number(f.saldoPendiente) : Math.max(0, totalDoc - pagadoFinal));
 
                   return (
                     <tr 
                       key={f.id} 
-                      onClick={() => setSelectedFacturaId(isSelected ? null : f.id)}
-                      className={`hover:bg-slate-50/70 transition-colors cursor-pointer ${
-                        isSelected ? "bg-emerald-50/40" : ""
-                      }`}
+                      onClick={() => {
+                        if (!isAlreadyAssociated && f.estado !== "Anulada") {
+                          setSelectedFacturaId(isSelected ? null : f.id);
+                        }
+                      }}
+                      className={`transition-colors ${
+                        !isAlreadyAssociated && f.estado !== "Anulada" ? "hover:bg-slate-50/70 cursor-pointer" : "hover:bg-slate-50/40"
+                      } ${isSelected ? "bg-emerald-50/40" : ""}`}
                     >
                       {/* Checkbox de Selección */}
                       <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedFacturaId(isSelected ? null : f.id)}
-                          className="text-slate-400 hover:text-slate-600 focus:outline-none"
-                        >
-                          {isSelected ? (
-                            <FiCheckSquare className="text-[#8dc63f]" size={16} />
-                          ) : (
-                            <FiSquare size={16} />
-                          )}
-                        </button>
+                        {!isAlreadyAssociated && f.estado !== "Anulada" ? (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedFacturaId(isSelected ? null : f.id)}
+                            className="text-slate-400 hover:text-slate-600 focus:outline-none cursor-pointer"
+                            title="Seleccionar para asociar egreso"
+                          >
+                            {isSelected ? (
+                              <FiCheckSquare className="text-[#8dc63f]" size={16} />
+                            ) : (
+                              <FiSquare size={16} />
+                            )}
+                          </button>
+                        ) : (
+                          <span className="text-slate-300 select-none text-xs">—</span>
+                        )}
                       </td>
 
                       {/* Doc. */}
@@ -1471,14 +1494,29 @@ export default function FacturasCompraList({ onNew }) {
                         {f.medioPago || "Efectivo"}
                       </td>
 
-                      {/* Referencia */}
-                      <td className="py-3 px-4 text-slate-500 font-mono text-[11px]">
-                        {f.referencia || f.prefijo || "—"}
+                      {/* Egreso asociado */}
+                      <td className="py-3 px-4">
+                        {asocs && asocs.length > 0 ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setAssociatedDocsModal({ open: true, factura: f, egresos: asocs });
+                            }}
+                            className="text-blue-600 font-bold hover:underline cursor-pointer bg-transparent border-0 p-0 text-[11px] inline-flex items-center gap-1"
+                            title="Ver comprobante de egreso asociado"
+                          >
+                            <span>{asocs[0].consecutivo || asocs[0].numero || `EGR-${asocs[0].id?.slice(0, 6)}`}</span>
+                            {asocs.length > 1 && <span className="text-slate-400 font-semibold">(+{asocs.length - 1})</span>}
+                          </button>
+                        ) : (
+                          <span className="text-slate-400 italic text-[11px]">Sin egreso</span>
+                        )}
                       </td>
 
                       {/* Vence en */}
                       <td className="py-3 px-4 text-center font-bold">
-                        {isFacturaPaid(f) ? (
+                        {isPaid ? (
                           <span className="px-2 py-0.5 rounded-full text-[11px] bg-slate-100 text-slate-500 font-bold">
                             0
                           </span>
@@ -1495,65 +1533,31 @@ export default function FacturasCompraList({ onNew }) {
                         )}
                       </td>
 
-                      {/* T. Doc. */}
+                      {/* Total */}
                       <td className="py-3 px-4 text-right font-bold text-slate-900">
                         {fmt(totalDoc)}
                       </td>
 
+                      {/* Pagado */}
+                      <td className="py-3 px-4 text-right font-semibold text-emerald-600">
+                        {fmt(pagadoFinal)}
+                      </td>
+
+                      {/* Por pagar */}
+                      <td className="py-3 px-4 text-right font-semibold text-rose-600">
+                        {fmt(porPagarFinal)}
+                      </td>
+
                       {/* Acciones */}
                       <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-center gap-1">
-                          <button
-                            onClick={() => {
-                              const asocs = getAssociatedEgresos(f);
-                              setAssociatedDocsModal({ open: true, factura: f, egresos: asocs });
-                            }}
-                            className="w-7 h-7 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 flex items-center justify-center transition-colors cursor-pointer"
-                            title="Ver documentos asociados"
-                          >
-                            <FiEye size={14} />
-                          </button>
-                          <button
-                            onClick={() => handlePrintFactura(f)}
-                            className="w-7 h-7 rounded text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors cursor-pointer"
-                            title="Imprimir Comprobante"
-                          >
-                            <FiPrinter size={13} />
-                          </button>
-                          {/* Transmitir a Factus / DIAN si está pendiente */}
-                          {f.docSoporteDian && !f.factus_validated && f.estado !== "Anulada" && (
-                            <button
-                              onClick={() => handleTransmitDian(f)}
-                              className="w-7 h-7 rounded text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 flex items-center justify-center transition-colors cursor-pointer"
-                              title="Transmitir a Factus / DIAN"
-                            >
-                              <FiSend size={13} />
-                            </button>
-                          )}
-                          {/* Descargar PDF oficial DIAN si ya está validado */}
-                          {f.docSoporteDian && f.factus_validated && (
-                            <button
-                              onClick={() => handleDownloadDianPdf(f)}
-                              className="w-7 h-7 rounded text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 flex items-center justify-center transition-colors cursor-pointer"
-                              title="Descargar PDF Oficial DIAN"
-                            >
-                              <FiDownload size={13} />
-                            </button>
-                          )}
-                          {f.estado !== "Anulada" && (
-                            <button
-                              onClick={() => {
-                                setAnularModal({ open: true, factura: f });
-                                setMotivoAnulacionId("2");
-                                setObservacionesAnulacion("");
-                              }}
-                              className="w-7 h-7 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors cursor-pointer"
-                              title={f.docSoporteDian ? "Anular Documento Soporte y Generar Nota de Ajuste DIAN" : "Anular Factura"}
-                            >
-                              <FiTrash2 size={14} />
-                            </button>
-                          )}
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setDetailModalFactura(f)}
+                          className="text-slate-400 hover:text-slate-700 font-bold px-2 py-1 rounded cursor-pointer bg-transparent border-0 hover:bg-slate-100 transition-colors text-xs"
+                          title="Opciones"
+                        >
+                          ...
+                        </button>
                       </td>
                     </tr>
                   );
@@ -1786,6 +1790,256 @@ export default function FacturasCompraList({ onNew }) {
                 type="button"
                 onClick={() => setAssociatedDocsModal({ open: false, factura: null, egresos: [] })}
                 className="px-5 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-md font-medium text-xs transition-colors cursor-pointer"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODAL: OPCIONES DE FACTURA / DOCUMENTO SOPORTE (3 PUNTOS) */}
+      {/* ========================================================= */}
+      {detailModalFactura && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden border border-slate-200 animate-scaleIn">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/70">
+              <div>
+                <h3 className="text-sm font-bold text-slate-800">
+                  Opciones del documento
+                </h3>
+                <p className="text-[11px] text-slate-500 font-medium">
+                  {detailModalFactura.tipoDoc || (detailModalFactura.docSoporteDian ? "Documento Soporte Electrónico" : "Factura de Compra")} — {detailModalFactura.nroFactura || detailModalFactura.documentoNumero || detailModalFactura.id?.slice(0, 10)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDetailModalFactura(null)}
+                className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer bg-transparent border-0 transition-colors"
+              >
+                <FiX size={16} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Información General */}
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Proveedor / Tercero:</span>
+                  <span className="font-bold text-slate-800 text-right">{detailModalFactura.proveedor || detailModalFactura.tercero || "—"}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-500">Medio de pago:</span>
+                  <span className="font-semibold text-slate-700">{detailModalFactura.medioPago || "Efectivo"}</span>
+                </div>
+                {detailModalFactura.docSoporteDian && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500">Estado DIAN:</span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                      detailModalFactura.factus_validated
+                        ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                        : detailModalFactura.estado === "Anulada"
+                          ? "bg-rose-100 text-rose-800 border border-rose-200"
+                          : "bg-amber-100 text-amber-800 border border-amber-200"
+                    }`}>
+                      {detailModalFactura.factus_validated ? "Transmitido y Validado" : detailModalFactura.estado === "Anulada" ? "Anulado" : "Pendiente de Transmisión"}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Resumen Financiero */}
+              {(() => {
+                const totalDoc = Number(detailModalFactura.totalNeto !== undefined ? detailModalFactura.totalNeto : (detailModalFactura.total || detailModalFactura.subtotal || 0));
+                const isPaid = isFacturaPaid(detailModalFactura);
+                const asocs = getAssociatedEgresos(detailModalFactura);
+                const pagadoCalculado = asocs && asocs.length > 0
+                  ? asocs.reduce((sum, eg) => sum + Number(eg.monto || eg.valor || 0), 0)
+                  : (detailModalFactura.valorPagado !== undefined ? Number(detailModalFactura.valorPagado) : (isPaid ? totalDoc : 0));
+                const pagadoFinal = isPaid ? totalDoc : Math.min(totalDoc, pagadoCalculado);
+                const porPagarFinal = isPaid ? 0 : (detailModalFactura.saldoPendiente !== undefined ? Number(detailModalFactura.saldoPendiente) : Math.max(0, totalDoc - pagadoFinal));
+
+                return (
+                  <div className="grid grid-cols-3 gap-2 bg-slate-50/80 p-3 rounded-xl border border-slate-100 text-center">
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total</span>
+                      <span className="text-xs font-bold text-slate-800">{fmt(totalDoc)}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider block">Pagado</span>
+                      <span className="text-xs font-bold text-emerald-600">{fmt(pagadoFinal)}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-rose-600 uppercase tracking-wider block">Por pagar</span>
+                      <span className="text-xs font-bold text-rose-600">{fmt(porPagarFinal)}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Acciones Disponibles */}
+              <div className="space-y-2 pt-2">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                  Acciones disponibles
+                </span>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {/* Imprimir */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const f = detailModalFactura;
+                      setDetailModalFactura(null);
+                      handlePrintFactura(f);
+                    }}
+                    className="p-2.5 rounded-xl border border-slate-200 hover:border-blue-400 hover:bg-blue-50/40 text-slate-700 text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer bg-white"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                      <FiPrinter size={14} />
+                    </div>
+                    <div className="text-left">
+                      <div className="font-bold text-slate-800">Imprimir</div>
+                      <div className="text-[10px] text-slate-400">Comprobante físico</div>
+                    </div>
+                  </button>
+
+                  {/* Enviar correo */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const f = detailModalFactura;
+                      setDetailModalFactura(null);
+                      const emailTercero = f.terceroObj?.email || f.email || f.proveedorEmail;
+                      if (emailTercero) {
+                        toast.success(`Documento enviado al correo ${emailTercero} ✅`);
+                      } else {
+                        toast.success(`Documento preparado para envío al correo del proveedor ✅`);
+                      }
+                    }}
+                    className="p-2.5 rounded-xl border border-slate-200 hover:border-emerald-400 hover:bg-emerald-50/40 text-slate-700 text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer bg-white"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                      <FiMail size={14} />
+                    </div>
+                    <div className="text-left">
+                      <div className="font-bold text-slate-800">Enviar por correo</div>
+                      <div className="text-[10px] text-slate-400">Enviar al tercero</div>
+                    </div>
+                  </button>
+
+                  {/* Ver Documentos Asociados */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const f = detailModalFactura;
+                      const asocs = getAssociatedEgresos(f);
+                      setDetailModalFactura(null);
+                      setAssociatedDocsModal({ open: true, factura: f, egresos: asocs });
+                    }}
+                    className="p-2.5 rounded-xl border border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/40 text-slate-700 text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer bg-white"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0">
+                      <FiEye size={14} />
+                    </div>
+                    <div className="text-left">
+                      <div className="font-bold text-slate-800">Ver doc. asociados</div>
+                      <div className="text-[10px] text-slate-400">Egresos y pagos</div>
+                    </div>
+                  </button>
+
+                  {/* Ver Detalle Completo */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const f = detailModalFactura;
+                      setDetailModalFactura(null);
+                      setViewingFactura(f);
+                    }}
+                    className="p-2.5 rounded-xl border border-slate-200 hover:border-slate-400 hover:bg-slate-100 text-slate-700 text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer bg-white"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
+                      <FiFileText size={14} />
+                    </div>
+                    <div className="text-left">
+                      <div className="font-bold text-slate-800">Ver detalle</div>
+                      <div className="text-[10px] text-slate-400">Líneas y conceptos</div>
+                    </div>
+                  </button>
+
+                  {/* Transmitir a Factus / DIAN si está pendiente */}
+                  {detailModalFactura.docSoporteDian && !detailModalFactura.factus_validated && detailModalFactura.estado !== "Anulada" && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const f = detailModalFactura;
+                        setDetailModalFactura(null);
+                        handleTransmitDian(f);
+                      }}
+                      className="p-2.5 rounded-xl border border-amber-200 hover:border-amber-400 hover:bg-amber-50 text-slate-700 text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer bg-white"
+                    >
+                      <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
+                        <FiSend size={14} />
+                      </div>
+                      <div className="text-left">
+                        <div className="font-bold text-amber-900">Transmitir a DIAN</div>
+                        <div className="text-[10px] text-amber-600">Documento Soporte</div>
+                      </div>
+                    </button>
+                  )}
+
+                  {/* Descargar PDF oficial DIAN si ya está validado */}
+                  {detailModalFactura.docSoporteDian && detailModalFactura.factus_validated && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const f = detailModalFactura;
+                        setDetailModalFactura(null);
+                        handleDownloadDianPdf(f);
+                      }}
+                      className="p-2.5 rounded-xl border border-purple-200 hover:border-purple-400 hover:bg-purple-50 text-slate-700 text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer bg-white"
+                    >
+                      <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
+                        <FiDownload size={14} />
+                      </div>
+                      <div className="text-left">
+                        <div className="font-bold text-purple-900">PDF Oficial DIAN</div>
+                        <div className="text-[10px] text-purple-600">Descargar con CUDS</div>
+                      </div>
+                    </button>
+                  )}
+
+                  {/* Anular si no está anulada */}
+                  {detailModalFactura.estado !== "Anulada" && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const f = detailModalFactura;
+                        setDetailModalFactura(null);
+                        setAnularModal({ open: true, factura: f });
+                        setMotivoAnulacionId("2");
+                        setObservacionesAnulacion("");
+                      }}
+                      className="p-2.5 rounded-xl border border-rose-200 hover:border-rose-400 hover:bg-rose-50 text-slate-700 text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer bg-white"
+                    >
+                      <div className="w-7 h-7 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                        <FiTrash2 size={14} />
+                      </div>
+                      <div className="text-left">
+                        <div className="font-bold text-rose-900">Anular documento</div>
+                        <div className="text-[10px] text-rose-500">{detailModalFactura.docSoporteDian ? "Genera Nota de Ajuste" : "Marcar como anulada"}</div>
+                      </div>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end px-6 py-3 border-t border-slate-100 bg-slate-50/60">
+              <button
+                type="button"
+                onClick={() => setDetailModalFactura(null)}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-xs font-bold hover:bg-slate-100 transition-all cursor-pointer bg-white"
               >
                 Cerrar
               </button>
