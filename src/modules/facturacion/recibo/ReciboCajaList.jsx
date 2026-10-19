@@ -1235,15 +1235,10 @@ export default function ReciboCajaList({ onNew }) {
                                                     <button 
                                                         type="button"
                                                         onClick={() => setAssociatedDocsModal({ open: true, recibo: r })}
-                                                        className="inline-flex items-center justify-center gap-1 h-6 px-1.5 bg-[#0090d9] hover:bg-[#007bbd] text-white rounded text-[11px] font-bold transition-all shadow-xs cursor-pointer border-0 active:scale-95"
+                                                        className="w-7 h-6 mx-auto inline-flex items-center justify-center bg-[#0090d9] hover:bg-[#007bbd] text-white rounded text-[11px] font-bold transition-all shadow-xs cursor-pointer border-0 active:scale-95"
                                                         title={r.docRefNumber ? `Ver documento asociado (${r.docRefNumber})` : "Ver documentos asociados"}
                                                     >
                                                         <FiEye size={13} />
-                                                        {r.docRefNumber && (
-                                                            <span className="bg-[#1f2937] text-white text-[9px] px-1 py-0.2 rounded font-extrabold tracking-wider leading-tight">
-                                                                Ver
-                                                            </span>
-                                                        )}
                                                     </button>
                                                 </td>
 

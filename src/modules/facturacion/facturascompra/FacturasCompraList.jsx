@@ -13,6 +13,7 @@ import { MOTIVOS_AJUSTE_DOCUMENTO_SOPORTE, formatTerceroNombre } from "../../../
 import factusService from "../../../services/factusService";
 import { getConfigSection, saveConfigSection } from "../../../services/configPersistenceService";
 import { printDocumentoSoporte } from "../../../utils/electronicInvoiceTemplate";
+import { ReceiptPrintService } from "../../../services/ReceiptPrintService";
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
@@ -106,6 +107,9 @@ export default function FacturasCompraList({ onNew }) {
   // Modal Ver Detalle Factura
   const [viewingFactura, setViewingFactura] = useState(null);
 
+  // Modal Documentos Asociados (Comprobantes de Egreso vinculados)
+  const [associatedDocsModal, setAssociatedDocsModal] = useState({ open: false, factura: null, egresos: [] });
+
   // Modal Anular Factura / Documento Soporte
   const [anularModal, setAnularModal] = useState({ open: false, factura: null });
   const [motivoAnulacionId, setMotivoAnulacionId] = useState("2");
@@ -157,15 +161,34 @@ export default function FacturasCompraList({ onNew }) {
         }
       }
 
-      // Cargar egresos/pagos para el modal de asociación
+      // Cargar egresos/pagos para el modal de asociación y documentos asociados
       try {
+        let pList = [];
         const { data: pDb } = await supabase
           .from("pagos_proveedor")
           .select("*")
           .eq("tenant_id", inquilino);
         if (pDb && pDb.length > 0) {
-          setEgresosList(pDb);
+          pList = pDb;
         }
+
+        const { data: cfgRow } = await supabase
+          .from("website_config")
+          .select("config")
+          .eq("tenant_id", inquilino)
+          .maybeSingle();
+
+        const cfgPp = cfgRow?.config?.pagos_proveedor || [];
+        if (Array.isArray(cfgPp) && cfgPp.length > 0) {
+          const map = new Map();
+          pList.forEach(p => map.set(p.id, p));
+          cfgPp.forEach(p => {
+            if (!map.has(p.id)) map.set(p.id, p);
+          });
+          pList = Array.from(map.values());
+        }
+
+        setEgresosList(pList);
       } catch (e) {}
 
       const start = parseLocalDate(fechaInicio); 
@@ -214,8 +237,77 @@ export default function FacturasCompraList({ onNew }) {
     return filteredFacturas.slice(startIdx, startIdx + itemsPerPage);
   }, [filteredFacturas, currentPage]);
 
-  // Cálculo de días restantes para vencimiento
+  // Helper para resolver egresos asociados a una factura de compra / documento soporte
+  const getAssociatedEgresos = useCallback((factura, eList = egresosList) => {
+    if (!factura || !Array.isArray(eList) || eList.length === 0) return [];
+    const matched = [];
+    const fcNum = String(factura.nroFactura || factura.documentoNumero || factura.numero || factura.id || "").trim();
+    const fcNumClean = fcNum.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+    const fcId = String(factura.id || "").trim();
+    const fcTercero = String(factura.proveedor || factura.tercero || "").trim().toLowerCase();
+    const fcTotal = Number(factura.totalNeto || factura.total || factura.subtotal || 0);
+
+    eList.forEach(pago => {
+      if (!pago) return;
+      let isMatch = false;
+      const pagoId = String(pago.id || "").trim();
+      const pagoCons = String(pago.consecutivo || pago.numero || pago.nroConsecutivo || "").trim();
+      const pagoTercero = String(pago.proveedor || pago.tercero || "").trim().toLowerCase();
+      const pagoMonto = Number(pago.monto || pago.total || 0);
+      const obsStr = `${pago.observaciones || ""} ${pago.notas || ""} ${pago.descripcion || ""} ${pago.concepto || ""}`.toLowerCase();
+
+      // 1. Vínculo directo en la factura
+      if (factura.egresoAsociadoId && (factura.egresoAsociadoId === pagoId || factura.egresoAsociadoId === pagoCons)) {
+        isMatch = true;
+      } else if (factura.egresoAsociadoDoc && (String(factura.egresoAsociadoDoc).trim() === pagoCons || String(factura.egresoAsociadoDoc).trim() === pagoId)) {
+        isMatch = true;
+      } else if (Array.isArray(factura.egresos_asociados) && (factura.egresos_asociados.includes(pagoId) || factura.egresos_asociados.includes(pagoCons))) {
+        isMatch = true;
+      }
+      // 2. Vínculo directo en el egreso
+      else if (pago.factura_asociada && (pago.factura_asociada === fcNum || pago.factura_asociada === fcId || (fcNumClean && pago.factura_asociada.replace(/[^a-zA-Z0-9]/g, "").toLowerCase() === fcNumClean))) {
+        isMatch = true;
+      } else if (pago.facturaId && (pago.facturaId === fcId || pago.facturaId === fcNum)) {
+        isMatch = true;
+      } else if (Array.isArray(pago.facturasSeleccionadas) && pago.facturasSeleccionadas.some(s => {
+        const sVal = String(s?.id || s?.numero || s?.nroFactura || s?.documentoNumero || s).trim();
+        return sVal === fcId || sVal === fcNum || (fcNumClean && sVal.replace(/[^a-zA-Z0-9]/g, "").toLowerCase() === fcNumClean);
+      })) {
+        isMatch = true;
+      } else if (Array.isArray(pago.items) && pago.items.some(i => i.isFactura && (String(i.facturaId) === fcId || String(i.numeroFactura || i.concepto) === fcNum || (fcNumClean && String(i.numeroFactura || i.concepto).replace(/[^a-zA-Z0-9]/g, "").toLowerCase() === fcNumClean)))) {
+        isMatch = true;
+      }
+      // 3. Mención del número de factura en observaciones / concepto
+      else if (fcNumClean && fcNumClean.length >= 3 && obsStr.replace(/[^a-zA-Z0-9]/g, "").includes(fcNumClean)) {
+        isMatch = true;
+      }
+      // 4. Mismo tercero y mismo monto exacto
+      else if (fcTercero && pagoTercero && fcTercero === pagoTercero && Math.abs(fcTotal - pagoMonto) < 1) {
+        isMatch = true;
+      }
+
+      if (isMatch && !matched.some(m => m.id === pago.id)) {
+        matched.push(pago);
+      }
+    });
+
+    return matched;
+  }, [egresosList]);
+
+  // Determinar si una factura está pagada / cancelada o asociada a egreso
+  const isFacturaPaid = useCallback((factura) => {
+    if (!factura) return false;
+    const est = String(factura.estado || "").toLowerCase();
+    if (est === "pagada" || est === "cancelada" || est === "pagado" || est === "cancelado") return true;
+    if (factura.saldoPendiente !== undefined && Number(factura.saldoPendiente) <= 0) return true;
+    if (factura.egresoAsociadoId || factura.egresoAsociadoDoc) return true;
+    const asocs = getAssociatedEgresos(factura);
+    return asocs.length > 0;
+  }, [getAssociatedEgresos]);
+
+  // Cálculo de días restantes para vencimiento (Si ya está paga, retorna 0)
   const calcularVencimiento = (factura) => {
+    if (isFacturaPaid(factura)) return 0;
     if (!factura.fecha) return 0;
     const cond = factura.condicionPago || "";
     let diasPlazo = 0;
@@ -583,8 +675,48 @@ export default function FacturasCompraList({ onNew }) {
   };
 
   // Imprimir Comprobante Oficial de Factura de Compra / Documento Soporte (1:1 Formato DIAN con QR)
-  const handlePrintFactura = (factura) => {
+  const handlePrintFactura = async (factura) => {
     if (!factura) return;
+
+    let enrichedFactura = { ...factura };
+    if (!enrichedFactura.direccion && !enrichedFactura.direccionProveedor) {
+      try {
+        let tData = null;
+        if (factura.terceroId) {
+          const { data } = await supabase.from("terceros").select("*").eq("id", factura.terceroId).maybeSingle();
+          tData = data;
+        }
+        if (!tData && (factura.documentoTercero || factura.nit || factura.cedula)) {
+          const doc = factura.documentoTercero || factura.nit || factura.cedula;
+          const { data } = await supabase.from("terceros").select("*").or(`documento.eq.${doc},numero_documento.eq.${doc},nroDocumento.eq.${doc}`).maybeSingle();
+          tData = data;
+        }
+        if (!tData && (factura.proveedor || factura.tercero)) {
+          const nom = factura.proveedor || factura.tercero;
+          const { data } = await supabase.from("terceros").select("*").ilike("nombre", `%${nom}%`).maybeSingle();
+          tData = data;
+        }
+        if (!tData && (factura.documentoTercero || factura.nit)) {
+          const doc = factura.documentoTercero || factura.nit;
+          const { data } = await supabase.from("pacientes").select("*").eq("documento", doc).maybeSingle();
+          tData = data;
+        }
+
+        if (tData) {
+          const dir = tData.direccion || tData.direccionDomicilio || tData.direccion_domicilio || "";
+          const ciu = tData.ciudad || tData.ciudadDomicilio || tData.municipio || "Sincelejo";
+          const tel = tData.telefono || tData.celular || "";
+          enrichedFactura.direccion = dir;
+          enrichedFactura.direccionProveedor = dir;
+          enrichedFactura.ciudad = ciu;
+          enrichedFactura.ciudadProveedor = ciu;
+          enrichedFactura.telefono = tel;
+        }
+      } catch (e) {
+        console.warn("Aviso buscando dirección del tercero:", e);
+      }
+    }
+
     const tenantData = {
       ...userProfile?.tenant,
       nombreComercial: clinicConfig?.nombreComercial || clinicConfig?.nombre || userProfile?.tenant?.nombreComercial || userProfile?.tenant?.nombre || "ATM CENTRO DEL DOLOR OROFACIAL",
@@ -598,15 +730,82 @@ export default function FacturasCompraList({ onNew }) {
     };
 
     printDocumentoSoporte({
-      factura,
+      factura: enrichedFactura,
       tenant: tenantData,
       userProfile
     });
     return;
-    const isDocSoporte = Boolean(factura.docSoporteDian);
-    const isAnulado = factura.estado === "Anulada" || factura.estado === "Anulado";
-    const docNumero = factura.nroFactura || factura.documentoNumero || factura.id?.slice(0, 8)?.toUpperCase();
-    const docTitulo = isDocSoporte ? "DOCUMENTO SOPORTE EN ADQUISICIONES" : "FACTURA DE COMPRA";
+  };
+
+  // Imprimir Comprobante de Egreso asociado desde el modal
+  const handlePrintEgreso = async (pago, fallbackFactura) => {
+    if (!pago && !fallbackFactura) return;
+    try {
+      const clinic = {
+        ...(userProfile?.tenant || {}),
+        nombre: clinicConfig?.nombreComercial || clinicConfig?.nombre || userProfile?.tenant?.nombre || "ATM CENTRO DEL DOLOR OROFACIAL",
+        nombreComercial: clinicConfig?.nombreComercial || clinicConfig?.nombre || userProfile?.tenant?.nombre || "ATM CENTRO DEL DOLOR OROFACIAL",
+        nit: clinicConfig?.nit || userProfile?.tenant?.nit || "64576359-3",
+        direccion: clinicConfig?.direccion || userProfile?.tenant?.direccion || "Calle 16#17-68",
+        ciudad: clinicConfig?.ciudad || userProfile?.tenant?.ciudad || "Sincelejo",
+        telefono: clinicConfig?.telefono || userProfile?.tenant?.telefono || "3103583706",
+        email: clinicConfig?.email || userProfile?.tenant?.email || "atmcentrodedolor@gmail.com",
+        logoUrl: clinicConfig?.logo || userProfile?.tenant?.logo || ""
+      };
+
+      const terceroNombre = pago?.tercero || pago?.proveedor || fallbackFactura?.proveedor || fallbackFactura?.tercero || "BENEFICIARIO / TERCERO";
+      const terceroDoc = pago?.documentoTercero || pago?.nit || pago?.cedula || fallbackFactura?.documentoTercero || fallbackFactura?.nit || "—";
+      const isNit = String(terceroDoc).replace(/\D/g, "").length >= 9;
+
+      const patientPayload = {
+        nombreCompleto: terceroNombre,
+        documento: terceroDoc,
+        tipoDocumento: isNit ? "NIT" : "CC",
+        direccion: pago?.direccion || fallbackFactura?.direccion || fallbackFactura?.direccionProveedor || "—",
+        ciudad: pago?.ciudad || fallbackFactura?.ciudad || fallbackFactura?.ciudadProveedor || "Sincelejo",
+        celular: pago?.telefono || fallbackFactura?.telefono || "—"
+      };
+
+      const numDocFac = fallbackFactura?.nroFactura || fallbackFactura?.documentoNumero || fallbackFactura?.id || "";
+      const isAnulado = pago?.anulado || (pago?.estado || "").toLowerCase() === "anulado";
+      const montoTotal = Number(pago?.monto || pago?.total || fallbackFactura?.totalNeto || fallbackFactura?.total || 0);
+
+      const itemsList = Array.isArray(pago?.items) && pago.items.length > 0
+        ? pago.items
+        : [
+            {
+              desc: numDocFac ? `Pago Factura / Documento Soporte: ${numDocFac}` : (pago?.concepto || "Pago a proveedor"),
+              valor: montoTotal,
+              cantidad: 1,
+              total: montoTotal
+            }
+          ];
+
+      const pagoPayload = {
+        ...pago,
+        tipo: "egreso",
+        tipoDocumento: "Egreso",
+        documentTitle: isAnulado ? "COMPROBANTE DE EGRESO (ANULADO)" : "COMPROBANTE DE EGRESO",
+        monto: montoTotal,
+        total: montoTotal,
+        concepto: (itemsList[0]?.desc) || pago?.concepto || (numDocFac ? `Pago documento ${numDocFac}` : "Egreso / Pago a proveedor"),
+        nroConsecutivo: pago?.consecutivo || pago?.numero || (pago?.id && String(pago.id).replace(/\D/g, "").slice(-4)) || "EGR-0001",
+        medio: pago?.medioPago || pago?.medio || pago?.bancoCaja || fallbackFactura?.medioPago || "Efectivo",
+        registradoPor: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email || "Administración",
+        itemPayments: itemsList,
+        observaciones: isAnulado
+          ? `*** DOCUMENTO ANULADO *** ${pago?.observaciones || ""}`
+          : (pago?.observaciones || (numDocFac ? `Pago asociado a documento ${numDocFac}` : ""))
+      };
+
+      await ReceiptPrintService.generatePDF(pagoPayload, patientPayload, clinic, userProfile);
+    } catch (e) {
+      console.error("Error generating egreso PDF from FacturasCompraList:", e);
+      toast.error("Error al preparar la impresión del comprobante de egreso");
+    }
+  };
+
+  const _deadCode = () => {
 
     const clinicName = 
       clinicConfig?.nombreComercial || 
@@ -1279,15 +1478,21 @@ export default function FacturasCompraList({ onNew }) {
 
                       {/* Vence en */}
                       <td className="py-3 px-4 text-center font-bold">
-                        <span className={`px-2 py-0.5 rounded-full text-[11px] ${
-                          diasVence < 0 
-                            ? "bg-rose-50 text-rose-600" 
-                            : diasVence === 0 
-                              ? "bg-amber-50 text-amber-600" 
-                              : "bg-emerald-50 text-emerald-600"
-                        }`}>
-                          {diasVence}
-                        </span>
+                        {isFacturaPaid(f) ? (
+                          <span className="px-2 py-0.5 rounded-full text-[11px] bg-slate-100 text-slate-500 font-bold">
+                            0
+                          </span>
+                        ) : (
+                          <span className={`px-2 py-0.5 rounded-full text-[11px] ${
+                            diasVence < 0 
+                              ? "bg-rose-50 text-rose-600" 
+                              : diasVence === 0 
+                                ? "bg-amber-50 text-amber-600" 
+                                : "bg-emerald-50 text-emerald-600"
+                          }`}>
+                            {diasVence}
+                          </span>
+                        )}
                       </td>
 
                       {/* T. Doc. */}
@@ -1299,9 +1504,12 @@ export default function FacturasCompraList({ onNew }) {
                       <td className="py-3 px-4 text-center" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
                           <button
-                            onClick={() => setViewingFactura(f)}
+                            onClick={() => {
+                              const asocs = getAssociatedEgresos(f);
+                              setAssociatedDocsModal({ open: true, factura: f, egresos: asocs });
+                            }}
                             className="w-7 h-7 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 flex items-center justify-center transition-colors cursor-pointer"
-                            title="Ver detalle"
+                            title="Ver documentos asociados"
                           >
                             <FiEye size={14} />
                           </button>
@@ -1493,6 +1701,94 @@ export default function FacturasCompraList({ onNew }) {
                 </button>
               </div>
 
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* MODAL: DOCUMENTOS ASOCIADOS (Comprobantes de Egreso)       */}
+      {/* ========================================================= */}
+      {associatedDocsModal.open && associatedDocsModal.factura && (
+        <div 
+          className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn"
+          onClick={() => setAssociatedDocsModal({ open: false, factura: null, egresos: [] })}
+        >
+          <div 
+            className="bg-white w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden border border-slate-200 animate-zoomIn"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+              <h3 className="text-sm font-bold text-slate-800 tracking-tight">
+                Documentos asociados
+              </h3>
+              <button 
+                onClick={() => setAssociatedDocsModal({ open: false, factura: null, egresos: [] })}
+                className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <FiX size={16} />
+              </button>
+            </div>
+
+            {/* Body / Table */}
+            <div className="p-6">
+              <div className="bg-white rounded-lg border border-slate-200 overflow-hidden">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold text-[11px]">
+                    <tr>
+                      <th className="py-2.5 px-4 font-semibold">Número documento</th>
+                      <th className="py-2.5 px-4 font-semibold">Tipo documento</th>
+                      <th className="py-2.5 px-4 font-semibold">Valor</th>
+                      <th className="py-2.5 px-4 text-center font-semibold">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-slate-700">
+                    {associatedDocsModal.egresos && associatedDocsModal.egresos.length > 0 ? (
+                      associatedDocsModal.egresos.map((egr, idx) => (
+                        <tr key={egr.id || idx} className="hover:bg-slate-50/60">
+                          <td className="py-3 px-4 font-bold font-mono text-slate-800">
+                            {egr.consecutivo || egr.numero || egr.nroConsecutivo || (egr.id && String(egr.id).replace(/\D/g, "").slice(-4)) || "EGR-0001"}
+                          </td>
+                          <td className="py-3 px-4 text-slate-600 font-medium">
+                            Comprobante de egreso
+                          </td>
+                          <td className="py-3 px-4 font-bold font-mono text-slate-800">
+                            {fmt(egr.monto || egr.total || associatedDocsModal.factura.totalNeto || associatedDocsModal.factura.total)}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <button 
+                              type="button"
+                              onClick={() => handlePrintEgreso(egr, associatedDocsModal.factura)}
+                              className="w-7 h-7 bg-sky-500 hover:bg-sky-600 text-white rounded flex items-center justify-center mx-auto transition-colors shadow-xs cursor-pointer border-0"
+                              title="Imprimir comprobante de egreso"
+                            >
+                              <FiPrinter size={13} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="4" className="py-12 text-center text-slate-400 text-xs font-normal">
+                          No se encontraron documentos asociados
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-3 border-t border-slate-100 flex justify-end">
+              <button 
+                type="button"
+                onClick={() => setAssociatedDocsModal({ open: false, factura: null, egresos: [] })}
+                className="px-5 py-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-md font-medium text-xs transition-colors cursor-pointer"
+              >
+                Cerrar
+              </button>
             </div>
           </div>
         </div>

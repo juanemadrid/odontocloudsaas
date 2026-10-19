@@ -1171,7 +1171,7 @@ export const generateDocumentoSoporteHtml = ({
   );
 
   const docTituloPrincipal = isDocSoporte
-    ? 'Documento soporte en<br/>adquisiciones'
+    ? 'Documento soporte'
     : 'Factura de<br/>compra';
   const docBadge = isDocSoporte
     ? 'Documento soporte original'
@@ -1202,8 +1202,21 @@ export const generateDocumentoSoporteHtml = ({
     factura?.identificacion ||
     '—';
 
-  const provAddress = factura?.direccion || factura?.direccionProveedor || '—';
-  const provCity = factura?.ciudad || factura?.ciudadProveedor || 'Sincelejo';
+  const provAddress =
+    factura?.direccion ||
+    factura?.direccionProveedor ||
+    factura?.direccion_tercero ||
+    factura?.terceroDireccion ||
+    factura?.tercero_direccion ||
+    '—';
+
+  const provCity =
+    factura?.ciudad ||
+    factura?.ciudadProveedor ||
+    factura?.ciudad_tercero ||
+    factura?.terceroCiudad ||
+    factura?.tercero_ciudad ||
+    'Sincelejo';
 
   // Fechas
   const fechaExpFormatted = formatDateSlash(factura?.fecha || factura?.created_at || new Date());
