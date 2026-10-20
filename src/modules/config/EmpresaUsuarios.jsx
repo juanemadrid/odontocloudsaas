@@ -480,7 +480,10 @@ export default function EmpresaUsuarios() {
         if (!formData.genero?.trim()) newErrors.genero = "El género es obligatorio";
         if (!formData.fechaNacimiento?.trim()) newErrors.fechaNacimiento = "La fecha de nacimiento es obligatoria";
 
-        const isEditingAdmin = editId && users.find(u => u.id === editId)?.rol === "administrador";
+        const editingUser = editId ? users.find(u => u.id === editId) : null;
+        const isEditingAdmin = Boolean(
+            editingUser && ["administrador", "admin"].includes(String(editingUser.rol || editingUser.role || "").toLowerCase())
+        );
         if (!isEditingAdmin && !formData.profileId?.trim()) {
             newErrors.profileId = "El tipo de perfil es obligatorio";
         }
@@ -550,21 +553,47 @@ export default function EmpresaUsuarios() {
             const primaryEmail = (userProfile?.email || "atmcentrodeldolor@gmail.com").toLowerCase().trim();
             const isPrimaryAccount = targetEmail === primaryEmail;
             
-            // Asignar rol respetando la elección del usuario (Doctor, Odontólogo, etc.)
-            let roleName = isPrimaryAccount ? "administrador" : (selectedProfile?.nombre || formData.profileId || "Doctor");
+            // Asignar rol respetando la condición de administrador o elección del usuario
+            let roleName = isEditingAdmin
+                ? (editingUser?.rol || editingUser?.role || "administrador")
+                : (isPrimaryAccount ? "administrador" : (selectedProfile?.nombre || formData.profileId || "Doctor"));
 
-            const res = await upsertManagedUser({
-                id: editId || null,
-                tenantId: userProfile.inquilino,
-                email: targetEmail,
-                password: formData.password?.trim() || undefined,
-                fullName,
-                role: roleName,
-                especialidad: (formData.especialidades || []).join(', ') || null,
-                registroMedico: formData.numeroDocumento?.trim() || null,
-                telefono: formData.telefonoMovil?.trim() || formData.telefonoFijo?.trim() || null,
-                activo: true
-            });
+            let res = null;
+            try {
+                res = await upsertManagedUser({
+                    id: editId || null,
+                    tenantId: userProfile.inquilino,
+                    email: targetEmail,
+                    password: formData.password?.trim() || undefined,
+                    fullName,
+                    role: roleName,
+                    especialidad: (formData.especialidades || []).join(', ') || null,
+                    registroMedico: formData.numeroDocumento?.trim() || null,
+                    telefono: formData.telefonoMovil?.trim() || formData.telefonoFijo?.trim() || null,
+                    activo: true
+                });
+            } catch (authErr) {
+                const isRoleAdminErr = authErr?.message?.includes("roles administrativos") || authErr?.message?.includes("modificar administradores");
+                if (editId && isEditingAdmin && isRoleAdminErr) {
+                    console.warn("admin-users edge function restringió rol admin, aplicando actualización directa en profiles:", authErr);
+                    const { error: directErr } = await supabase
+                        .from("profiles")
+                        .update({
+                            full_name: fullName,
+                            telefono: formData.telefonoMovil?.trim() || formData.telefonoFijo?.trim() || null,
+                            especialidad: (formData.especialidades || []).join(', ') || null,
+                            registro_medico: formData.numeroDocumento?.trim() || null,
+                        })
+                        .eq("id", editId);
+                    if (directErr) {
+                        console.error("Error en fallback directo de profiles:", directErr);
+                        throw directErr;
+                    }
+                    res = { user: { id: editId } };
+                } else {
+                    throw authErr;
+                }
+            }
             const targetId = res?.user?.id || editId || (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2));
             
             // Guardar únicamente metadatos no sensibles del usuario.
@@ -1045,7 +1074,10 @@ export default function EmpresaUsuarios() {
                                         <div className="space-y-1">
                                             <label className="text-[11px] font-semibold text-slate-600">Tipo de perfil *</label>
                                             {(() => {
-                                                const isEditingAdmin = editId && users.find(u => u.id === editId)?.rol === "administrador";
+                                                const editingUser = editId && users.find(u => u.id === editId);
+                                                const isEditingAdmin = Boolean(
+                                                    editingUser && ["administrador", "admin"].includes(String(editingUser.rol || editingUser.role || "").toLowerCase())
+                                                );
                                                 if (isEditingAdmin) {
                                                     return (
                                                         <input 

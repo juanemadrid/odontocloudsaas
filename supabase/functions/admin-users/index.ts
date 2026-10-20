@@ -93,11 +93,17 @@ Deno.serve(async (request) => {
       return data;
     };
 
-    const assertTargetScope = (target: { tenant_id: string | null; role: string | null }) => {
+    const assertTargetScope = (
+      target: { tenant_id: string | null; role: string | null },
+      allowAdminUpdate = false
+    ) => {
       if (!isSuperadmin && target.tenant_id !== caller.tenant_id) {
         throw new HttpError(403, "No puedes administrar usuarios de otra clinica.");
       }
-      if (!isSuperadmin && protectedRoles.has(normalizeRole(target.role))) {
+      if (!isSuperadmin && normalizeRole(target.role) === "superadmin") {
+        throw new HttpError(403, "Solo el superadministrador puede modificar superadministradores.");
+      }
+      if (!isSuperadmin && protectedRoles.has(normalizeRole(target.role)) && !allowAdminUpdate) {
         throw new HttpError(403, "Solo el superadministrador puede modificar administradores.");
       }
     };
@@ -150,16 +156,30 @@ Deno.serve(async (request) => {
       if (!userId && !password) {
         throw new HttpError(400, "La contrasena es obligatoria para un usuario nuevo.");
       }
-      if (!isSuperadmin && protectedRoles.has(normalizeRole(role))) {
-        throw new HttpError(403, "Solo el superadministrador puede asignar roles administrativos.");
-      }
 
       let authUser;
       let created = false;
 
       if (userId) {
         const target = await getTargetProfile(userId);
-        assertTargetScope(target);
+        const targetRole = normalizeRole(target.role);
+        const targetIsAdmin = protectedRoles.has(targetRole);
+        const requestedRoleIsAdmin = protectedRoles.has(normalizeRole(role));
+
+        if (!isSuperadmin) {
+          if (targetIsAdmin) {
+            // Un administrador puede actualizar sus propios datos o los de un admin de su clínica,
+            // pero no puede cambiar su rol administrativo ni degradarlo.
+            if (normalizeRole(role) !== targetRole) {
+              throw new HttpError(403, "Solo el superadministrador puede modificar o reasignar roles administrativos.");
+            }
+          } else if (requestedRoleIsAdmin) {
+            // No se permite promover a un usuario común a administrador
+            throw new HttpError(403, "Solo el superadministrador puede asignar roles administrativos.");
+          }
+        }
+
+        assertTargetScope(target, targetIsAdmin && normalizeRole(role) === targetRole);
         const attributes: Record<string, unknown> = {
           email,
           email_confirm: true,
@@ -172,6 +192,10 @@ Deno.serve(async (request) => {
         if (error || !data.user) throw error || new Error("No se pudo actualizar Auth.");
         authUser = data.user;
       } else {
+        if (!isSuperadmin && protectedRoles.has(normalizeRole(role))) {
+          throw new HttpError(403, "Solo el superadministrador puede asignar roles administrativos.");
+        }
+
         const existing = await findAuthUserByEmail(email);
         if (existing) throw new HttpError(409, "El correo ya tiene una cuenta registrada.");
 
