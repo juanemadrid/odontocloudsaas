@@ -39,12 +39,14 @@ import {
   FEV_LOCK_STATE,
   FEV_OPERATION,
 } from "../../../services/factusRetryService";
+import { formatNumberWithDots, parseRawNumber } from "../../../utils/formatters";
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
     style: "currency",
     currency: "COP",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: Number(n || 0) % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
   });
 
 const RETENCIONES_CATALOGO = [
@@ -537,10 +539,13 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
     setItems((prev) =>
       prev.map((item) => {
         if (item.id !== id) return item;
-        const updated = { ...item, [field]: value };
-        const pu = field === "precioUnitario" ? parseFloat(value) || 0 : parseFloat(item.precioUnitario) || 0;
-        const cant = field === "cantidad" ? parseFloat(value) || 0 : parseFloat(item.cantidad) || 0;
-        const desc = field === "descuento" ? parseFloat(value) || 0 : parseFloat(item.descuento) || 0;
+        const valToStore = (field === "precioUnitario" || field === "descuento")
+          ? formatNumberWithDots(value)
+          : value;
+        const updated = { ...item, [field]: valToStore };
+        const pu = parseRawNumber(updated.precioUnitario);
+        const cant = parseFloat(updated.cantidad) || 0;
+        const desc = parseRawNumber(updated.descuento);
         const subtotal = pu * cant;
         updated.total = Math.max(0, subtotal - desc);
         return updated;
@@ -555,7 +560,7 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
         if (item.id !== itemId) return item;
         const pu = Number(proc.precio || 0);
         const cant = Number(item.cantidad || 1);
-        const desc = Number(item.descuento || 0);
+        const desc = parseRawNumber(item.descuento);
         const total = Math.max(0, pu * cant - desc);
         const codePrefix = proc.code ? `${proc.code} - ` : "";
         return {
@@ -593,8 +598,9 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
       return;
     }
     const retObj = RETENCIONES_CATALOGO.find((r) => r.id === selectedRetencionId);
-    const baseNum = parseFloat(baseRetencion) || totalConceptos;
-    const valorRetencion = Math.round(baseNum * (retObj?.porcentaje || 0));
+    const rawBase = parseRawNumber(baseRetencion);
+    const baseNum = rawBase ? rawBase : totalConceptos;
+    const valorRetencion = Number((baseNum * (retObj?.porcentaje || 0)).toFixed(2));
 
     const newRet = {
       id: Date.now(),
@@ -616,19 +622,19 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
 
   // Totales
   const subtotalBruto = useMemo(() => {
-    return items.reduce((acc, it) => acc + ((parseFloat(it.precioUnitario) || 0) * (parseFloat(it.cantidad) || 0)), 0);
+    return items.reduce((acc, it) => acc + ((parseRawNumber(it.precioUnitario) || 0) * (parseFloat(it.cantidad) || 0)), 0);
   }, [items]);
 
   const totalDescuentos = useMemo(() => {
-    return items.reduce((acc, it) => acc + (parseFloat(it.descuento) || 0), 0);
+    return items.reduce((acc, it) => acc + (parseRawNumber(it.descuento) || 0), 0);
   }, [items]);
 
   const totalConceptos = useMemo(() => {
-    return items.reduce((acc, item) => acc + (parseFloat(item.total) || 0), 0);
+    return items.reduce((acc, item) => acc + (parseRawNumber(item.total) || 0), 0);
   }, [items]);
 
   const totalRetenciones = useMemo(() => {
-    return retencionesSeleccionadas.reduce((acc, r) => acc + (parseFloat(r.valor) || 0), 0);
+    return retencionesSeleccionadas.reduce((acc, r) => acc + (parseRawNumber(r.valor) || 0), 0);
   }, [retencionesSeleccionadas]);
 
   const totalNetoPagar = useMemo(() => {
@@ -831,7 +837,7 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
           const lineId = it.invoiceLineId || (crypto?.randomUUID ? crypto.randomUUID() : `line-${idx + 1}-${Date.now()}`);
           const sourceId = it.clinicalSourceId || it.planItemId || (it.planId && it.id ? it.id : null);
           const sourceType = it.clinicalSourceType || (it.planItemId || it.planId ? "PLAN_ITEM" : null);
-          const totalVal = parseFloat(it.total) || Math.max(0, (parseFloat(it.precioUnitario) || 0) * (parseFloat(it.cantidad) || 1) - (parseFloat(it.descuento) || 0));
+          const totalVal = parseRawNumber(it.total) || Math.max(0, (parseRawNumber(it.precioUnitario) || 0) * (parseFloat(it.cantidad) || 1) - (parseRawNumber(it.descuento) || 0));
           const fechaAtencion = (it.fechaAtencion || it.fechaRealizado || fecha || new Date().toISOString()).slice(0, 10);
           
           const fullLineName = it.concepto && it.descripcion && it.concepto !== it.descripcion
@@ -840,6 +846,9 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
 
           return {
             ...it,
+            precioUnitario: parseRawNumber(it.precioUnitario),
+            cantidad: parseFloat(it.cantidad) || 1,
+            descuento: parseRawNumber(it.descuento),
             invoiceLineId: lineId,
             clinicalSourceId: sourceId,
             clinicalSourceType: sourceType,
@@ -1811,10 +1820,9 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
                       </td>
                       <td className="py-2.5 px-4">
                         <input
-                          type="number"
-                          min="0"
-                          step="1000"
-                          value={item.precioUnitario || ""}
+                          type="text"
+                          inputMode="decimal"
+                          value={item.precioUnitario !== undefined && item.precioUnitario !== null ? item.precioUnitario : ""}
                           onChange={(e) => handleItemChange(item.id, "precioUnitario", e.target.value)}
                           placeholder="0"
                           className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none font-medium"
@@ -1831,10 +1839,9 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
                       </td>
                       <td className="py-2.5 px-4">
                         <input
-                          type="number"
-                          min="0"
-                          step="1000"
-                          value={item.descuento || ""}
+                          type="text"
+                          inputMode="decimal"
+                          value={item.descuento !== undefined && item.descuento !== null ? item.descuento : ""}
                           onChange={(e) => handleItemChange(item.id, "descuento", e.target.value)}
                           placeholder="0"
                           className="w-full h-8 px-2.5 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none"
@@ -1901,11 +1908,11 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
             </label>
             <div className="md:col-span-3">
               <input
-                type="number"
-                min="0"
+                type="text"
+                inputMode="decimal"
                 value={baseRetencion}
-                onChange={(e) => setBaseRetencion(e.target.value)}
-                placeholder={totalConceptos > 0 ? String(totalConceptos) : "Base gravable"}
+                onChange={(e) => setBaseRetencion(formatNumberWithDots(e.target.value))}
+                placeholder={totalConceptos > 0 ? formatNumberWithDots(totalConceptos) : "Base gravable"}
                 className="w-full h-9 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none"
               />
             </div>

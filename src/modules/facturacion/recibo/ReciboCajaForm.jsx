@@ -11,12 +11,14 @@ import { buildDashboardPath } from "../../../utils/dashboardBasePath";
 import { getActiveCaja, getDoctorsList, ensureActiveCaja } from "../../../services/supabaseServices";
 import { getConfigItems, saveConfigItem, getConfigSection } from "../../../services/configPersistenceService";
 import { isDoctorUser } from "../../../utils/doctorHelpers";
+import { formatNumberWithDots, parseRawNumber } from "../../../utils/formatters";
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
     style: "currency",
     currency: "COP",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: Number(n || 0) % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
   });
 
 const isUUID = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(str || ""));
@@ -287,16 +289,6 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
          ).slice(0, 20);
      }, [patientSearch, pacientes]);
 
-     const formatNumberWithDots = (val) => {
-         const clean = String(val).replace(/\D/g, "");
-         if (!clean) return "";
-         return Number(clean).toLocaleString("es-CO");
-     };
-
-     const parseRawNumber = (val) => {
-         return String(val).replace(/\D/g, "");
-     };
-
      const handleOpenNewConcept = () => {
          setNewConcept({
              concepto: "",
@@ -311,9 +303,9 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
      const handleAddConceptFromModal = (e) => {
          e.preventDefault();
          if (!newConcept.concepto.trim()) return alert("El concepto es obligatorio");
-         const price = Number(newConcept.precioUnitario) || 0;
+         const price = parseRawNumber(newConcept.precioUnitario);
          const qty = Number(newConcept.cantidad) || 1;
-         const desc = Number(newConcept.descuento) || 0;
+         const desc = parseRawNumber(newConcept.descuento);
          const total = Math.max(0, (price - desc) * qty);
 
          const added = {
@@ -1045,7 +1037,7 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
                                         <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Precio unitario *</label>
                                         <div className="relative">
                                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">$</span>
-                                            <input type="text" required value={formatNumberWithDots(newConcept.precioUnitario)} onChange={e => setNewConcept({ ...newConcept, precioUnitario: parseRawNumber(e.target.value) })} placeholder="0" className="w-full h-9 pl-6 pr-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 font-mono outline-none focus:bg-white focus:border-blue-500 transition-all" />
+                                            <input type="text" inputMode="decimal" required value={newConcept.precioUnitario} onChange={e => setNewConcept({ ...newConcept, precioUnitario: formatNumberWithDots(e.target.value) })} placeholder="0" className="w-full h-9 pl-6 pr-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 font-mono outline-none focus:bg-white focus:border-blue-500 transition-all" />
                                         </div>
                                     </div>
                                     <div>
@@ -1057,7 +1049,7 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
                                     <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Descuento por unidad</label>
                                     <div className="relative">
                                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">$</span>
-                                        <input type="text" value={formatNumberWithDots(newConcept.descuento)} onChange={e => setNewConcept({ ...newConcept, descuento: parseRawNumber(e.target.value) })} placeholder="0" className="w-full h-9 pl-6 pr-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-rose-500 font-mono outline-none focus:bg-white focus:border-blue-500 transition-all" />
+                                        <input type="text" inputMode="decimal" value={newConcept.descuento} onChange={e => setNewConcept({ ...newConcept, descuento: formatNumberWithDots(e.target.value) })} placeholder="0" className="w-full h-9 pl-6 pr-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-rose-500 font-mono outline-none focus:bg-white focus:border-blue-500 transition-all" />
                                     </div>
                                 </div>
                             </div>

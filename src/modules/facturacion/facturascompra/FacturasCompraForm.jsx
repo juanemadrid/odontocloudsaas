@@ -12,24 +12,15 @@ import { toast } from "sonner";
 import { validateTerceroForDian, formatTerceroNombre } from "../../../utils/dian/dianHelpers";
 import factusService from "../../../services/factusService";
 
+import { formatNumberWithDots, parseRawNumber } from "../../../utils/formatters";
+
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
     style: "currency",
     currency: "COP",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: Number(n || 0) % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
   });
-
-const formatNumberWithDots = (val) => {
-  if (val === undefined || val === null || val === "") return "";
-  const clean = String(val).replace(/\D/g, "");
-  if (!clean) return "";
-  return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-};
-
-const parseRawNumber = (val) => {
-  if (val === undefined || val === null) return "";
-  return String(val).replace(/\D/g, "");
-};
 
 const RETENCIONES_CATALOGO = [
     { id: "retefuente_25", nombre: "ReteFuente 2.5% (Compras Generales)", porcentaje: 0.025 },
@@ -325,13 +316,13 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
             if (item.id !== id) return item;
 
             const cleanVal = (field === "precioUnitario" || field === "descuento")
-                ? parseRawNumber(value)
+                ? formatNumberWithDots(value)
                 : value;
 
             const updated = { ...item, [field]: cleanVal };
-            const pu = parseFloat(updated.precioUnitario) || 0;
+            const pu = parseRawNumber(updated.precioUnitario);
             const cant = parseFloat(updated.cantidad) || 0;
-            const desc = parseFloat(updated.descuento) || 0;
+            const desc = parseRawNumber(updated.descuento);
             
             const subtotal = pu * cant;
             updated.total = Math.max(0, subtotal - desc);
@@ -348,8 +339,8 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
         }
         const retObj = RETENCIONES_CATALOGO.find(r => r.id === selectedRetencionId);
         const rawBase = parseRawNumber(baseRetencion);
-        const baseNum = rawBase ? parseFloat(rawBase) : totalConceptos;
-        const valorRetencion = Math.round(baseNum * (retObj?.porcentaje || 0));
+        const baseNum = rawBase ? rawBase : totalConceptos;
+        const valorRetencion = Number((baseNum * (retObj?.porcentaje || 0)).toFixed(2));
 
         const newRet = {
             id: Date.now(),
@@ -371,7 +362,7 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
 
     // Totales calculados
     const totalConceptos = useMemo(() => {
-        return items.reduce((acc, item) => acc + (parseFloat(item.total) || 0), 0);
+        return items.reduce((acc, item) => acc + (parseRawNumber(item.total) || 0), 0);
     }, [items]);
 
     const totalRetenciones = useMemo(() => {
@@ -490,13 +481,13 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
         }
 
         const validItems = items
-            .filter(it => it.concepto || it.descripcion || (parseFloat(it.total) || 0) > 0)
+            .filter(it => it.concepto || it.descripcion || (parseRawNumber(it.total) || 0) > 0)
             .map(it => ({
                 ...it,
-                precioUnitario: parseFloat(it.precioUnitario) || 0,
+                precioUnitario: parseRawNumber(it.precioUnitario),
                 cantidad: parseFloat(it.cantidad) || 1,
-                descuento: parseFloat(it.descuento) || 0,
-                total: parseFloat(it.total) || 0
+                descuento: parseRawNumber(it.descuento),
+                total: parseRawNumber(it.total)
             }));
         if (validItems.length === 0) {
             toast.error("Debe agregar al menos un concepto de compra");
@@ -1115,8 +1106,8 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                                         <td className="py-2.5 px-4">
                                             <input
                                                 type="text"
-                                                inputMode="numeric"
-                                                value={formatNumberWithDots(item.precioUnitario)}
+                                                inputMode="decimal"
+                                                value={item.precioUnitario}
                                                 onChange={(e) => handleItemChange(item.id, "precioUnitario", e.target.value)}
                                                 onWheel={(e) => e.target.blur()}
                                                 placeholder="0"
@@ -1136,8 +1127,8 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                                         <td className="py-2.5 px-4">
                                             <input
                                                 type="text"
-                                                inputMode="numeric"
-                                                value={formatNumberWithDots(item.descuento)}
+                                                inputMode="decimal"
+                                                value={item.descuento}
                                                 onChange={(e) => handleItemChange(item.id, "descuento", e.target.value)}
                                                 onWheel={(e) => e.target.blur()}
                                                 placeholder="0"
@@ -1204,9 +1195,9 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                         <div className="md:col-span-3">
                             <input
                                 type="text"
-                                inputMode="numeric"
-                                value={formatNumberWithDots(baseRetencion)}
-                                onChange={(e) => setBaseRetencion(parseRawNumber(e.target.value))}
+                                inputMode="decimal"
+                                value={baseRetencion}
+                                onChange={(e) => setBaseRetencion(formatNumberWithDots(e.target.value))}
                                 onWheel={(e) => e.target.blur()}
                                 placeholder={totalConceptos > 0 ? formatNumberWithDots(totalConceptos) : "Base gravable"}
                                 className="w-full h-9 px-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 outline-none"

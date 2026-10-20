@@ -9,23 +9,16 @@ import { buildDashboardPath } from "../../../utils/dashboardBasePath";
 import { useAuth } from "../../../context/AuthContext";
 import { formatTerceroNombre } from "../../../utils/dian/dianHelpers";
 
-const fmt = (n) =>
-  Number(n || 0).toLocaleString("es-CO", {
+import { formatNumberWithDots, parseRawNumber } from "../../../utils/formatters";
+
+const fmt = (n) => {
+  const num = Number(n || 0);
+  return num.toLocaleString("es-CO", {
     style: "currency",
     currency: "COP",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: num % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
   });
-
-const formatNumberWithDots = (val) => {
-    if (val === undefined || val === null) return "";
-    const str = String(val).replace(/\D/g, "");
-    if (!str) return "";
-    return Number(str).toLocaleString("es-CO").replace(/,/g, ".");
-};
-
-const parseRawNumber = (val) => {
-    if (!val) return 0;
-    return Number(String(val).replace(/\D/g, ""));
 };
 
 const FormRow = ({ label, required, children }) => (
@@ -143,8 +136,8 @@ export default function NotaCreditoForm({ onCancel, onSuccess }) {
 
     const handleAddConcept = (e) => {
         e.preventDefault();
-        const price = Number(newConcept.precioUnitario);
-        const qty = Number(newConcept.cantidad);
+        const price = parseRawNumber(newConcept.precioUnitario);
+        const qty = parseFloat(newConcept.cantidad) || 0;
         if (!newConcept.concepto.trim()) return;
         if (price < 0 || qty <= 0) return;
 
@@ -538,9 +531,10 @@ export default function NotaCreditoForm({ onCancel, onSuccess }) {
                                         <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">$</span>
                                         <input 
                                             type="text"
+                                            inputMode="decimal"
                                             required
-                                            value={formatNumberWithDots(newConcept.precioUnitario)}
-                                            onChange={e => setNewConcept({ ...newConcept, precioUnitario: parseRawNumber(e.target.value) })}
+                                            value={newConcept.precioUnitario}
+                                            onChange={e => setNewConcept({ ...newConcept, precioUnitario: formatNumberWithDots(e.target.value) })}
                                             placeholder="0"
                                             className="w-full h-11 pl-8 pr-4 bg-slate-50 hover:bg-slate-50/80 border border-slate-200 rounded-xl text-sm font-bold text-slate-700 outline-none focus:bg-white focus:border-blue-500 transition-all font-mono"
                                         />

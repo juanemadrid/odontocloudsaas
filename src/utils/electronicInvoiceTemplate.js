@@ -6,7 +6,10 @@
 
 const formatCOP = (val) => {
   const num = Number(val || 0);
-  return '$' + Math.round(num).toLocaleString('es-CO');
+  return '$ ' + num.toLocaleString('es-CO', {
+    minimumFractionDigits: num % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
+  });
 };
 
 const formatDocNumber = (doc) => {

@@ -10,25 +10,15 @@ import { getConfigItems, getConfigSection, saveConfigSection } from "../../../se
 import { getConfigSectionsCached } from "../../../services/configCacheService";
 import { isDoctorUser } from "../../../utils/doctorHelpers";
 import { toast } from "sonner";
+import { formatNumberWithDots, parseRawNumber } from "../../../utils/formatters";
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
     style: "currency",
     currency: "COP",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: Number(n || 0) % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
   });
-
-const formatNumberWithDots = (val) => {
-    if (val === undefined || val === null || val === "") return "";
-    const clean = String(val).replace(/\D/g, "");
-    if (!clean) return "";
-    return clean.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-};
-
-const parseRawNumber = (val) => {
-    if (val === undefined || val === null) return "";
-    return String(val).replace(/\D/g, "");
-};
 
 export default function PagosForm({ onCancel, onSuccess }) {
     const { user, userProfile } = useAuth();
@@ -525,7 +515,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
             toast.error("El nombre del concepto es obligatorio");
             return;
         }
-        const pu = parseFloat(String(newConceptoData.precioUnitario).replace(/\D/g, "")) || 0;
+        const pu = parseRawNumber(newConceptoData.precioUnitario);
         const cant = parseFloat(newConceptoData.cantidad) || 1;
         const total = pu * cant;
 
@@ -562,7 +552,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
             if (item.id !== id) return item;
 
             const updated = { ...item, [field]: value };
-            const pu = field === "precioUnitario" ? parseFloat(value) || 0 : (parseFloat(item.precioUnitario) || 0);
+            const pu = field === "precioUnitario" ? parseRawNumber(value) : (parseRawNumber(item.precioUnitario) || 0);
             const cant = field === "cantidad" ? parseFloat(value) || 0 : (parseFloat(item.cantidad) || 0);
             updated.total = pu * cant;
             return updated;
@@ -571,7 +561,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
 
     // Calcular Total
     const totalGeneral = useMemo(() => {
-        return items.reduce((acc, item) => acc + (parseFloat(item.total) || 0), 0);
+        return items.reduce((acc, item) => acc + (parseRawNumber(item.total) || 0), 0);
     }, [items]);
 
     // Filtrar Terceros y Pacientes en tiempo real por el buscador (solo cuando el usuario escribe)
@@ -865,7 +855,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
 
     const handleSaveAsociarFacturaModal = (e) => {
         e.preventDefault();
-        const valPagar = parseFloat(String(asociarFacturaData.valorAPagar).replace(/\D/g, "")) || 0;
+        const valPagar = parseRawNumber(asociarFacturaData.valorAPagar);
         if (valPagar <= 0) {
             toast.error("El valor a pagar debe ser mayor a 0");
             return;
@@ -1927,10 +1917,10 @@ export default function PagosForm({ onCancel, onSuccess }) {
                                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400 select-none">$</span>
                                         <input
                                             type="text"
-                                            inputMode="numeric"
+                                            inputMode="decimal"
                                             required
-                                            value={formatNumberWithDots(newConceptoData.precioUnitario)}
-                                            onChange={(e) => setNewConceptoData({ ...newConceptoData, precioUnitario: parseRawNumber(e.target.value) })}
+                                            value={newConceptoData.precioUnitario}
+                                            onChange={(e) => setNewConceptoData({ ...newConceptoData, precioUnitario: formatNumberWithDots(e.target.value) })}
                                             placeholder="0"
                                             className="w-full h-8 pl-7 pr-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
                                         />
@@ -2082,10 +2072,10 @@ export default function PagosForm({ onCancel, onSuccess }) {
                                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400 select-none">$</span>
                                         <input
                                             type="text"
-                                            inputMode="numeric"
+                                            inputMode="decimal"
                                             required
-                                            value={formatNumberWithDots(asociarFacturaData.valorAPagar)}
-                                            onChange={(e) => setAsociarFacturaData({ ...asociarFacturaData, valorAPagar: parseRawNumber(e.target.value) })}
+                                            value={asociarFacturaData.valorAPagar}
+                                            onChange={(e) => setAsociarFacturaData({ ...asociarFacturaData, valorAPagar: formatNumberWithDots(e.target.value) })}
                                             placeholder="0"
                                             className="w-full h-8 pl-7 pr-3 bg-white border border-slate-200 rounded text-xs text-slate-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all"
                                         />

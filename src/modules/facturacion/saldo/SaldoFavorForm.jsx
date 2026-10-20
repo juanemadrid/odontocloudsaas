@@ -11,6 +11,7 @@ import { getDoctorsList, getActiveCaja, ensureActiveCaja } from "../../../servic
 import { isDoctorUser } from "../../../utils/doctorHelpers";
 import { consumeNextConsecutivo, CONSECUTIVO_TYPES } from "../../../services/consecutivosService";
 import { formatTerceroNombre } from "../../../utils/dian/dianHelpers";
+import { formatNumberWithDots, parseRawNumber } from "../../../utils/formatters";
 
 const CIUDADES_COLOMBIA = [
     "Abejorral", "Acacías", "Aguachica", "Agustín Codazzi", "Anapoima", "Andes", "Apartadó", "Aracataca", "Arauca", "Armenia",
@@ -267,7 +268,7 @@ export default function SaldoFavorForm({ onCancel, onSuccess }) {
 
     const handleSubmit = async () => {
         if (!paciente) return setError("Debes seleccionar un tercero / paciente.");
-        const valNum = Number(String(valor).replace(/\D/g, ""));
+        const valNum = parseRawNumber(valor);
         if (!valor || isNaN(valNum) || valNum <= 0) return setError("Ingresa un valor válido mayor que 0.");
         // Caja se asegura/abre automáticamente al registrar el saldo a favor
         let currentActiveCaja = null;
@@ -624,14 +625,11 @@ export default function SaldoFavorForm({ onCancel, onSuccess }) {
                                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">$</span>
                                 <input
                                     type="text"
-                                    inputMode="numeric"
+                                    inputMode="decimal"
                                     placeholder="0"
                                     className="w-full h-10 pl-7 pr-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 outline-none focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all font-mono"
                                     value={valor}
-                                    onChange={e => {
-                                        const clean = e.target.value.replace(/\D/g, "");
-                                        setValor(clean ? Number(clean).toLocaleString("es-CO") : "");
-                                    }}
+                                    onChange={e => setValor(formatNumberWithDots(e.target.value))}
                                 />
                             </div>
                         </div>

@@ -6,12 +6,15 @@ import { toast } from "sonner";
 import { ReceiptPrintService } from "../../../services/ReceiptPrintService";
 import { printDocumentoSoporte } from "../../../utils/electronicInvoiceTemplate";
 
-const fmt = (n) =>
-  Number(n || 0).toLocaleString("es-CO", {
+const fmt = (n) => {
+  const num = Number(n || 0);
+  return num.toLocaleString("es-CO", {
     style: "currency",
     currency: "COP",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: num % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
   });
+};
 
 const fmtDate = (ts) => {
   if (!ts) return "—";

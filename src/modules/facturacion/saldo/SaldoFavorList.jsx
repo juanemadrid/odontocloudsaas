@@ -10,12 +10,15 @@ import { consumeNextConsecutivo, CONSECUTIVO_TYPES } from "../../../services/con
 import { getConfigItems, saveConfigItem, getConfigSection, saveConfigSection } from "../../../services/configPersistenceService";
 import { toast } from "sonner";
 
-const fmt = (n) =>
-  Number(n || 0).toLocaleString("es-CO", {
+const fmt = (n) => {
+  const num = Number(n || 0);
+  return num.toLocaleString("es-CO", {
     style: "currency",
     currency: "COP",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: num % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
   });
+};
 
 const formatDateOnly = (dObj) => {
   if (!dObj) return "—";

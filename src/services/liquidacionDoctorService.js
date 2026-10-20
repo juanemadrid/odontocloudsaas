@@ -7,11 +7,40 @@ import { getDoctorsList } from "./supabaseServices";
 const parseLocalDate = (dateStr) => {
     if (!dateStr) return new Date();
     if (typeof dateStr === "object" && dateStr instanceof Date) return dateStr;
-    const parts = String(dateStr).split("T")[0].split("-");
-    if (parts.length === 3) {
-        return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    const s = String(dateStr).trim();
+
+    // 1. Formato latinoamericano: DD/MM/YYYY (ej: "19/10/2026" o "19/10/2026 20:50")
+    const slashParts = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[,\s]+(\d{1,2}):(\d{1,2}))?/);
+    if (slashParts) {
+        const day = Number(slashParts[1]);
+        const month = Number(slashParts[2]) - 1;
+        const year = Number(slashParts[3]);
+        const hour = slashParts[4] !== undefined ? Number(slashParts[4]) : 12;
+        const min = slashParts[5] !== undefined ? Number(slashParts[5]) : 0;
+        return new Date(year, month, day, hour, min, 0);
     }
-    return new Date(dateStr);
+
+    // 2. Timestamp ISO completo con zona horaria (ej: toISOString() → "2026-10-20T01:50:00.000Z").
+    //    Debe convertirse a hora local; si se lee solo la parte de fecha, en Colombia (UTC-5)
+    //    los procedimientos hechos después de las 7 PM quedarían registrados al día siguiente.
+    if (/^\d{4}-\d{1,2}-\d{1,2}T\d{1,2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/i.test(s)) {
+        const isoDate = new Date(s);
+        if (!isNaN(isoDate.getTime())) return isoDate;
+    }
+
+    // 3. Formato ISO / estándar sin zona: YYYY-MM-DD
+    const dashMatch = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s](\d{1,2}):(\d{1,2}))?/);
+    if (dashMatch) {
+        const year = Number(dashMatch[1]);
+        const month = Number(dashMatch[2]) - 1;
+        const day = Number(dashMatch[3]);
+        const hour = dashMatch[4] !== undefined ? Number(dashMatch[4]) : 12;
+        const min = dashMatch[5] !== undefined ? Number(dashMatch[5]) : 0;
+        return new Date(year, month, day, hour, min, 0);
+    }
+
+    const d = new Date(s);
+    return isNaN(d.getTime()) ? new Date() : d;
 };
 
 const safeNumber = (val) => {
@@ -216,7 +245,7 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
         try {
             const { data } = await supabase
                 .from("pacientes")
-                .select("id, nombre, apellido, nombreCompleto, documento, cedula")
+                .select("*")
                 .eq("tenant_id", tenantId);
             if (data && data.length > 0) pacientesList = data;
         } catch (e) {}
@@ -225,24 +254,31 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
         }
         const pacientesMap = {};
         pacientesList.forEach(p => {
-            const fullName = p.nombreCompleto || [p.nombre, p.apellido].filter(Boolean).join(" ") || "Paciente";
+            const fullName = p.nombreCompleto || p.nombre_completo ||
+                [p.nombres || p.nombre, p.apellidos || p.apellido].filter(Boolean).join(" ") || "Paciente";
             pacientesMap[p.id] = {
                 nombre: fullName,
                 documento: p.cedula || p.documento || ""
             };
         });
 
-        // 5. Cargar Pagos (para saber si el ítem o plan está pagado por el cliente)
+        // 5. Cargar Pagos y Recibos de Caja (para saber si el ítem o plan está pagado por el cliente)
         let pagosList = [];
+        let recibosList = [];
         try {
-            const { data } = await supabase
-                .from("pagos")
-                .select("*")
-                .eq("tenant_id", tenantId);
-            if (data && data.length > 0) pagosList = data;
+            const [pRes, rRes] = await Promise.all([
+                supabase.from("pagos").select("*").eq("tenant_id", tenantId),
+                supabase.from("recibos_caja").select("*").eq("tenant_id", tenantId)
+            ]);
+            if (pRes.data && pRes.data.length > 0) pagosList = pRes.data;
+            if (rRes.data && rRes.data.length > 0) recibosList = rRes.data;
         } catch (e) {}
+
         if (pagosList.length === 0) {
             pagosList = await getConfigSection(tenantId, "pagos", []);
+        }
+        if (recibosList.length === 0) {
+            recibosList = await getConfigSection(tenantId, "recibos_caja", []);
         }
 
         // Mapear pagos activos por planId, por paciente y por ítem específico
@@ -297,6 +333,27 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
             }
         });
 
+        // Procesar también recibos de caja para vinculación por paciente y plan
+        (recibosList || []).forEach(r => {
+            if (r.estado === "Anulado" || r.anulado === true) return;
+            const monto = safeNumber(r.total || r.monto);
+            const pacId = r.paciente_id || r.pacienteId;
+            if (pacId) {
+                pagosPorPaciente[pacId] = (pagosPorPaciente[pacId] || 0) + monto;
+            }
+            const plId = r.plan_id || r.planId;
+            if (plId) {
+                pagosPorPlan[plId] = (pagosPorPlan[plId] || 0) + monto;
+            }
+            const rcConceptos = r.conceptos || [];
+            if (Array.isArray(rcConceptos)) {
+                rcConceptos.forEach(c => {
+                    const cNombre = (c.concepto || c.descripcion || "").toLowerCase().trim();
+                    if (cNombre) paidItemsSet.add(cNombre);
+                });
+            }
+        });
+
         // 6. Cargar Listas de Precios para reglas de Valor Fijo y Exclusión ($0)
         let listasPrecios = [];
         try {
@@ -320,8 +377,13 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
             if (Array.isArray(catItems)) {
                 catItems.forEach(it => {
                     const rule = {
-                        usar_pago_fijo: it.usar_pago_fijo === true || it.pago_fijo_doctor !== undefined,
-                        pago_fijo_doctor: it.pago_fijo_doctor !== undefined && it.pago_fijo_doctor !== "" ? safeNumber(it.pago_fijo_doctor) : null
+                        // El editor guarda siempre pago_fijo_doctor (0 por defecto) y usar_pago_fijo=false.
+                        // Solo es pago fijo si el check está activo explícitamente, o si es un ítem
+                        // antiguo sin el check pero con un valor fijo positivo.
+                        usar_pago_fijo: it.usar_pago_fijo === true ||
+                            (it.usar_pago_fijo === undefined && safeNumber(it.pago_fijo_doctor) > 0),
+                        pago_fijo_doctor: it.pago_fijo_doctor !== undefined && it.pago_fijo_doctor !== null && it.pago_fijo_doctor !== "" ? safeNumber(it.pago_fijo_doctor) : null,
+                        precio: safeNumber(it.precio || it.valor || it.tarifa || it.costo)
                     };
                     if (it.codigo) {
                         itemRulesMap[it.codigo.toUpperCase().trim()] = rule;
@@ -372,9 +434,138 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
             const planDoctorName = plan.profesional || plan.profesional_nombre || planDetails.profesional || "";
             const planTotal = safeNumber(plan.total || planDetails.costoTotal || planDetails.total);
             const planAbonado = pagosPorPlan[plan.id] || 0;
-            const planTotalmentePagado = planTotal > 0 && planAbonado >= planTotal;
+            const planTotalmentePagado = planTotal > 0 && planAbonado >= (planTotal - 1);
 
             const pacInfo = pacientesMap[plan.paciente_id] || { nombre: "Paciente", documento: "" };
+
+            // Mapeo exacto de pagos aplicados por ítem dentro de este plan
+            const planItemsPaidMap = {};
+            rawItems.forEach((it, idx) => {
+                const itId = String(it.id || `item_${idx}`);
+                planItemsPaidMap[itId] = 0;
+            });
+
+            let unallocatedPlanPayments = 0;
+
+            // A. Procesar pagos de la tabla 'pagos' asignados a este plan o paciente
+            pagosList.forEach(p => {
+                if (p.estado === "Anulado" || p.concepto === "SALDO A FAVOR") return;
+                const pMonto = safeNumber(p.monto || p.valor);
+                if (pMonto <= 0) return;
+
+                let meta = {};
+                if (p.notas && typeof p.notas === "object") meta = p.notas;
+                else if (typeof p.notas === "string" && p.notas.trim().startsWith("{")) {
+                    try { meta = JSON.parse(p.notas); } catch (_) {}
+                } else if (p.detalles && typeof p.detalles === "object") meta = p.detalles;
+                else if (p.metadata && typeof p.metadata === "object") meta = p.metadata;
+
+                const effectivePlanId = p.planId || meta.planId || meta.treatmentPlanId;
+                const effectivePacId = p.pacienteId || p.paciente_id || meta.pacienteId;
+
+                const isPlanMatch = effectivePlanId && String(effectivePlanId) === String(plan.id);
+                const isPacMatch = effectivePacId && String(effectivePacId) === String(plan.paciente_id);
+
+                if (!isPlanMatch && !isPacMatch) return;
+
+                const itemPayments = meta.itemPayments || p.itemPayments || [];
+                if (Array.isArray(itemPayments) && itemPayments.length > 0) {
+                    let matchedAny = false;
+                    itemPayments.forEach(ip => {
+                        const ipId = String(ip.id || ip.itemId || "");
+                        const ipMonto = safeNumber(ip.monto || ip.amount || ip.valor);
+                        const ipDesc = String(ip.desc || ip.nombre || "").toLowerCase().trim();
+
+                        if (ipId && planItemsPaidMap[ipId] !== undefined) {
+                            planItemsPaidMap[ipId] += ipMonto;
+                            matchedAny = true;
+                        } else if (ipDesc) {
+                            const found = rawItems.find(it => {
+                                const n = String(it.nombre || it.desc || it.prestacion || "").toLowerCase().trim();
+                                return n && (n === ipDesc || n.includes(ipDesc) || ipDesc.includes(n));
+                            });
+                            if (found) {
+                                const fId = String(found.id);
+                                planItemsPaidMap[fId] = (planItemsPaidMap[fId] || 0) + ipMonto;
+                                matchedAny = true;
+                            }
+                        }
+                    });
+                    if (!matchedAny && isPlanMatch) {
+                        unallocatedPlanPayments += pMonto;
+                    }
+                } else if (isPlanMatch) {
+                    unallocatedPlanPayments += pMonto;
+                }
+            });
+
+            // B. Procesar recibos de caja de la tabla 'recibos_caja'
+            recibosList.forEach(r => {
+                if (r.estado === "Anulado" || r.anulado === true) return;
+                const rTotal = safeNumber(r.total || r.monto);
+                if (rTotal <= 0) return;
+
+                const rPlanId = r.plan_id || r.planId;
+                const rPacId = r.paciente_id || r.pacienteId;
+
+                const isPlanMatch = rPlanId && String(rPlanId) === String(plan.id);
+                const isPacMatch = rPacId && String(rPacId) === String(plan.paciente_id);
+
+                if (!isPlanMatch && !isPacMatch) return;
+
+                const rcConceptos = r.conceptos || [];
+                if (Array.isArray(rcConceptos) && rcConceptos.length > 0) {
+                    let matchedAny = false;
+                    rcConceptos.forEach(c => {
+                        const cId = String(c.itemId || c.id || "");
+                        const cMonto = safeNumber(c.total || (safeNumber(c.precioUnitario) * safeNumber(c.cantidad || 1)));
+                        const cNombre = String(c.concepto || c.descripcion || "").toLowerCase().trim();
+
+                        if (cId && planItemsPaidMap[cId] !== undefined) {
+                            planItemsPaidMap[cId] += cMonto;
+                            matchedAny = true;
+                        } else if (cNombre) {
+                            const found = rawItems.find(it => {
+                                const n = String(it.nombre || it.desc || it.prestacion || "").toLowerCase().trim();
+                                return n && (n === cNombre || n.includes(cNombre) || cNombre.includes(n));
+                            });
+                            if (found) {
+                                const fId = String(found.id);
+                                planItemsPaidMap[fId] = (planItemsPaidMap[fId] || 0) + cMonto;
+                                matchedAny = true;
+                            }
+                        }
+                    });
+                    if (!matchedAny && isPlanMatch) {
+                        unallocatedPlanPayments += rTotal;
+                    }
+                } else if (isPlanMatch) {
+                    unallocatedPlanPayments += rTotal;
+                }
+            });
+
+            // C. Si hay abonos genéricos al plan sin desglose por ítem, distribuirlos secuencialmente a los ítems con saldo pendiente
+            if (unallocatedPlanPayments > 0) {
+                let remainingGen = unallocatedPlanPayments;
+                for (let i = 0; i < rawItems.length; i++) {
+                    if (remainingGen <= 0) break;
+                    const it = rawItems[i];
+                    const itId = String(it.id || `item_${i}`);
+                    const cupsK = String(it.codigo || it.cups || it.codigo_cups || "").toUpperCase().trim();
+                    const nameK = String(it.nombre || it.desc || it.prestacion || "").toLowerCase().trim();
+                    const ruleK = (cupsK && itemRulesMap[cupsK]) || (nameK && itemRulesMap[nameK]);
+                    let itCost = safeNumber(it.precio || it.valor || it.costo || it.amount || it.subtotal || it.total);
+                    if (itCost === 0 && ruleK?.precio) itCost = ruleK.precio;
+
+                    const alreadyPaid = planItemsPaidMap[itId] || 0;
+                    const pendingSaldo = Math.max(0, itCost - alreadyPaid);
+                    if (pendingSaldo > 0) {
+                        const alloc = Math.min(pendingSaldo, remainingGen);
+                        planItemsPaidMap[itId] = (planItemsPaidMap[itId] || 0) + alloc;
+                        remainingGen -= alloc;
+                    }
+                }
+            }
 
             rawItems.forEach((item, idx) => {
                 const itemId = item.id || `item_${idx}`;
@@ -390,18 +581,45 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
                     item.realizado === true || 
                     item.realizada === true || 
                     item.estado === "completado" || 
-                    item.estado === "realizado"
+                    item.estado === "realizado" ||
+                    item.status === "completed" ||
+                    item.status === "realizado"
                 );
 
                 // Buscar en evoluciones si este ítem fue evolucionado
-                let matchedEvolution = parsedEvoluciones.find(evo => 
-                    evo.paciente_id === plan.paciente_id && (
+                const itNameLower = String(item.nombre || item.desc || item.prestacion || "").toLowerCase().trim();
+                const planIdStr = String(plan.id || "");
+
+                let matchedEvolution = parsedEvoluciones.find(evo => {
+                    if (evo.paciente_id !== plan.paciente_id) return false;
+
+                    // A. Match directo por itemId en plantillaItems o serviciosIds
+                    if (
                         evo.plantillaItems?.[itemId]?.realizado === true ||
                         evo.plantillaItems?.[itemId]?.checked === true ||
                         evo._tData?.plantillaItems?.[itemId]?.realizado === true ||
-                        evo._tData?.plantillaItems?.[itemId]?.checked === true
-                    )
-                );
+                        evo._tData?.plantillaItems?.[itemId]?.checked === true ||
+                        (Array.isArray(evo.serviciosIds) && evo.serviciosIds.some(id => String(id) === String(itemId))) ||
+                        (Array.isArray(evo._tData?.serviciosIds) && evo._tData.serviciosIds.some(id => String(id) === String(itemId)))
+                    ) {
+                        return true;
+                    }
+
+                    // B. Coincidencia por planId y texto del procedimiento / tratamiento
+                    const evoPlanId = String(evo.planId || evo._tData?.planId || "");
+                    const evoText = String(evo._tData?.treatment || evo._tData?.comentario || evo.tratamiento || "").toLowerCase();
+
+                    if (evoPlanId && evoPlanId === planIdStr) {
+                        if (!itNameLower || evoText.includes(itNameLower) || itNameLower.length < 3) return true;
+                    }
+
+                    // C. Coincidencia por nombre de procedimiento en la evolución
+                    if (itNameLower && itNameLower.length >= 4 && evoText.includes(itNameLower)) {
+                        return true;
+                    }
+
+                    return false;
+                });
 
                 if (!isRealizado && matchedEvolution) {
                     isRealizado = true;
@@ -411,11 +629,14 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
                 if (!isRealizado) return;
 
                 // Regla C: Identificar profesional que realizó el ítem
-                // Prioridad: profesional asignado en el ítem, en la evolución, en el pago, o en el plan
+                // Si la evolución clínica tiene un profesional asignado, ese tiene máxima prioridad (el profesional tratante que ejecutó el procedimiento)
+                const evoDoctorId = matchedEvolution?.profesional_id || matchedEvolution?._tData?.profesionalId || matchedEvolution?._tData?.doctorId || matchedEvolution?.doctorId;
+                const evoDoctorName = matchedEvolution?._tData?.profesional || matchedEvolution?.profesionalNombre || matchedEvolution?.doctorName;
+
                 const paidDocInfo = paidItemsDoctorMap[String(itemId)] || {};
-                const itemDoctorId = item.profesionalId || item.doctorId || item.profesional_id || 
-                    matchedEvolution?.doctorId || paidDocInfo.doctorId || planDoctorId;
-                const itemDoctorName = item.profesional || item.doctor || matchedEvolution?.doctorName || 
+                const itemDoctorId = evoDoctorId || item.profesionalId || item.doctorId || item.profesional_id || 
+                    paidDocInfo.doctorId || planDoctorId;
+                const itemDoctorName = evoDoctorName || item.profesional || item.doctor || 
                     paidDocInfo.doctorName || planDoctorName;
 
                 let matchesDoctor = false;
@@ -434,8 +655,8 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
                 let fechaRealizadoRaw = item.fechaRealizado || item.fecha_realizado || 
                     matchedEvolution?.fecha || matchedEvolution?.created_at || item.fecha || plan.created_at;
                 
-                const fechaObj = fechaRealizadoRaw ? new Date(fechaRealizadoRaw) : new Date(plan.created_at || 0);
-                if (isNaN(fechaObj.getTime())) return;
+                let fechaObj = fechaRealizadoRaw ? parseLocalDate(fechaRealizadoRaw) : new Date(plan.created_at || 0);
+                if (!fechaObj || isNaN(fechaObj.getTime())) return;
 
                 if (fechaObj < start || fechaObj > end) return;
 
@@ -458,29 +679,34 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
                     }
                 }
 
-                // Regla F: Forma de pago del usuario (Doctor)
-                // Si formaPago es "Realizadas y pagadas", verificar que esté pagado por el cliente
-                const isPaid = (
-                    item.pagado === true || 
-                    item.pagada === true || 
-                    paidItemsSet.has(String(itemId)) ||
-                    paidItemsSet.has(itemKey) ||
-                    safeNumber(item.pagado) >= safeNumber(item.precio || item.valor) ||
-                    planTotalmentePagado || 
-                    planAbonado >= safeNumber(item.precio || item.valor) ||
-                    (planAbonado > 0 && Math.abs(planTotal - planAbonado) < 1)
+                // Cálculo del valor del ítem
+                let itemValor = safeNumber(item.precio || item.valor || item.costo || item.valorPrestacion || item.amount || item.subtotal || item.total);
+                if (itemValor === 0 && matchedRule?.precio) {
+                    itemValor = matchedRule.precio;
+                }
+
+                // Regla F: Validación estricta de Pago Total por el Cliente
+                // Si la forma de pago del doctor es "Realizadas y pagadas":
+                // SOLO se permite liquidar si el procedimiento fue pagado en su TOTALIDAD por el paciente.
+                // Si el paciente solo realizó un abono parcial a este ítem o tiene saldo pendiente, NO se liquida.
+                const paidForItem = safeNumber(planItemsPaidMap[String(itemId)] ?? planItemsPaidMap[String(item.id)]);
+
+                const isPaidInFull = (
+                    planTotalmentePagado ||
+                    (itemValor > 0 && paidForItem >= (itemValor - 1)) ||
+                    (item.pagado === true && (item.saldo === undefined || item.saldo === 0)) ||
+                    (item.pagada === true && (item.saldo === undefined || item.saldo === 0))
                 );
 
                 const formaPagoDoctor = String(currentDoctor.formaPago || "").toLowerCase();
                 const requierePagado = formaPagoDoctor.includes("pagada") || formaPagoDoctor.includes("pagado");
 
-                if (requierePagado && !isPaid) {
-                    // El doctor solo se liquida cuando está Realizado Y Pagado por el cliente
+                if (requierePagado && !isPaidInFull) {
+                    // El doctor solo se liquida cuando el procedimiento está Realizado Y Pagado en su TOTALIDAD.
+                    // Si el paciente solo realizó un abono parcial a este ítem, no se liquida.
                     return;
                 }
 
-                // Cálculo del valor del ítem
-                const itemValor = safeNumber(item.precio || item.valor || item.costo || item.valorPrestacion);
                 const valorPagarCalculado = tipoLiquidacion === "fijo" 
                     ? pagoFijoValor 
                     : Math.round(itemValor * currentDoctor.comisionPorcentaje / 100);
@@ -505,7 +731,7 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
                     porcentaje: currentDoctor.comisionPorcentaje,
                     costoLaboratorio: safeNumber(item.costoLaboratorio || item.costoLab || 0),
                     valorAPagar: valorPagarCalculado,
-                    estadoPagoCliente: isPaid ? "Pagado" : "Pendiente de pago",
+                    estadoPagoCliente: isPaidInFull ? "Pagado total" : "Pendiente de pago",
                     rawItem: item
                 });
             });

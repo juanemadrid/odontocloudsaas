@@ -3,24 +3,40 @@ import { FiCalendar, FiSearch, FiLayers, FiEye, FiCheckCircle, FiUser, FiInfo, F
 import { useAuth } from "../../../context/AuthContext";
 import { getDoctoresParaLiquidacion, getItemsPendientesPorDoctor } from "../../../services/liquidacionDoctorService";
 
-const fmt = (n) =>
-  Number(n || 0).toLocaleString("es-CO", {
+const getTodayLocalDateStr = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+};
+
+const getPastLocalDateStr = (daysAgo = 30) => {
+    const d = new Date();
+    d.setDate(d.getDate() - daysAgo);
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+};
+
+const fmt = (n) => {
+  const num = Number(n || 0);
+  return num.toLocaleString("es-CO", {
     style: "currency",
     currency: "COP",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: num % 1 === 0 ? 0 : 2,
+    maximumFractionDigits: 2,
   });
+};
 
 export default function LiquidacionPendientes({ onSelectDoctor }) {
     const { userProfile } = useAuth();
     const inquilino = userProfile?.inquilino || "";
 
-    // Dates state
-    const [desde, setDesde] = useState(() => {
-        const d = new Date();
-        d.setDate(d.getDate() - 30);
-        return d.toISOString().split('T')[0];
-    });
-    const [hasta, setHasta] = useState(new Date().toISOString().split('T')[0]);
+    // Dates state (usando fecha local, no UTC)
+    const [desde, setDesde] = useState(() => getPastLocalDateStr(30));
+    const [hasta, setHasta] = useState(() => getTodayLocalDateStr());
     const [hoyToggle, setHoyToggle] = useState(false);
 
     // Lookups
@@ -52,9 +68,12 @@ export default function LiquidacionPendientes({ onSelectDoctor }) {
     // Handle "Hoy" toggle
     useEffect(() => {
         if (hoyToggle) {
-            const todayStr = new Date().toISOString().split('T')[0];
+            const todayStr = getTodayLocalDateStr();
             setDesde(todayStr);
             setHasta(todayStr);
+        } else {
+            setDesde(getPastLocalDateStr(30));
+            setHasta(getTodayLocalDateStr());
         }
     }, [hoyToggle]);
 
