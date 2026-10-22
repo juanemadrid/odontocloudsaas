@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import {
     getTenants, createTenant, getPlans, toggleTenantStatus, updateTenantPlan,
     getSubscriptionRequests, approveSubscriptionRequest, rejectSubscriptionRequest,
-    grantFreeMonth, deleteTenant, updateTenantDetails,
+    grantFreeMonth, deleteTenant, updateTenantDetails, updateTenantExtraUsers,
     resendWelcomeEmail, sendPasswordResetEmail, getEmailLogsByTenant
 } from "../../services/adminService";
 import supabase from "../../lib/supabaseClient";
@@ -14,7 +14,7 @@ import {
     FiEdit3, FiTrash2, FiToggleLeft, FiToggleRight, FiGift,
     FiAlertCircle, FiChevronRight, FiUser, FiCalendar,
     FiFileText, FiMail, FiSliders, FiMessageSquare, FiKey, FiCopy, FiEye, FiEyeOff, FiRepeat, FiShield,
-    FiMoreVertical
+    FiMoreVertical, FiUserPlus, FiUsers
 } from "react-icons/fi";
 
 const fmt = (ts) => {
@@ -93,7 +93,10 @@ export default function TenantsPanelV2() {
     const [showQuickRenew, setShowQuickRenew] = useState(null); // tenant object para renovar
     const [quickRenewDuration, setQuickRenewDuration] = useState("yearly");
     const [renewing, setRenewing] = useState(false);
-    const [showIhceConfigModal, setShowIhceConfigModal] = useState(null); // tenant object para configurar IHCE
+    const [showIhceConfigModal, setShowIhceConfigModal] = useState(null);
+    const [showExtraUsersModal, setShowExtraUsersModal] = useState(null);
+    const [extraUsersCount, setExtraUsersCount] = useState(0);
+    const [savingExtraUsers, setSavingExtraUsers] = useState(false); // tenant object para configurar IHCE
 
     // Forms
     const [selectedTenant, setSelectedTenant] = useState(null);
@@ -105,7 +108,7 @@ export default function TenantsPanelV2() {
     });
 
     const [editForm, setEditForm] = useState({
-        name: "", nit: "", contactEmail: "", address: "", telefono: "", adminEmail: "", newPassword: "", showPwd: false
+        name: "", nit: "", contactEmail: "", address: "", telefono: "", adminEmail: "", newPassword: "", showPwd: false, extraUsers: 0
     });
 
     // Audit logs per tenant (loaded on demand)
@@ -286,6 +289,39 @@ export default function TenantsPanelV2() {
         loadAuditLogs(tenant.id);
     };
 
+    const getBaseUsersForPlan = (planId) => {
+        const key = String(planId || "").toLowerCase();
+        const matched = plans.find(p => (p.id || "").toLowerCase() === key);
+        if (matched?.maxUsers) return Number(matched.maxUsers);
+        if (key.includes("enterp")) return 8;
+        if (key.includes("clinica") || key.includes("pro")) return 4;
+        return 2;
+    };
+
+    const openExtraUsers = (tenant) => {
+        setShowExtraUsersModal(tenant);
+        setExtraUsersCount(Number(tenant.extraUsers ?? tenant.extra_users ?? 0));
+    };
+
+    const handleSaveExtraUsers = async (e) => {
+        if (e) e.preventDefault();
+        if (!showExtraUsersModal) return;
+        setSavingExtraUsers(true);
+        try {
+            await updateTenantExtraUsers(showExtraUsersModal.id, extraUsersCount);
+            await loadData();
+            const baseUsers = getBaseUsersForPlan(showExtraUsersModal.planId);
+            const total = baseUsers + extraUsersCount;
+            alert(`✅ Cupos de usuarios actualizados exitosamente para "${showExtraUsersModal.name}".\n\nBase del plan: ${baseUsers} usuarios\nUsuarios adicionales comprados: ${extraUsersCount}\nTotal cupos habilitados: ${total} usuarios.\n\nLa clínica ya puede registrar usuarios hasta este nuevo límite.`);
+            setShowExtraUsersModal(null);
+        } catch (err) {
+            console.error("Error al actualizar cupos extra:", err);
+            alert("❌ Error al actualizar cupos de usuarios: " + (err.message || "Error desconocido"));
+        } finally {
+            setSavingExtraUsers(false);
+        }
+    };
+
     const openEdit = (tenant) => {
         setSelectedTenant(tenant);
         const rawAdminEmail = tenant.adminEmail || tenant.contactEmail || tenant.email || "";
@@ -300,6 +336,7 @@ export default function TenantsPanelV2() {
             adminEmail: cleanAdminEmail,
             newPassword: "",
             showPwd: false,
+            extraUsers: Number(tenant.extraUsers ?? tenant.extra_users ?? 0),
         });
         setShowEditTenant(tenant);
     };
@@ -571,6 +608,25 @@ export default function TenantsPanelV2() {
                                 <div className="flex flex-col min-w-0">
                                     <span className="text-xs font-bold text-slate-800 leading-tight">Validar Pago y Renovar</span>
                                     <span className="text-[10px] text-slate-400 truncate">Ampliar suscripción (+1 Año / +1 Mes)</span>
+                                </div>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setOpenActionMenuId(null);
+                                    openExtraUsers(t);
+                                }}
+                                className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-slate-50 transition-colors group/item"
+                            >
+                                <div className="w-7 h-7 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center shrink-0 group-hover/item:bg-teal-600 group-hover/item:text-white transition-colors">
+                                    <FiUserPlus size={13} />
+                                </div>
+                                <div className="flex flex-col min-w-0">
+                                    <span className="text-xs font-bold text-slate-800 leading-tight">Cupos de Usuarios Extra</span>
+                                    <span className="text-[10px] text-slate-400 truncate">
+                                        {Number(t.extraUsers || 0) > 0 ? `Tiene +${t.extraUsers} cupo(s) extra (${getBaseUsersForPlan(t.planId) + Number(t.extraUsers)} total)` : `Vender/asignar usuarios adicionales (base ${getBaseUsersForPlan(t.planId)})`}
+                                    </span>
                                 </div>
                             </button>
 
@@ -861,6 +917,11 @@ export default function TenantsPanelV2() {
                                                 <span className="text-[10px] font-semibold text-slate-400 block">Plan</span>
                                                 <span className="font-bold text-slate-800">{getPlanName(t.planId)}</span>
                                                 <span className="text-[10px] text-slate-500 ml-1">({t.planDuration === "yearly" ? "Anual" : "Mensual"})</span>
+                                                {Number(t.extraUsers || 0) > 0 && (
+                                                    <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-black bg-teal-50 text-teal-700 border border-teal-200 ml-1">
+                                                        +{t.extraUsers} Extra
+                                                    </span>
+                                                )}
                                             </div>
 
                                             <div className="bg-slate-50/70 rounded-lg p-2">
@@ -941,10 +1002,20 @@ export default function TenantsPanelV2() {
                                                     </div>
                                                 </td>
                                                 <td className="px-5 py-4">
-                                                    <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-slate-100 text-slate-600 uppercase">
-                                                        {getPlanName(t.planId)}
-                                                    </span>
-                                                    <p className="text-[10px] text-slate-400 mt-1 ml-0.5">{t.planDuration === "yearly" ? "Anual" : "Mensual"}</p>
+                                                    <div className="flex flex-col items-start gap-1">
+                                                        <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-slate-100 text-slate-600 uppercase">
+                                                            {getPlanName(t.planId)}
+                                                        </span>
+                                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                                            <span className="text-[10px] text-slate-400">{t.planDuration === "yearly" ? "Anual" : "Mensual"}</span>
+                                                            <span className="text-[10px] text-slate-400">• {getBaseUsersForPlan(t.planId)} users</span>
+                                                            {Number(t.extraUsers || 0) > 0 && (
+                                                                <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-teal-50 text-teal-700 border border-teal-200">
+                                                                    +{t.extraUsers} Extra ({getBaseUsersForPlan(t.planId) + Number(t.extraUsers)})
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
                                                 </td>
                                                 <td className="px-5 py-4 text-xs whitespace-nowrap">
                                                     {(() => {
@@ -1553,6 +1624,135 @@ export default function TenantsPanelV2() {
                 </div>
             )}
 
+            {/* ── Manage Extra Users Modal (Cupos de Usuarios) ── */}
+            {showExtraUsersModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-100 flex flex-col animate-in zoom-in-95 duration-200">
+                        {/* Header */}
+                        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-gradient-to-r from-teal-50 to-emerald-50">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-9 h-9 rounded-xl bg-teal-600 text-white flex items-center justify-center shadow-sm">
+                                    <FiUserPlus size={18} />
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-black text-slate-800 tracking-tight">Cupos de Usuarios Extra</h3>
+                                    <p className="text-xs font-semibold text-teal-700 uppercase tracking-wider">{showExtraUsersModal.name}</p>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={() => setShowExtraUsersModal(null)} 
+                                className="w-8 h-8 rounded-full bg-white/80 hover:bg-white flex items-center justify-center text-slate-400 hover:text-slate-600 transition-all shadow-sm"
+                            >
+                                <FiX size={16} />
+                            </button>
+                        </div>
+
+                        {/* Body */}
+                        <form onSubmit={handleSaveExtraUsers} className="p-6 space-y-5">
+                            {/* Resumen del Plan Base */}
+                            <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-2">
+                                <div className="flex justify-between items-center text-xs">
+                                    <span className="text-slate-500 font-medium">Plan actual de la clínica:</span>
+                                    <span className="font-bold text-slate-800 uppercase px-2 py-0.5 rounded bg-white border border-slate-200">
+                                        {getPlanName(showExtraUsersModal.planId)}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between items-center text-xs">
+                                    <span className="text-slate-500 font-medium">Usuarios incluidos por plan:</span>
+                                    <span className="font-bold text-slate-800">{getBaseUsersForPlan(showExtraUsersModal.planId)} usuarios base</span>
+                                </div>
+                            </div>
+
+                            {/* Control interactivo de cupos adicionales */}
+                            <div className="space-y-2">
+                                <label className="block text-xs font-black text-slate-700 uppercase tracking-wider">
+                                    Usuarios adicionales comprados:
+                                </label>
+                                <div className="flex items-center gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => setExtraUsersCount(prev => Math.max(0, prev - 1))}
+                                        className="w-12 h-12 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-xl flex items-center justify-center transition-all cursor-pointer border-0"
+                                        title="Restar 1 usuario"
+                                    >
+                                        -
+                                    </button>
+                                    <div className="flex-1 relative">
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={extraUsersCount}
+                                            onChange={(e) => setExtraUsersCount(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                                            className="w-full text-center text-2xl font-black text-teal-700 py-2 border-2 border-teal-200 rounded-2xl focus:outline-none focus:border-teal-500 bg-teal-50/30"
+                                        />
+                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-teal-600 pointer-events-none">
+                                            extra(s)
+                                        </span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setExtraUsersCount(prev => prev + 1)}
+                                        className="w-12 h-12 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-black text-xl flex items-center justify-center transition-all shadow-md shadow-teal-600/20 cursor-pointer border-0"
+                                        title="Sumar 1 usuario adicional"
+                                    >
+                                        +
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Indicador de resultado final */}
+                            <div className="bg-gradient-to-br from-teal-500 to-emerald-600 text-white rounded-2xl p-4 shadow-lg shadow-teal-500/20">
+                                <div className="text-[11px] font-medium text-teal-100 uppercase tracking-wider mb-1">
+                                    Límite total resultante para esta clínica:
+                                </div>
+                                <div className="flex items-baseline justify-between">
+                                    <div className="text-2xl font-black">
+                                        {getBaseUsersForPlan(showExtraUsersModal.planId) + extraUsersCount} Usuarios
+                                    </div>
+                                    <div className="text-xs text-teal-100 font-medium">
+                                        ({getBaseUsersForPlan(showExtraUsersModal.planId)} plan + {extraUsersCount} extras)
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Nota informativa */}
+                            <p className="text-[11px] text-slate-400 leading-relaxed">
+                                ℹ️ Al guardar, este límite se aplicará de forma exclusiva a <strong>{showExtraUsersModal.name}</strong>. Las demás clínicas que tengan el plan {getPlanName(showExtraUsersModal.planId)} mantendrán sus límites habituales sin cambios.
+                            </p>
+
+                            {/* Botones de acción */}
+                            <div className="flex items-center gap-3 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowExtraUsersModal(null)}
+                                    className="flex-1 py-3 px-4 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-bold text-xs transition-all cursor-pointer"
+                                    disabled={savingExtraUsers}
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={savingExtraUsers}
+                                    className="flex-1 py-3 px-4 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs shadow-md shadow-teal-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 border-0"
+                                >
+                                    {savingExtraUsers ? (
+                                        <>
+                                            <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                            <span>Guardando cupos...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <FiCheck size={14} />
+                                            <span>Guardar Cupos Extra</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             {/* ── Edit Clinic Modal ── */}
             {showEditTenant && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fade-in">
@@ -1620,6 +1820,30 @@ export default function TenantsPanelV2() {
                                         value={editForm.telefono}
                                         onChange={e=>setEditForm({...editForm, telefono: e.target.value})}
                                     />
+                                </div>
+
+                                <div className="bg-teal-50/60 border border-teal-200/80 rounded-2xl p-4 space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <label className="block text-[10px] font-black text-teal-800 uppercase tracking-widest">
+                                            👤 Usuarios Extra Comprados (Cupos Adicionales)
+                                        </label>
+                                        <span className="text-xs font-bold text-teal-700">
+                                            Total: {getBaseUsersForPlan(showEditTenant.planId) + (Number(editForm.extraUsers) || 0)} usuarios
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            className={inp}
+                                            placeholder="0"
+                                            value={editForm.extraUsers ?? 0}
+                                            onChange={e=>setEditForm({...editForm, extraUsers: Math.max(0, parseInt(e.target.value, 10) || 0)})}
+                                        />
+                                    </div>
+                                    <p className="text-[10px] text-teal-700 leading-tight">
+                                        Cupos extras vendidos a esta clínica. Se suman a los {getBaseUsersForPlan(showEditTenant.planId)} usuarios base del plan ({getPlanName(showEditTenant.planId)}). No altera a las demás clínicas.
+                                    </p>
                                 </div>
 
                                 {/* ── Acceso del Administrador ── */}

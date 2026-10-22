@@ -81,10 +81,16 @@ const resolveTenantPlan = (tenant) => {
         ? 999
         : (key.includes("clinica") || key.includes("clínica") || key.includes("pro") ? 12 : 2);
 
+    const baseMaxUsers = Number(plan.baseMaxUsers ?? plan.maxUsers ?? fallbackLimit);
+    const extraUsers = Number(tenant?.extraUsers ?? tenant?.extra_users ?? tenant?.parametros?.extra_users ?? plan.extraUsers ?? 0);
+    const totalMaxUsers = baseMaxUsers + extraUsers;
+
     return {
         ...plan,
         name: plan.name || (fallbackLimit === 999 ? "Enterprise" : fallbackLimit === 12 ? "Clínica" : "Consultorio"),
-        maxUsers: Number(plan.maxUsers ?? fallbackLimit),
+        baseMaxUsers,
+        extraUsers,
+        maxUsers: totalMaxUsers,
     };
 };
 
@@ -443,7 +449,8 @@ export default function EmpresaUsuarios() {
             const currentCount = users.length;
 
             if (currentCount >= maxUsersLimit) {
-                return toast.error(`⚠️ Has alcanzado el límite máximo de ${maxUsersLimit} usuario(s) de tu plan actual (${tenantPlanObj.name || 'Consultorio'}). Actualiza tu plan para agregar más usuarios.`);
+                const extraText = tenantPlanObj.extraUsers > 0 ? ` + ${tenantPlanObj.extraUsers} cupo(s) extra` : '';
+            return toast.error(`⚠️ Has alcanzado el límite de ${maxUsersLimit} usuario(s) de tu clínica (${tenantPlanObj.baseMaxUsers} del plan ${tenantPlanObj.name || 'Consultorio'}${extraText}). Adquiere usuarios adicionales o actualiza tu plan para agregar más personal.`);
             }
 
             setEditId(null);
@@ -529,7 +536,8 @@ export default function EmpresaUsuarios() {
             const maxUsersLimit = tenantPlanObj.maxUsers;
             const currentCount = users.length;
             if (currentCount >= maxUsersLimit) {
-                return toast.error(`⚠️ Has alcanzado el límite máximo de ${maxUsersLimit} usuario(s) de tu plan actual (${tenantPlanObj.name || 'Consultorio'}). Actualiza tu plan para agregar más usuarios.`);
+                const extraText = tenantPlanObj.extraUsers > 0 ? ` + ${tenantPlanObj.extraUsers} cupo(s) extra` : '';
+            return toast.error(`⚠️ Has alcanzado el límite de ${maxUsersLimit} usuario(s) de tu clínica (${tenantPlanObj.baseMaxUsers} del plan ${tenantPlanObj.name || 'Consultorio'}${extraText}). Adquiere usuarios adicionales o actualiza tu plan para agregar más personal.`);
             }
         }
 
@@ -760,6 +768,25 @@ export default function EmpresaUsuarios() {
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
+                    {(() => {
+                        const tPlan = resolveTenantPlan(userProfile?.tenant);
+                        const isAtLimit = users.length >= tPlan.maxUsers;
+                        return (
+                            <div className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                                isAtLimit 
+                                    ? "bg-amber-50 text-amber-700 border-amber-200" 
+                                    : "bg-slate-50 text-slate-700 border-slate-200"
+                            }`}>
+                                <span className="text-[11px]">👥</span>
+                                <span>{users.length} / {tPlan.maxUsers} usuarios</span>
+                                {tPlan.extraUsers > 0 && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-bold">
+                                        +{tPlan.extraUsers} extra
+                                    </span>
+                                )}
+                            </div>
+                        );
+                    })()}
                     <button
                         onClick={() => setShowDisabled(!showDisabled)}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${showDisabled

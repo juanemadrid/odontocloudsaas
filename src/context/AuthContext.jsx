@@ -227,6 +227,10 @@ export const AuthProvider = ({ children }) => {
             (profile.role || "").toLowerCase().includes('profesional')
         );
 
+        const extraUsers = Number(tenantData.parametros?.extra_users ?? tenantData.extra_users ?? tenantData.extraUsers ?? 0);
+        const baseMaxUsers = Number(activePlanObj.maxUsers || (rawPlanKey.includes('clinica') || rawPlanKey.includes('pro') ? 4 : rawPlanKey.includes('enterp') ? 8 : 2));
+        const totalMaxUsers = baseMaxUsers + extraUsers;
+
         const fullProfile = {
           ...profile,
           cachedAt: Date.now(),
@@ -257,7 +261,15 @@ export const AuthProvider = ({ children }) => {
             logo_url: resolvedLogo,
             nit: tenantData.nit || "",
             planId: activePlanObj.id || rawPlanKey,
-            plan: activePlanObj,
+            plan: {
+              ...activePlanObj,
+              baseMaxUsers,
+              extraUsers,
+              maxUsers: totalMaxUsers
+            },
+            baseMaxUsers,
+            extraUsers,
+            maxUsers: totalMaxUsers,
             facturacionCuota: Number(tenantData.parametros?.facturacionCuota ?? tenantData.facturacionCuota ?? activePlanObj.facturasIncluidas ?? 0),
             includeFacturacion: activePlanObj.includeFacturacion === true,
             subscriptionEndDate: subEndDate,

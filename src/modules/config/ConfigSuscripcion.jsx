@@ -23,11 +23,15 @@ export default function ConfigSuscripcion() {
 
     // Encontrar plan activo dentro del catálogo de planes cargados
     const activeCatalogPlan = (plans || []).find(p => p.id === tenantPlanId) || tenant.plan || {};
+    const extraUsers = Number(tenant?.extraUsers || tenant?.extra_users || tenant?.parametros?.extra_users || 0);
+    const baseUsersLimit = activeCatalogPlan.maxUsers ?? (tenantPlanId === 'pro' ? 25 : tenantPlanId === 'enterprise' ? 100 : 10);
     const plan = {
         name: activeCatalogPlan.name || (tenantPlanId === 'pro' ? 'Profesional' : tenantPlanId === 'enterprise' ? 'IPS Enterprise' : tenantPlanId === 'basic' ? 'Básico' : 'Gratuito (IPS / Clínica)'),
         monthlyPrice: activeCatalogPlan.monthlyPrice ?? activeCatalogPlan.price ?? 0,
         yearlyPrice: activeCatalogPlan.yearlyPrice ?? 0,
-        maxUsers: activeCatalogPlan.maxUsers ?? (tenantPlanId === 'pro' ? 25 : tenantPlanId === 'enterprise' ? 100 : 10)
+        baseMaxUsers: baseUsersLimit,
+        extraUsers: extraUsers,
+        maxUsers: baseUsersLimit + extraUsers
     };
 
     const isSuperAdmin = userProfile?.rol?.trim().toLowerCase() === 'superadmin';
@@ -235,7 +239,14 @@ export default function ConfigSuscripcion() {
                             </div>
                             <div>
                                 <span className="text-[10px] font-bold text-slate-400 uppercase block">Usuarios Habilitados</span>
-                                <span className="font-bold text-slate-800 text-[15px]">{plan.maxUsers || "Ilimitados"}</span>
+                                <span className="font-bold text-slate-800 text-[15px]">
+                                    {plan.maxUsers || "Ilimitados"}
+                                    {extraUsers > 0 && (
+                                        <span className="text-xs font-semibold text-teal-600 ml-1">
+                                            ({baseUsersLimit} plan + {extraUsers} extra)
+                                        </span>
+                                    )}
+                                </span>
                             </div>
                         </div>
                     </div>

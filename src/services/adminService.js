@@ -105,6 +105,7 @@ export const getTenants = async () => {
                 hasFactusCreds: false,
                 facturacionCuota: 0,
                 facturacionUsadas: 0,
+                extraUsers: Number(t.parametros?.extra_users || t.extra_users || 0),
                 lastSignInAt: loginInfo?.lastSignInAt || null,
                 lastSignInUser: loginInfo?.lastSignInUser || null,
                 createdAt: createdDate.toISOString(),
@@ -152,6 +153,7 @@ export const getTenants = async () => {
                 factusTestMode: t.factusTestMode ?? existing.factusTestMode ?? true,
                 facturacionCuota: t.facturacionCuota ?? existing.facturacionCuota ?? 0,
                 facturacionUsadas: t.facturacionUsadas ?? existing.facturacionUsadas ?? 0,
+                extraUsers: Number(t.extraUsers ?? t.extra_users ?? existing.extraUsers ?? 0),
                 lastSignInAt: loginInfo?.lastSignInAt || existing.lastSignInAt || null,
                 lastSignInUser: loginInfo?.lastSignInUser || existing.lastSignInUser || null,
                 createdAt: createdDate.toISOString(),
@@ -236,7 +238,9 @@ export const updateTenantDetails = async (tenantId, updates) => {
                     subscriptionEndDate: updates.subscriptionEndDate || t.subscriptionEndDate,
                     activo: updates.activo !== undefined ? updates.activo : (t.activo !== false),
                     status: updates.status || (updates.activo === false ? "suspended" : (t.status || "active")),
-                    facturacionCuota: cuotaFacturas
+                    facturacionCuota: cuotaFacturas,
+                    extraUsers: updates.extraUsers !== undefined ? Number(updates.extraUsers) : (updates.extra_users !== undefined ? Number(updates.extra_users) : Number(t.extraUsers ?? t.extra_users ?? 0)),
+                    extra_users: updates.extraUsers !== undefined ? Number(updates.extraUsers) : (updates.extra_users !== undefined ? Number(updates.extra_users) : Number(t.extra_users ?? t.extraUsers ?? 0))
                 };
             }
             return t;
@@ -248,6 +252,8 @@ export const updateTenantDetails = async (tenantId, updates) => {
             let cuotaFacturas = 400;
             if (updatedPlanId.includes("basic") || updatedPlanId.includes("basico") || updatedPlanId.includes("consultorio") || updatedPlanId.includes("trial") || updatedPlanId.includes("demo") || updatedPlanId.includes("free")) cuotaFacturas = 0;
             else if (updatedPlanId.includes("enterprise") || updatedPlanId.includes("ips") || updatedPlanId.includes("349")) cuotaFacturas = 1000;
+
+            const extraVal = updates.extraUsers !== undefined ? Number(updates.extraUsers) : (updates.extra_users !== undefined ? Number(updates.extra_users) : Number(dbT?.parametros?.extra_users || 0));
 
             updatedTenants.push({
                 id: String(tenantId),
@@ -267,6 +273,8 @@ export const updateTenantDetails = async (tenantId, updates) => {
                 status: updates.status || (updates.activo === false ? "suspended" : "active"),
                 facturacionCuota: updates.facturacionCuota !== undefined ? updates.facturacionCuota : cuotaFacturas,
                 facturacionUsadas: 0,
+                extraUsers: extraVal,
+                extra_users: extraVal,
                 createdAt: dbT?.created_at || new Date().toISOString()
             });
         }
@@ -294,6 +302,17 @@ export const updateTenantDetails = async (tenantId, updates) => {
         if (updates.planId || updates.plan) dbUpdates.plan = updates.planId || updates.plan;
         if (updates.activo !== undefined) dbUpdates.activo = updates.activo;
 
+        // Actualizar columna parametros JSONB de la tabla tenants si viene extraUsers
+        if (updates.extraUsers !== undefined || updates.extra_users !== undefined) {
+            let { data: currentDbTenant } = await supabase.from("tenants").select("parametros").eq("id", tenantId).maybeSingle();
+            const currParams = (currentDbTenant?.parametros && typeof currentDbTenant.parametros === "object") ? currentDbTenant.parametros : {};
+            const resolvedExtra = updates.extraUsers !== undefined ? Number(updates.extraUsers) : Number(updates.extra_users);
+            dbUpdates.parametros = {
+                ...currParams,
+                extra_users: resolvedExtra
+            };
+        }
+
         if (Object.keys(dbUpdates).length > 0) {
             await supabase
                 .from("tenants")
@@ -306,6 +325,14 @@ export const updateTenantDetails = async (tenantId, updates) => {
         console.error("Error al actualizar clínica en Supabase:", error);
         throw error;
     }
+};
+
+/**
+ * Actualizar cupos de usuarios extra asignados a una clínica
+ */
+export const updateTenantExtraUsers = async (tenantId, extraUsersCount) => {
+    const count = Math.max(0, parseInt(extraUsersCount, 10) || 0);
+    return await updateTenantDetails(tenantId, { extraUsers: count, extra_users: count });
 };
 
 /**
