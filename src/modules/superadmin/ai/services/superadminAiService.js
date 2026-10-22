@@ -85,6 +85,8 @@ export const getFactusUsageSummary = () => invokeSuperadminAssistant("get_factus
 export const getSubscriptionRequestsPending = () => invokeSuperadminAssistant("get_subscription_requests_pending");
 export const getRecentEmailIssues = () => invokeSuperadminAssistant("get_recent_email_issues");
 export const getPaymentSummary = () => invokeSuperadminAssistant("get_payment_summary");
+export const getClinicUsers = (clinic_name_or_id) => invokeSuperadminAssistant("get_clinic_users", { clinic_name_or_id });
+export const getAuditLogs = (clinic_name_or_id, action_filter, limit = 20) => invokeSuperadminAssistant("get_audit_logs", { clinic_name_or_id, action_filter, limit });
 
 /**
  * Consulta a Gemini mediante superadmin-assistant (action: "ask_ai").
@@ -140,6 +142,121 @@ export async function askAiAssistant(question, history = [], dashboardData = nul
  */
 export async function answerQueryDeterministically(query, dashboardData = null) {
   const q = (query || "").toLowerCase().trim();
+
+  // 0. Consulta de Hora y Fecha oficial en Colombia
+  if (
+    q.includes("hora") ||
+    q.includes("qué hora es") ||
+    q.includes("que hora es") ||
+    q.includes("fecha de hoy") ||
+    q.includes("qué día es") ||
+    q.includes("que dia es")
+  ) {
+    const now = new Date();
+    const formatted = new Intl.DateTimeFormat("es-CO", {
+      timeZone: "America/Bogota",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      weekday: "long",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true,
+    }).format(now);
+
+    return {
+      text: `🇨🇴 **Hora y fecha oficial en Colombia (UTC-5):**\n\n**${formatted}**\n\n*(Sincronizada con la zona horaria oficial de OdontoCloud)*`,
+      tags: ["Hora Oficial Colombia", "Datos Verídicos"],
+    };
+  }
+
+  // 0.1 Consulta de Usuarios / Doctores de clínicas
+  if (
+    q.includes("usuario") ||
+    q.includes("usuarios") ||
+    q.includes("doctor") ||
+    q.includes("doctores") ||
+    q.includes("odontologo") ||
+    q.includes("odontólogo") ||
+    q.includes("odontologos") ||
+    q.includes("odontólogos") ||
+    q.includes("personal") ||
+    q.includes("equipo")
+  ) {
+    try {
+      const res = await getClinicUsers();
+      const usersData = res?.internal_admin || res;
+      const total = usersData?.total_usuarios ?? 0;
+      const clinica = usersData?.clinica_consultada || "OdontoCloud";
+      const lista = usersData?.usuarios || [];
+
+      if (total === 0) {
+        return {
+          text: `No se encontraron usuarios ni doctores registrados en el sistema.`,
+          tags: ["Usuarios Reales", "0 Usuarios"],
+        };
+      }
+
+      let text = `📋 **Usuarios y Doctores registrados en ${clinica} (${total} en total):**\n\n`;
+      lista.slice(0, 15).forEach((u) => {
+        const estadoBadge = u.activo ? "✅ Activo" : "🔴 Inactivo";
+        text += `• **${u.nombre}** (${u.rol.toUpperCase()}) — *${estadoBadge}*\n  - Correo: ` + (u.email || "Sin correo") + `\n  - Clínica: ${u.clinica}\n`;
+      });
+
+      if (lista.length > 15) {
+        text += `\n*(Mostrando 15 de ${total} usuarios registrados)*\n`;
+      }
+
+      return {
+        text,
+        tags: ["Usuarios Reales", `${total} Usuarios`],
+      };
+    } catch (uErr) {
+      console.warn("Aviso consultando usuarios:", uErr);
+    }
+  }
+
+  // 0.2 Auditoría y Trazabilidad (quién borró, modificó o creó registros)
+  if (
+    q.includes("auditoria") ||
+    q.includes("auditoría") ||
+    q.includes("borro") ||
+    q.includes("borró") ||
+    q.includes("elimino") ||
+    q.includes("eliminó") ||
+    q.includes("modifico") ||
+    q.includes("modificó") ||
+    q.includes("trazabilidad") ||
+    q.includes("que paso") ||
+    q.includes("qué pasó")
+  ) {
+    try {
+      const res = await getAuditLogs();
+      const auditData = res?.internal_admin || res;
+      const total = auditData?.total_eventos ?? 0;
+      const eventos = auditData?.eventos || [];
+
+      if (total === 0) {
+        return {
+          text: `🛡️ **Sin registros de auditoría críticos.** No se han registrado eliminaciones ni alteraciones sospechosas recientemente.`,
+          tags: ["Auditoría Real", "0 Eventos"],
+        };
+      }
+
+      let text = `🛡️ **Auditoría y Trazabilidad del Sistema (${total} eventos recientes):**\n\n`;
+      eventos.slice(0, 10).forEach((ev) => {
+        text += `• **Acción:** ` + (ev.accion || "evento") + `\n  - Responsable: **${ev.usuario_responsable || "Sistema"}**\n  - Clínica: ${ev.clinica}\n  - Fecha/Hora: ${ev.fecha_hora_colombia || "Reciente"}\n`;
+      });
+
+      return {
+        text,
+        tags: ["Auditoría Real", `${total} Eventos`],
+      };
+    } catch (aErr) {
+      console.warn("Aviso consultando auditoría:", aErr);
+    }
+  }
 
   // 1. Vencimientos (Prioridad alta en router de intención)
   if (
