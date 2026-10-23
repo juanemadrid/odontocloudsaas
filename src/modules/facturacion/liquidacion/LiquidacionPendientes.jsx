@@ -94,6 +94,31 @@ export default function LiquidacionPendientes({ onSelectDoctor }) {
         }
     };
 
+    const handleItemPorcentajeChange = (itemKey, newPct) => {
+        setResult(prev => {
+            if (!prev || !Array.isArray(prev.items)) return prev;
+            const cleanPct = newPct === "" ? "" : Math.max(0, Math.min(100, Number(newPct)));
+            const updatedItems = prev.items.map(it => {
+                if (it.key === itemKey) {
+                    const pctNum = Number(cleanPct) || 0;
+                    const newValorAPagar = it.tipoLiquidacion === "fijo" 
+                        ? it.valorAPagar 
+                        : Math.round((Number(it.valorPrestacion) || 0) * pctNum / 100);
+                    return {
+                        ...it,
+                        porcentaje: cleanPct,
+                        valorAPagar: newValorAPagar
+                    };
+                }
+                return it;
+            });
+            return {
+                ...prev,
+                items: updatedItems
+            };
+        });
+    };
+
     return (
         <div className="max-w-[1200px] mx-auto space-y-6">
             <div>
@@ -232,20 +257,8 @@ export default function LiquidacionPendientes({ onSelectDoctor }) {
                     </div>
                 ) : (
                     <div className="p-6 space-y-6">
-                        {/* Summary Bar */}
-                        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 p-5 bg-purple-50/40 rounded-2xl border border-purple-100/60">
-                            <div>
-                                <span className="text-[10px] font-black text-purple-400 uppercase tracking-widest block">
-                                    Resumen para {result.doctor?.nombre}
-                                </span>
-                                <h4 className="text-lg font-black text-slate-800 tracking-tight mt-0.5">
-                                    {result.totalItems} procedimiento(s) realizado(s) pendiente(s)
-                                </h4>
-                                <span className="text-xs text-slate-400 font-medium">
-                                    Total valor procedimientos: <strong>{fmt(result.totalValor)}</strong>
-                                </span>
-                            </div>
-
+                        {/* Botón Liquidar Profesional */}
+                        <div className="flex justify-end">
                             <button
                                 onClick={() => onSelectDoctor(result.doctor, { desde, hasta }, result.items)}
                                 className="h-11 px-8 bg-purple-600 hover:bg-purple-700 text-white rounded-full text-xs font-black uppercase tracking-widest shadow-lg shadow-purple-600/20 active:scale-95 transition-all flex items-center gap-2 cursor-pointer shrink-0"
@@ -296,13 +309,24 @@ export default function LiquidacionPendientes({ onSelectDoctor }) {
                                                 {fmt(it.valorPrestacion)}
                                             </td>
                                             <td className="py-3 px-4 text-center whitespace-nowrap">
-                                                <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${
-                                                    it.tipoLiquidacion === "fijo" 
-                                                        ? "bg-amber-50 text-amber-600 border border-amber-100" 
-                                                        : "bg-purple-50 text-purple-600 border border-purple-100"
-                                                }`}>
-                                                    {it.tipoLiquidacion === "fijo" ? `Fijo: ${fmt(it.pagoFijoValor)}` : `${it.porcentaje}%`}
-                                                </span>
+                                                {it.tipoLiquidacion === "fijo" ? (
+                                                    <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase bg-amber-50 text-amber-600 border border-amber-100">
+                                                        Fijo: {fmt(it.pagoFijoValor)}
+                                                    </span>
+                                                ) : (
+                                                    <div className="inline-flex items-center justify-center gap-1 bg-purple-50/60 border border-purple-100 hover:border-purple-300 rounded-lg px-2 py-1 transition-all">
+                                                        <input
+                                                            type="number"
+                                                            min="0"
+                                                            max="100"
+                                                            value={it.porcentaje !== undefined ? it.porcentaje : ""}
+                                                            onChange={(e) => handleItemPorcentajeChange(it.key, e.target.value)}
+                                                            className="w-10 text-center font-black text-purple-700 bg-transparent text-xs outline-none focus:ring-0 p-0"
+                                                            title="Editar porcentaje de comisión para este procedimiento"
+                                                        />
+                                                        <span className="text-[10px] font-black text-purple-400 select-none">%</span>
+                                                    </div>
+                                                )}
                                             </td>
                                             <td className="py-3 px-4 text-right font-black text-purple-600 whitespace-nowrap">
                                                 {fmt(it.valorAPagar)}

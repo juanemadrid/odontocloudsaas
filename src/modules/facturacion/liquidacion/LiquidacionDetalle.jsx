@@ -159,11 +159,17 @@ export default function LiquidacionDetalle({ doctor, dateRange, preloadedItems =
         return Math.max(0, baseItemsComisionables - totalGastosLab);
     }, [baseItemsComisionables, totalGastosLab]);
 
-    // Total comisión: % sobre utilidad + ítems fijos
+    // Total comisión: suma de comisiones individuales de ítems seleccionados menos gastos de laboratorio
     const totalComision = useMemo(() => {
-        const comisionCalculada = Math.round(baseUtilidadComisionable * comisionPct / 100);
-        return comisionCalculada + totalItemsFijosPagar;
-    }, [baseUtilidadComisionable, comisionPct, totalItemsFijosPagar]);
+        const totalItemsPay = selectedItems.reduce((acc, it) => {
+            const itPct = it.porcentaje !== undefined && it.porcentaje !== "" ? Number(it.porcentaje) : comisionPct;
+            const payVal = it.tipoLiquidacion === "fijo"
+                ? Number(it.valorAPagar || (it.pagoFijoValor * (it.cantidad || 1)) || 0)
+                : Math.round(Number(it.valorPrestacion || 0) * itPct / 100);
+            return acc + payVal;
+        }, 0);
+        return Math.max(0, totalItemsPay - totalGastosLab);
+    }, [selectedItems, comisionPct, totalGastosLab]);
 
     // Neto a pagar = Comisión + Bonificaciones - Deducciones - Otros Gastos
     const totalNetoPagar = useMemo(() => {
@@ -207,6 +213,24 @@ export default function LiquidacionDetalle({ doctor, dateRange, preloadedItems =
         setDeducciones(deducciones.filter((_, i) => i !== idx));
     };
 
+    const handleItemPctChange = (itemKey, newPct) => {
+        const cleanPct = newPct === "" ? "" : Math.max(0, Math.min(100, Number(newPct)));
+        setItems(prev => prev.map(it => {
+            if (it.key === itemKey) {
+                const pctNum = cleanPct === "" ? comisionPct : Number(cleanPct);
+                const newPayVal = it.tipoLiquidacion === "fijo"
+                    ? (it.valorAPagar || (it.pagoFijoValor * (it.cantidad || 1)))
+                    : Math.round((Number(it.valorPrestacion) || 0) * pctNum / 100);
+                return {
+                    ...it,
+                    porcentaje: cleanPct,
+                    valorAPagar: newPayVal
+                };
+            }
+            return it;
+        }));
+    };
+
     // Save Liquidation in state "Generada"
     const handleGenerarLiquidacion = async () => {
         if (selectedItems.length === 0) {
@@ -235,7 +259,16 @@ export default function LiquidacionDetalle({ doctor, dateRange, preloadedItems =
                 totalDeducciones,
                 deducciones,
                 conceptosLiquidados,
-                selectedItems
+                selectedItems: selectedItems.map(it => {
+                    const itPct = it.porcentaje !== undefined && it.porcentaje !== "" ? Number(it.porcentaje) : comisionPct;
+                    return {
+                        ...it,
+                        porcentaje: itPct,
+                        valorAPagar: it.tipoLiquidacion === "fijo"
+                            ? Number(it.valorAPagar || (it.pagoFijoValor * (it.cantidad || 1)) || 0)
+                            : Math.round(Number(it.valorPrestacion || 0) * itPct / 100)
+                    };
+                })
             };
 
             await crearLiquidacionGenerada(inquilino, payload, userProfile);
@@ -403,9 +436,10 @@ export default function LiquidacionDetalle({ doctor, dateRange, preloadedItems =
                             <tbody className="divide-y divide-slate-100">
                                 {items.map((it) => {
                                     const isChecked = !!selectedItemKeys[it.key];
+                                    const itPct = it.porcentaje !== undefined && it.porcentaje !== "" ? Number(it.porcentaje) : comisionPct;
                                     const itemPayVal = it.tipoLiquidacion === "fijo" 
                                         ? (it.valorAPagar || (it.pagoFijoValor * (it.cantidad || 1))) 
-                                        : Math.round(it.valorPrestacion * comisionPct / 100);
+                                        : Math.round((Number(it.valorPrestacion) || 0) * itPct / 100);
 
                                     return (
                                         <tr key={it.key} className={`hover:bg-slate-50/30 transition-colors ${isChecked ? "bg-purple-50/10" : "opacity-50"}`}>
@@ -441,13 +475,24 @@ export default function LiquidacionDetalle({ doctor, dateRange, preloadedItems =
                                                 {fmt(it.valorPrestacion)}
                                             </td>
                                             <td className="py-3 px-4 text-center whitespace-nowrap">
-                                                <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${
-                                                    it.tipoLiquidacion === "fijo" 
-                                                        ? "bg-amber-50 text-amber-600 border border-amber-100" 
-                                                        : "bg-purple-50 text-purple-600 border border-purple-100"
-                                                }`}>
-                                                    {it.tipoLiquidacion === "fijo" ? `Fijo: ${fmt(it.pagoFijoValor)}` : `${comisionPct}%`}
-                                                </span>
+                                                {it.tipoLiquidacion === "fijo" ? (
+                                                    <span className="px-2 py-0.5 rounded-md text-[9px] font-black uppercase bg-amber-50 text-amber-600 border border-amber-100">
+                                                        Fijo: {fmt(it.pagoFijoValor)}
+                                                    </span>
+                                                ) : (
+                                                    <div className="inline-flex items-center justify-center gap-1 bg-purple-50/60 border border-purple-100 hover:border-purple-300 rounded-lg px-2 py-1 transition-all">
+                                                        <input
+                                                            type="number"
+                                                            min="0"
+                                                            max="100"
+                                                            value={it.porcentaje !== undefined && it.porcentaje !== "" ? it.porcentaje : comisionPct}
+                                                            onChange={(e) => handleItemPctChange(it.key, e.target.value)}
+                                                            className="w-10 text-center font-black text-purple-700 bg-transparent text-xs outline-none focus:ring-0 p-0"
+                                                            title="Editar porcentaje de comisión para este procedimiento"
+                                                        />
+                                                        <span className="text-[10px] font-black text-purple-400 select-none">%</span>
+                                                    </div>
+                                                )}
                                             </td>
                                             <td className="py-3 px-4 text-right font-black text-purple-700 whitespace-nowrap">
                                                 {fmt(itemPayVal)}
