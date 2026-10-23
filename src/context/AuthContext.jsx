@@ -92,6 +92,7 @@ export const AuthProvider = ({ children }) => {
         let extraLogo = "";
         let empresaNombre = "";
         let userDetail = {};
+        let matchedPerfil = null;
 
         try {
           // El RPC devuelve solo el usuario actual y las dos secciones pequeñas
@@ -137,7 +138,7 @@ export const AuthProvider = ({ children }) => {
             userDetail?.role
           ].filter(Boolean).map(s => String(s).trim().toLowerCase());
 
-          const matchedPerfil = perfiles.find(p => {
+          matchedPerfil = perfiles.find(p => {
             const pId = (p.id || "").trim().toLowerCase();
             const pName = (p.nombre || "").trim().toLowerCase();
             return candidateRoleKeys.some(key =>
