@@ -58,7 +58,7 @@ export const AuthProvider = ({ children }) => {
         .maybeSingle();
 
       if (error) {
-        // Fallback select without newer columns if table schema varies
+        // Fallback 1: select sin columnas opcionales
         try {
           const { data: pBasic } = await supabase
             .from("profiles")
@@ -67,6 +67,18 @@ export const AuthProvider = ({ children }) => {
             .maybeSingle();
           if (pBasic) profile = pBasic;
         } catch {}
+
+        // Fallback 2: si el join a tenants falla por RLS, recuperar el perfil basico directo
+        if (!profile) {
+          try {
+            const { data: pDirect } = await supabase
+              .from("profiles")
+              .select("id, role, full_name, tenant_id, activo")
+              .eq("id", authUser.id)
+              .maybeSingle();
+            if (pDirect) profile = pDirect;
+          } catch {}
+        }
       }
 
       if (profile) {
