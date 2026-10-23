@@ -146,7 +146,7 @@ export default function LiquidacionDetalle({ doctor, dateRange, preloadedItems =
         let baseCom = 0;
         selectedItems.forEach(it => {
             if (it.tipoLiquidacion === "fijo") {
-                fijos += Number(it.pagoFijoValor || 0);
+                fijos += Number(it.valorAPagar || (it.pagoFijoValor * (it.cantidad || 1)) || 0);
             } else {
                 baseCom += Number(it.valorPrestacion || 0);
             }
@@ -395,7 +395,7 @@ export default function LiquidacionDetalle({ doctor, dateRange, preloadedItems =
                                     <th className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Procedimiento / Ítem</th>
                                     <th className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Plan Tratamiento</th>
                                     <th className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Fecha Realizado</th>
-                                    <th className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Valor Ítem</th>
+                                    <th className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Total Recaudado</th>
                                     <th className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Tipo Comisión</th>
                                     <th className="py-4 px-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Valor Liquidar</th>
                                 </tr>
@@ -404,7 +404,7 @@ export default function LiquidacionDetalle({ doctor, dateRange, preloadedItems =
                                 {items.map((it) => {
                                     const isChecked = !!selectedItemKeys[it.key];
                                     const itemPayVal = it.tipoLiquidacion === "fijo" 
-                                        ? it.pagoFijoValor 
+                                        ? (it.valorAPagar || (it.pagoFijoValor * (it.cantidad || 1))) 
                                         : Math.round(it.valorPrestacion * comisionPct / 100);
 
                                     return (
@@ -424,9 +424,11 @@ export default function LiquidacionDetalle({ doctor, dateRange, preloadedItems =
                                                 )}
                                             </td>
                                             <td className="py-3 px-4 font-bold text-slate-700">
-                                                {it.prestacion}
-                                                {it.codigoCups && it.codigoCups !== "—" && (
-                                                    <span className="ml-1 text-[10px] text-slate-400 font-mono">[{it.codigoCups}]</span>
+                                                <span>{it.prestacion}</span>
+                                                {it.cantidad > 1 && (
+                                                    <span className="ml-1.5 text-[11px] text-slate-400 font-medium">
+                                                        ({it.cantidad} und.)
+                                                    </span>
                                                 )}
                                             </td>
                                             <td className="py-3 px-4 text-slate-500 font-medium font-mono text-[11px]">

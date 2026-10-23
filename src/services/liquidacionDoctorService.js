@@ -50,6 +50,87 @@ const safeNumber = (val) => {
 };
 
 /**
+ * Extrae y calcula el desglose financiero real de un ítem de un plan de tratamiento/presupuesto,
+ * teniendo en cuenta:
+ * - Cantidad de unidades (qty / cantidad)
+ * - Valor unitario (amount / precio / valor / valorUnitario / tarifa)
+ * - Descuento del presupuesto (descuento / discount en pesos o porcentaje desc_porc)
+ * Total Procedimiento = (Valor Unitario * Cantidad) - Descuento
+ */
+export const calcularDetalleItemPlan = (item, matchedRule = null) => {
+    if (!item || typeof item !== "object") {
+        return {
+            cantidad: 1,
+            valorUnitario: 0,
+            descuento: 0,
+            subtotal: 0,
+            valorTotal: 0
+        };
+    }
+
+    // 1. Cantidad de unidades cotizadas/realizadas
+    const rawQty = item.qty !== undefined ? item.qty : (item.cantidad !== undefined ? item.cantidad : (item.cant !== undefined ? item.cant : 1));
+    const numQty = safeNumber(rawQty);
+    const cantidad = numQty > 0 ? numQty : 1;
+
+    // 2. Valor unitario
+    let valorUnitario = safeNumber(
+        item.amount ??
+        item.precio ??
+        item.valor ??
+        item.valorUnitario ??
+        item.precioUnitario ??
+        item.costo ??
+        item.tarifa ??
+        item.valorPrestacion
+    );
+
+    // Si no tiene precio unitario directo pero existe tarifa en lista de precios
+    if (valorUnitario === 0 && matchedRule?.precio) {
+        valorUnitario = safeNumber(matchedRule.precio);
+    }
+
+    // Si aún es 0 y el ítem tiene un total directo mayor a 0
+    if (valorUnitario === 0 && safeNumber(item.total) > 0) {
+        valorUnitario = cantidad > 1 ? Math.round(safeNumber(item.total) / cantidad) : safeNumber(item.total);
+    }
+
+    const subtotal = valorUnitario * cantidad;
+
+    // 3. Descuento aplicado en el presupuesto
+    let descuento = safeNumber(
+        item.descuento ??
+        item.discount ??
+        item.descuentoValor ??
+        item.descuento_valor
+    );
+
+    // Si el descuento fue registrado en porcentaje
+    if (descuento === 0) {
+        const descPorc = safeNumber(item.desc_porc ?? item.descuentoPorcentaje ?? item.descuento_porcentaje);
+        if (descPorc > 0) {
+            descuento = Math.round(subtotal * (descPorc / 100));
+        }
+    }
+
+    // 4. Valor total que el paciente cancela por este procedimiento
+    let valorTotal = Math.max(0, subtotal - descuento);
+
+    // Salvaguarda si valorTotal dio 0 pero item.total / item.costoTotal existía directamente
+    if (valorTotal === 0 && safeNumber(item.total ?? item.costoTotal) > 0) {
+        valorTotal = safeNumber(item.total ?? item.costoTotal);
+    }
+
+    return {
+        cantidad,
+        valorUnitario,
+        descuento,
+        subtotal,
+        valorTotal
+    };
+};
+
+/**
  * Carga todos los profesionales médicos configurados para liquidar en la clínica.
  */
 export const getDoctoresParaLiquidacion = async (tenantId) => {
@@ -554,8 +635,8 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
                     const cupsK = String(it.codigo || it.cups || it.codigo_cups || "").toUpperCase().trim();
                     const nameK = String(it.nombre || it.desc || it.prestacion || "").toLowerCase().trim();
                     const ruleK = (cupsK && itemRulesMap[cupsK]) || (nameK && itemRulesMap[nameK]);
-                    let itCost = safeNumber(it.precio || it.valor || it.costo || it.amount || it.subtotal || it.total);
-                    if (itCost === 0 && ruleK?.precio) itCost = ruleK.precio;
+                    const itDetalleGen = calcularDetalleItemPlan(it, ruleK);
+                    let itCost = itDetalleGen.valorTotal;
 
                     const alreadyPaid = planItemsPaidMap[itId] || 0;
                     const pendingSaldo = Math.max(0, itCost - alreadyPaid);
@@ -679,11 +760,9 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
                     }
                 }
 
-                // Cálculo del valor del ítem
-                let itemValor = safeNumber(item.precio || item.valor || item.costo || item.valorPrestacion || item.amount || item.subtotal || item.total);
-                if (itemValor === 0 && matchedRule?.precio) {
-                    itemValor = matchedRule.precio;
-                }
+                // Cálculo del valor real del ítem teniendo en cuenta cantidades y descuentos aplicados
+                const itemDetalle = calcularDetalleItemPlan(item, matchedRule);
+                const itemValor = itemDetalle.valorTotal;
 
                 // Regla F: Validación estricta de Pago Total por el Cliente
                 // Si la forma de pago del doctor es "Realizadas y pagadas":
@@ -708,7 +787,7 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
                 }
 
                 const valorPagarCalculado = tipoLiquidacion === "fijo" 
-                    ? pagoFijoValor 
+                    ? (pagoFijoValor * itemDetalle.cantidad) 
                     : Math.round(itemValor * currentDoctor.comisionPorcentaje / 100);
 
                 pendingItems.push({
@@ -724,6 +803,10 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
                     fechaRealizado: fechaObj.toISOString(),
                     fechaObj: fechaObj,
                     fechaFormateada: fechaObj.toLocaleDateString("es-CO"),
+                    cantidad: itemDetalle.cantidad,
+                    valorUnitario: itemDetalle.valorUnitario,
+                    descuento: itemDetalle.descuento,
+                    subtotal: itemDetalle.subtotal,
                     valorPrestacion: itemValor,
                     valorRecaudado: itemValor,
                     tipoLiquidacion: tipoLiquidacion,

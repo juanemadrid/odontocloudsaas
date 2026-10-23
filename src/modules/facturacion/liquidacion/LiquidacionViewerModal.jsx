@@ -119,7 +119,7 @@ export default function LiquidacionViewerModal({ liquidacion, onClose, onPagar, 
                     <th className="py-3 px-4">Procedimiento / Ítem</th>
                     <th className="py-3 px-4">Plan</th>
                     <th className="py-3 px-4 text-center">Fecha Realizado</th>
-                    <th className="py-3 px-4 text-right">Valor Ítem</th>
+                    <th className="py-3 px-4 text-right">Total Recaudado</th>
                     <th className="py-3 px-4 text-center">Tipo</th>
                     <th className="py-3 px-4 text-right">A Pagar</th>
                   </tr>
@@ -128,7 +128,14 @@ export default function LiquidacionViewerModal({ liquidacion, onClose, onPagar, 
                   {(liquidacion.items || []).map((it, idx) => (
                     <tr key={idx} className="hover:bg-slate-50/30">
                       <td className="py-2.5 px-4 font-black text-slate-700">{it.pacienteNombre || "Paciente"}</td>
-                      <td className="py-2.5 px-4 font-bold text-slate-600">{it.prestacion || "Procedimiento"}</td>
+                      <td className="py-2.5 px-4 font-bold text-slate-600">
+                        <span>{it.prestacion || "Procedimiento"}</span>
+                        {it.cantidad > 1 && (
+                          <span className="ml-1.5 text-[11px] text-slate-400 font-medium">
+                            ({it.cantidad} und.)
+                          </span>
+                        )}
+                      </td>
                       <td className="py-2.5 px-4 text-slate-400 font-mono text-[11px]">{it.planTitulo || "—"}</td>
                       <td className="py-2.5 px-4 text-center text-slate-500 font-medium">{formatDate(it.fechaRealizado)}</td>
                       <td className="py-2.5 px-4 text-right font-medium text-slate-700">{fmt(it.valorPrestacion || it.valorRecaudado)}</td>

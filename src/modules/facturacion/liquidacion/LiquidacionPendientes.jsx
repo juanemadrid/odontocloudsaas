@@ -264,7 +264,7 @@ export default function LiquidacionPendientes({ onSelectDoctor }) {
                                         <th className="py-3 px-4">Procedimiento / Ítem</th>
                                         <th className="py-3 px-4">Plan Tratamiento</th>
                                         <th className="py-3 px-4 text-center">Fecha Realizado</th>
-                                        <th className="py-3 px-4 text-right">Valor Ítem</th>
+                                        <th className="py-3 px-4 text-right">Total Recaudado</th>
                                         <th className="py-3 px-4 text-center">Cálculo</th>
                                         <th className="py-3 px-4 text-right">Valor a Liquidar</th>
                                     </tr>
@@ -279,9 +279,11 @@ export default function LiquidacionPendientes({ onSelectDoctor }) {
                                                 )}
                                             </td>
                                             <td className="py-3 px-4 font-bold text-slate-700">
-                                                {it.prestacion}
-                                                {it.codigoCups && it.codigoCups !== "—" && (
-                                                    <span className="ml-1.5 text-[10px] text-slate-400 font-mono font-normal">[{it.codigoCups}]</span>
+                                                <span>{it.prestacion}</span>
+                                                {it.cantidad > 1 && (
+                                                    <span className="ml-1.5 text-[11px] text-slate-400 font-medium">
+                                                        ({it.cantidad} und.)
+                                                    </span>
                                                 )}
                                             </td>
                                             <td className="py-3 px-4 text-slate-500 font-medium">
