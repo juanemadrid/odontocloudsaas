@@ -590,7 +590,8 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = async (clearNotice = true) => {
-    await stopPresence.current?.();
+    // Presence cleanup must never delay the existing sign-out flow on a slow network.
+    void stopPresence.current?.();
     if (clearNotice) {
       setSessionExpiredNotice(false);
     }
