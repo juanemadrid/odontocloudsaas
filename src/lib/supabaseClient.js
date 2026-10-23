@@ -18,5 +18,5 @@ if (!globalScope.__supabase) {
   globalScope.__supabase = supabase;
 }
 
-export { supabase };
+export { supabase, supabaseUrl, supabaseAnonKey };
 export default supabase;

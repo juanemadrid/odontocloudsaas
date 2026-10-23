@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import { startEcosystemPresence } from '../lib/ecosystemPresence';
+import React, { createContext, useContext, useEffect, useState, useRef } from "react";
 import supabase from "../lib/supabaseClient";
 import { DEFAULT_PERFILES } from "../constants/DefaultProfiles";
 
@@ -18,6 +19,14 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [userProfile, setUserProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  const stopPresence = useRef(null);
+  useEffect(() => {
+    if (!user?.id || !userProfile?.tenant_id) return;
+    const stop = startEcosystemPresence(user.id, userProfile.tenant_id);
+    stopPresence.current = stop;
+    return () => { void stop(); stopPresence.current = null; };
+  }, [user?.id, userProfile?.tenant_id]);
 
   const fetchUserProfile = async (authUser, forceRefresh = false) => {
     if (!authUser) return null;
@@ -581,6 +590,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = async (clearNotice = true) => {
+    await stopPresence.current?.();
     if (clearNotice) {
       setSessionExpiredNotice(false);
     }
