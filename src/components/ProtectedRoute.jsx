@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import PremiumLoading from './PremiumLoading';
@@ -10,36 +10,20 @@ import SubscriptionRenewalModal from './SubscriptionRenewalModal';
 const normalizeRole = (role) => (role || "").trim().toLowerCase();
 
 export default function ProtectedRoute({ children, allowedRoles }) {
-    const { user, userProfile, loading, logout } = useAuth();
+    const { user, userProfile, loading } = useAuth();
     const location = useLocation();
-    const [profileWaitExpired, setProfileWaitExpired] = useState(false);
-
-    useEffect(() => {
-        let timer;
-        if (!loading && user && !userProfile) {
-            timer = setTimeout(() => {
-                setProfileWaitExpired(true);
-            }, 3000);
-        } else {
-            setProfileWaitExpired(false);
-        }
-        return () => {
-            if (timer) clearTimeout(timer);
-        };
-    }, [loading, user, userProfile]);
 
     console.log("ProtectedRoute - Estado:", {
         loading,
         hasUser: !!user,
         hasProfile: !!userProfile,
-        profileWaitExpired,
         rol: userProfile?.rol,
         inquilino: userProfile?.inquilino,
         hasTenant: !!userProfile?.tenant,
         tenantStatus: userProfile?.tenant?.status
     });
 
-    if (loading || (!userProfile && user && !profileWaitExpired)) {
+    if (loading) {
         return <PremiumLoading />;
     }
 
@@ -47,51 +31,10 @@ export default function ProtectedRoute({ children, allowedRoles }) {
         return <Navigate to="/login" state={{ from: location }} replace />;
     }
 
-    // Si ya expiró la espera y sigue sin haber perfil válido, no nos quedamos en bucle infinito
+    // If no userProfile yet, show loading (shouldn't happen but safety check)
     if (!userProfile) {
-        console.warn("ProtectedRoute - Usuario autenticado pero sin perfil válido tras espera");
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-900/95 p-6 relative">
-                <div className="bg-white rounded-3xl shadow-2xl border border-slate-100 p-8 sm:p-10 max-w-md w-full text-center space-y-5 animate-in fade-in zoom-in-95 duration-200">
-                    <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 border border-amber-100 flex items-center justify-center mx-auto">
-                        <FiAlertTriangle size={32} />
-                    </div>
-                    <div className="space-y-2">
-                        <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">
-                            Sesión no sincronizada
-                        </h2>
-                        <p className="text-xs text-slate-600 leading-relaxed">
-                            No fue posible cargar el perfil de tu clínica. Esto suele ocurrir cuando la sesión en el navegador expiró o necesita renovarse.
-                        </p>
-                    </div>
-                    <div className="space-y-2 pt-2">
-                        <button
-                            type="button"
-                            onClick={() => window.location.reload()}
-                            className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-700 active:scale-98 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-md shadow-blue-600/20 border-0"
-                        >
-                            Reintentar conexión
-                        </button>
-                        <button
-                            type="button"
-                            onClick={async () => {
-                                try {
-                                    if (logout) await logout();
-                                } catch {}
-                                try {
-                                    localStorage.clear();
-                                    sessionStorage.clear();
-                                } catch {}
-                                window.location.href = '/login';
-                            }}
-                            className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer border-0"
-                        >
-                            Cerrar sesión e ir al Login
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
+        console.warn("ProtectedRoute - Usuario autenticado pero sin perfil, mostrando loading");
+        return <PremiumLoading />;
     }
 
     // ── Tenant suspension/expiration check ──
