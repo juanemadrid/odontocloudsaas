@@ -1,3 +1,4 @@
+import { isRipsConsultation } from '../services/ripsTariffService.js';
 import {
   validateRipsWithoutFevEligibility,
   validatePayerForRipsWithoutFev,
@@ -126,7 +127,9 @@ export function normalizeRipsBillingSource(record, sourceType, context = {}) {
 
   // 3. Resolución del identificador visible / consecutivo
   let documentNumber = null;
-  if (isOfficialInvoice) {
+  if (sourceType === 'atenciones_clinicas') {
+    documentNumber = record.id; // Identificador de lote; numFactura permanece null.
+  } else if (isOfficialInvoice) {
     documentNumber =
       record.numeroFactura ||
       record.nroConsecutivo ||
@@ -200,12 +203,7 @@ export function normalizeRipsBillingSource(record, sourceType, context = {}) {
         matchedPlanItem?.evolutionId ||
         null;
 
-      const isConsulta = Boolean(
-        ip.es_consulta ||
-        matchedPlanItem?.es_consulta ||
-        asocConsultaId ||
-        (explicitCups && explicitCups.startsWith("890"))
-      );
+      const isConsulta = isRipsConsultation({ ...matchedPlanItem, ...ip, asocConsultaId, cups: explicitCups });
 
       const isOtroServicio = Boolean(
         ip.es_otro_servicio ||
@@ -240,14 +238,11 @@ export function normalizeRipsBillingSource(record, sourceType, context = {}) {
     if (Array.isArray(rawItems) && rawItems.length > 0) {
       rawItems.forEach(it => {
         const explicitCups = it.codigo || it.codigo_cups || it.cups || it.code || "";
-        const asocConsultaId = it.asocConsultaId || null;
-        const evolutionId = it.evolutionId || null;
+        const sourceType = String(it.clinicalSourceType || '').toUpperCase();
+        const asocConsultaId = it.asocConsultaId || (sourceType === 'DOCUMENTOS_CLINICOS' ? it.clinicalSourceId : null) || null;
+        const evolutionId = it.evolutionId || (sourceType === 'EVOLUCIONES' ? it.clinicalSourceId : null) || null;
 
-        const isConsulta = Boolean(
-          it.es_consulta ||
-          asocConsultaId ||
-          (explicitCups && explicitCups.startsWith("890"))
-        );
+        const isConsulta = isRipsConsultation({ ...it, asocConsultaId, cups: explicitCups });
 
         const isOtroServicio = Boolean(
           it.es_otro_servicio ||
@@ -255,12 +250,13 @@ export function normalizeRipsBillingSource(record, sourceType, context = {}) {
         );
 
         normalizedItems.push({
+          ...it,
           id: it.id || null,
-          planItemId: it.planItemId || it.id || null,
+          planItemId: it.planItemId || (sourceType === 'PLAN_ITEM' ? it.clinicalSourceId : null) || it.id || null,
           asocConsultaId,
           evolutionId,
-          clinicalSourceId: asocConsultaId || evolutionId || null,
-          clinicalSourceType: asocConsultaId ? "documentos_clinicos" : (evolutionId ? "evoluciones" : null),
+          clinicalSourceId: it.clinicalSourceId || asocConsultaId || evolutionId || null,
+          clinicalSourceType: it.clinicalSourceType || (asocConsultaId ? "documentos_clinicos" : (evolutionId ? "evoluciones" : null)),
           codigo: explicitCups,
           codigo_cups: explicitCups,
           cups: explicitCups,
@@ -269,7 +265,7 @@ export function normalizeRipsBillingSource(record, sourceType, context = {}) {
           total: Number(it.total || it.valor || it.precio || it.subtotal || 0),
           cantidad: Number(it.cantidad || 1),
           realizado: it.realizado ?? true,
-          fechaRealizado: it.fechaRealizado || record.fecha || record.created_at,
+          fechaRealizado: it.fechaAtencion || it.fechaRealizado || record.fecha || record.created_at,
           es_consulta: isConsulta,
           es_otro_servicio: isOtroServicio,
           tipoOS: it.tipoOS || null,

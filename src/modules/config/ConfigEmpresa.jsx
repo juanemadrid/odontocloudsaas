@@ -195,7 +195,9 @@ export default function ConfigEmpresa() {
                     billingObligation: formData.billingObligation || (isIps ? BILLING_OBLIGATIONS.ELECTRONIC_INVOICE_REQUIRED : BILLING_OBLIGATIONS.NOT_REQUIRED),
                     providerCodeMode: formData.providerCodeMode || PROVIDER_CODE_MODES.UNIQUE,
                     providerCodesByBranch: formData.providerCodesByBranch || {},
-                    administrativeConfirmation: formData.administrativeConfirmation ?? true,
+                    // Guardar una elección tributaria explícita confirma ese perfil.
+                    administrativeConfirmation: formData.providerType !== PROVIDER_TYPES.UNCONFIRMED &&
+                        formData.billingObligation !== BILLING_OBLIGATIONS.UNCONFIRMED,
                     sisproUsuario: formData.sisproUsuario || "",
                     sisproTipoDoc: formData.sisproTipoDoc || "NIT",
                     sisproConfigured: Boolean(sisproPassword || sisproHasPassword),
@@ -597,7 +599,8 @@ export default function ConfigEmpresa() {
                                 <label className="text-[11px] font-bold text-slate-600">Obligación de Facturación Electrónica *</label>
                                 <select
                                     value={formData.billingObligation}
-                                    onChange={e => setFormData(prev => ({ ...prev, billingObligation: e.target.value }))}
+                                    onChange={e => setFormData(prev => ({ ...prev, billingObligation: e.target.value,
+                                        administrativeConfirmation: e.target.value !== BILLING_OBLIGATIONS.UNCONFIRMED }))}
                                     className="w-full h-9 px-3 bg-white border border-slate-200 rounded-lg text-[12px] font-medium text-slate-800 outline-none focus:border-blue-500 transition-colors"
                                 >
                                     <option value={BILLING_OBLIGATIONS.ELECTRONIC_INVOICE_REQUIRED}>Obligado a facturar electrónicamente (FEV requerida)</option>

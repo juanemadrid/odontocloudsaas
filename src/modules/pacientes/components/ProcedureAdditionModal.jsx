@@ -196,6 +196,9 @@ export default function ProcedureAdditionModal({
 
         return {
             id: Math.random().toString(36).substr(2, 9),
+            catalogItemId: proc.id || null,
+            priceListId: baseListId || null,
+            genera_rips: proc.genera_rips,
             code: proc.codigo || proc.code || "",
             codigo: proc.codigo || proc.code || "",
             codigo_cups: proc.codigo || proc.code || proc.codigo_cups || "",

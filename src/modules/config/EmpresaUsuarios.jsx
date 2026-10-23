@@ -566,6 +566,13 @@ export default function EmpresaUsuarios() {
                 ? (editingUser?.rol || editingUser?.role || "administrador")
                 : (isPrimaryAccount ? "administrador" : (selectedProfile?.nombre || formData.profileId || "Doctor"));
 
+            // Mapear IDs de especialidades a sus nombres oficiales
+            const espNames = (formData.especialidades || []).map(espId => {
+                const found = specialties.find(s => String(s.id) === String(espId));
+                return found ? (found.nombre || found.name || espId) : espId;
+            });
+            const especialidadTexto = espNames.join(', ') || (formData.especialidades || []).join(', ') || null;
+
             let res = null;
             try {
                 res = await upsertManagedUser({
@@ -575,7 +582,7 @@ export default function EmpresaUsuarios() {
                     password: formData.password?.trim() || undefined,
                     fullName,
                     role: roleName,
-                    especialidad: (formData.especialidades || []).join(', ') || null,
+                    especialidad: especialidadTexto,
                     registroMedico: formData.numeroDocumento?.trim() || null,
                     telefono: formData.telefonoMovil?.trim() || formData.telefonoFijo?.trim() || null,
                     activo: true
@@ -589,7 +596,7 @@ export default function EmpresaUsuarios() {
                         .update({
                             full_name: fullName,
                             telefono: formData.telefonoMovil?.trim() || formData.telefonoFijo?.trim() || null,
-                            especialidad: (formData.especialidades || []).join(', ') || null,
+                            especialidad: especialidadTexto,
                             registro_medico: formData.numeroDocumento?.trim() || null,
                         })
                         .eq("id", editId);
@@ -625,6 +632,8 @@ export default function EmpresaUsuarios() {
                 fechaNacimiento: formData.fechaNacimiento || "",
                 sucursales: formData.sucursales || [],
                 especialidades: formData.especialidades || [],
+                especialidad: especialidadTexto,
+                especialidadesNombres: espNames,
                 esDoctor: formData.esDoctor || false,
                 esLaboratory: formData.esLaboratory || false,
                 seeOtherDoctorsData: formData.seeOtherDoctorsData || false,

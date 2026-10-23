@@ -464,6 +464,9 @@ export async function adaptClinicalDataToRipsV003(input) {
       }
 
       // Clasificación canónica proveniente del catálogo inmutable
+      if (at.tipoAtencion && cupsInfo.tipoRips !== at.tipoAtencion) {
+        throw new Error(`RIPS_SERVICE_TYPE_CUPS_MISMATCH: El servicio está configurado como '${at.tipoAtencion}', pero su CUPS '${rawCups}' corresponde a '${cupsInfo.tipoRips}' en CUPSRips. Revise Es consulta y el código CUPS del producto; no se reclasifica automáticamente.`);
+      }
       const tipoAtencion = cupsInfo.tipoRips; // 'consulta' o 'procedimiento'
 
       // Diagnóstico principal obligatorio (CIE-10)

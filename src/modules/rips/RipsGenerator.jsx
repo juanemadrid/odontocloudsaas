@@ -12,6 +12,10 @@ import {
 import {
     adaptClinicalDataToRipsV003
 } from './v003/adapters/ripsV003ClinicalAdapter';
+import { readRipsSource, ripsDocumentInRange, buildRipsClinicalSources, collectRipsConsultations, getRipsPlanItems, splitRipsClinicalSources } from './v003/services/ripsSourceService';
+import { resolveRipsTariffItem, resolveRipsServiceSettings } from './v003/services/ripsTariffService';
+import { applyRipsHistoricalLinks, ripsHistoricalLinkKey, ripsHistoricalLinkOptions } from './v003/services/ripsHistoricalLinkService';
+import { saveConfigSection } from '../../services/configPersistenceService';
 import { normalizeRipsBillingSource } from './v003/adapters/ripsBillingSourceAdapter';
 import {
     resolveProviderProfile,
@@ -119,10 +123,12 @@ export default function RipsGenerator() {
 
     // Selección de documentos DIAN para Enviar / Exportar
     const [selectedDianDocIds, setSelectedDianDocIds] = useState(new Set());
+    const [selectedClinicalDocIds, setSelectedClinicalDocIds] = useState(new Set());
     const [exportingPackage, setExportingPackage] = useState(false);
 
     // Listas de Previsualización y Validación
-    const [dianDocs, setDianDocs] = useState([]);
+    const [ripsDocuments, setRipsDocuments] = useState([]);
+    const dianDocs = useMemo(() => ripsDocuments.filter(doc => doc.isOfficialInvoice && doc.sourceMode === RIPS_MODES.OFFICIAL_FEV), [ripsDocuments]);
     const [usuarios, setUsuarios] = useState([]);
     const [consultas, setConsultas] = useState([]);
     const [procedimientos, setProcedimientos] = useState([]);
@@ -145,6 +151,9 @@ export default function RipsGenerator() {
         esIps: false
     });
     const [configWarning, setConfigWarning] = useState("");
+    const [historicalLinkIssues, setHistoricalLinkIssues] = useState([]);
+    const [historicalLinkChoices, setHistoricalLinkChoices] = useState({});
+    const [savingHistoricalLink, setSavingHistoricalLink] = useState(false);
 
     // Modalidad prestador: IPS vs Profesional Independiente
     const isIps = Boolean(tenantConfig?.esIps || tenantConfig?.providerProfile?.providerType === PROVIDER_TYPES.IPS);
@@ -164,6 +173,14 @@ export default function RipsGenerator() {
         });
     }, [tenantConfig, selectedSucursal, sucursales, selectedDoctor, doctorRipsList]);
 
+    const usesClinicalSources = tenantConfig.providerProfile?.providerType === PROVIDER_TYPES.PROFESIONAL_INDEPENDIENTE &&
+        tenantConfig.providerProfile?.billingObligation === BILLING_OBLIGATIONS.NOT_REQUIRED;
+    const providerWarning = configWarning || (!isIps && !selectedDoctor
+        ? 'Seleccione el profesional que genera RIPS. Sus datos se configuran en Configuración → Usuarios.'
+        : (!currentProviderContext.obligatedDocument ? 'Falta el documento del prestador responsable.'
+            : (!/^\d{10}(\d{2})?$/.test(currentProviderContext.providerCode || '')
+                ? (isIps ? 'Falta o es inválido el código REPS institucional.' : 'Revise el código REPS del profesional o de la sede en Configuración → Usuarios.') : '')));
+
     // Estado Preflight RIPS v003
     const [preflightStatus, setPreflightStatus] = useState(null); // null | 'VALIDATING' | 'READY' | 'HAS_ERRORS'
     const [preflightSummary, setPreflightSummary] = useState({ total: 0, valid: 0, error: 0, totalErrors: 0 });
@@ -174,6 +191,20 @@ export default function RipsGenerator() {
     const [muvValidationsMap, setMuvValidationsMap] = useState(new Map());
     const [copiedCuv, setCopiedCuv] = useState(null);
     const [detailModalData, setDetailModalData] = useState(null);
+
+    useEffect(() => {
+        setSearched(false);
+        setPreflightStatus(null);
+        setPreflightValidationMap(new Map());
+        setSelectedDianDocIds(new Set());
+        setSelectedClinicalDocIds(new Set());
+        setRipsDocuments([]);
+        setUsuarios([]);
+        setConsultas([]);
+        setProcedimientos([]);
+        setOtrosServicios([]);
+        if (usesClinicalSources) setFilterType('realizado');
+    }, [usesClinicalSources, selectedDoctor, selectedSucursal, selectedEps, dateRange.start, dateRange.end, filterType]);
 
     const filteredTerceros = useMemo(() => {
         if (!searchTerceroQuery.trim()) return epsList;
@@ -273,6 +304,7 @@ export default function RipsGenerator() {
     const toggleSelectAllDian = () => {
         if (selectedDianDocIds.size === filteredDian.length && filteredDian.length > 0) {
             setSelectedDianDocIds(new Set());
+        setSelectedClinicalDocIds(new Set());
         } else {
             const next = new Set();
             filteredDian.forEach(d => next.add(d.id));
@@ -339,7 +371,9 @@ export default function RipsGenerator() {
                 const extraEmpresa = cfg.empresa_datos || cfg.empresa || {};
                 const privateSispro = cfg.sispro_config || {};
 
-                const rawNit = tenantData.nit || extraEmpresa.nit || privateSispro.sisproUsuario || "64576359";
+                if (tenantRes.error) throw tenantRes.error;
+                if (cfgRes.error) throw cfgRes.error;
+                const rawNit = tenantData.nit || extraEmpresa.nit || privateSispro.sisproUsuario || "";
                 const nitClean = formatNitForRips(rawNit);
                 
                 const codPrestador = String(
@@ -347,10 +381,10 @@ export default function RipsGenerator() {
                     privateSispro.codigoPrestador || 
                     extraEmpresa.codigoPrestador || 
                     cfg.codigoPrestador || 
-                    "7000101657"
+                    ""
                 ).trim();
 
-                const rSocial = tenantData.razonSocial || tenantData.nombre || tenantData.name || extraEmpresa.razonSocial || extraEmpresa.nombreComercial || "ATM CENTRO DEL DOLOR OROFACIAL";
+                const rSocial = tenantData.razonSocial || tenantData.nombre || tenantData.name || extraEmpresa.razonSocial || extraEmpresa.nombreComercial || "";
                 const prof = resolveProviderProfile(tenantData, cfg);
 
                 setTenantConfig({
@@ -363,13 +397,10 @@ export default function RipsGenerator() {
                     rawConfig: cfg,
                 });
 
-                let warningMsg = "";
-                if (!nitClean) warningMsg += "Falta configurar el NIT de la empresa. ";
-                if (!codPrestador || codPrestador.length < 10) warningMsg += "Falta o es inválido el Código de Habilitación de Prestador (REPS). ";
-
-                setConfigWarning(warningMsg);
+                setConfigWarning(""); // El aviso usa el contexto efectivo de profesional/sede.
             } catch (e) {
                 console.error("Error al cargar configuración de la empresa:", e);
+                setConfigWarning(`No se pudo cargar la configuración del prestador: ${e.message}`);
             }
         };
 
@@ -486,14 +517,14 @@ export default function RipsGenerator() {
                     const detail = userDetailsMap[p.id] || {};
                     const rolLower = (p.role || detail.rol || "").toLowerCase();
                     const isDoc = detail.esDoctor ?? (rolLower.includes('doctor') || rolLower.includes('odontólog') || rolLower.includes('odontologo'));
-                    const generaRips = Boolean(detail.generaRips || p.generaRips);
+                    const generaRips = (detail.generaRips ?? p.generaRips) === true;
                     if (isDoc && generaRips) {
                         doctorsMap.set(p.id, {
+                            ...p,
+                            ...detail,
                             id: p.id,
                             nombreCompleto: detail.nombreCompleto || p.full_name || `${detail.nombre || ''} ${detail.apellido || ''}`.trim() || p.email,
                             numeroDocumento: detail.numeroDocumento || p.registro_medico || '',
-                            ...detail,
-                            ...p,
                             generaRips: true
                         });
                     }
@@ -503,14 +534,14 @@ export default function RipsGenerator() {
                     const detail = userDetailsMap[u.id] || {};
                     const rolLower = (u.rol || u.role || "").toLowerCase();
                     const isDoc = u.esDoctor || detail.esDoctor || rolLower.includes('doctor') || rolLower.includes('odontólog') || rolLower.includes('odontologo');
-                    const generaRips = Boolean(u.generaRips || detail.generaRips);
+                    const generaRips = (detail.generaRips ?? u.generaRips) === true;
                     if (isDoc && generaRips && !doctorsMap.has(u.id)) {
                         doctorsMap.set(u.id, {
+                            ...u,
+                            ...detail,
                             id: u.id,
                             nombreCompleto: u.nombreCompleto || `${u.nombre || ''} ${u.apellido || ''}`.trim() || u.email,
                             numeroDocumento: u.numeroDocumento || detail.numeroDocumento || '',
-                            ...detail,
-                            ...u,
                             generaRips: true
                         });
                     }
@@ -533,7 +564,7 @@ export default function RipsGenerator() {
     // Auto-cargar facturas disponibles según filtros para el Dual Listbox
     useEffect(() => {
         const fetchAvailable = async () => {
-            if (!inquilino || !dateRange.start || !dateRange.end) {
+            if (!tenantConfig.providerProfile || usesClinicalSources || !inquilino || !dateRange.start || !dateRange.end) {
                 setAvailableInvoices([]);
                 setSelectedInvoices([]);
                 return;
@@ -577,14 +608,7 @@ export default function RipsGenerator() {
                     };
                 };
 
-                const inRange = (docData) => {
-                    const raw = filterType === 'facturacion'
-                        ? (docData.fecha_emision || docData.fecha || docData.fechaFactura || docData.fechaCreacion || docData.created_at || docData.createdAt)
-                        : (docData.fechaRealizado || docData.fechaServicio || docData.fecha_emision || docData.fecha || docData.created_at || docData.createdAt);
-                    const fechaDoc = normalizeFecha(raw);
-                    if (!fechaDoc) return false;
-                    return fechaDoc >= dateRange.start && fechaDoc <= dateRange.end;
-                };
+                const inRange = (docData) => ripsDocumentInRange(docData, filterType, dateRange, normalizeFecha);
 
                 const colecciones = [
                     { nombre: "facturas_electronicas", tipoDoc: "Factura Electrónica" },
@@ -594,9 +618,7 @@ export default function RipsGenerator() {
 
                 const snapshots = await Promise.all(
                     colecciones.map(({ nombre }) =>
-                        supabase.from(nombre).select("*").eq("tenant_id", inquilino)
-                            .then(res => res.data || [])
-                            .catch(() => [])
+                        readRipsSource(supabase, nombre, inquilino, { optional: true })
                     )
                 );
 
@@ -685,11 +707,13 @@ export default function RipsGenerator() {
                 setCheckedSelected(new Set());
             } catch (e) {
                 console.error("Error al cargar facturas disponibles:", e);
+                setAvailableInvoices([]);
+                toast.error(e.message);
             }
         };
 
         fetchAvailable();
-    }, [inquilino, dateRange.start, dateRange.end, selectedEps, selectedSucursal, selectedDoctor, filterType, isIps]);
+    }, [inquilino, dateRange.start, dateRange.end, selectedEps, selectedSucursal, selectedDoctor, filterType, isIps, usesClinicalSources, tenantConfig.providerProfile]);
 
     // Normaliza cualquier campo de fecha (Timestamp, Date, string YYYY-MM-DD) a string "YYYY-MM-DD"
     const normalizeFecha = (val) => {
@@ -767,7 +791,7 @@ export default function RipsGenerator() {
 
     const resolveDoctorInfo = (docIdOrName, profilesList = [], tenantCfg = {}) => {
         const defaultDocType = "CC";
-        const defaultDocNum = String(tenantCfg?.nit || "64576359").replace(/\D/g, "");
+        const defaultDocNum = String(tenantCfg?.nit || "").replace(/\D/g, "");
         if (!docIdOrName) {
             return {
                 tipoDocumentoIdentificacion: defaultDocType,
@@ -793,11 +817,11 @@ export default function RipsGenerator() {
         const target = String(docIdOrName).trim().toLowerCase();
         const profMatch = profilesList.find(p => 
             String(p.id).toLowerCase() === target ||
-            String(p.full_name || p.nombreCompleto || '').toLowerCase().includes(target) ||
-            target.includes(String(p.full_name || p.nombreCompleto || '').toLowerCase())
+            (String(p.nombreCompleto || p.full_name || '').trim() &&
+                (String(p.nombreCompleto || p.full_name).toLowerCase() === target))
         );
         if (profMatch) {
-            const docNum = String(profMatch.documento || profMatch.cedula || profMatch.nroDocumento || profMatch.identificacion || profMatch.registro_medico || defaultDocNum).replace(/\D/g, "");
+            const docNum = String(profMatch.numeroDocumento || profMatch.documento || profMatch.cedula || profMatch.nroDocumento || profMatch.identificacion || profMatch.registro_medico || defaultDocNum).replace(/\D/g, "");
             const docType = String(profMatch.tipoDocumento || profMatch.tipoDoc || defaultDocType).toUpperCase().trim();
             const validTypes = ["CC", "CE", "CD", "PA", "SC", "PE", "DE", "PT"];
             return {
@@ -815,11 +839,20 @@ export default function RipsGenerator() {
     // MOTOR PREFLIGHT V003 CON FUENTES CLÍNICAS REALES
     // ─────────────────────────────────────────────────────────────
 
-    const handleGenerate = async () => {
+    const handleGenerate = async (options = {}) => {
+        const effectiveConfig = options.ripsHistoricalLinkConfig || tenantConfig.rawConfig || {};
         setSearched(true);
         setLoading(true);
         setLogs([]);
+        setHistoricalLinkIssues([]);
         setPreflightStatus("VALIDATING");
+        setPreflightSummary({ total: 0, valid: 0, error: 0, totalErrors: 0 });
+        setPreflightValidationMap(new Map());
+        setRipsDocuments([]);
+        setUsuarios([]);
+        setConsultas([]);
+        setProcedimientos([]);
+        setOtrosServicios([]);
 
         const dianList = [];
         const userList = [];
@@ -828,6 +861,7 @@ export default function RipsGenerator() {
         const otrosList = [];
 
         const validationMap = new Map();
+        const linkIssues = [];
         let totalValidFacturas = 0;
         let totalErrorFacturas = 0;
         let cumulativeErrorsCount = 0;
@@ -837,7 +871,19 @@ export default function RipsGenerator() {
 
             // 1. Filtrar facturas a procesar
             let facturas = [];
-            if (selectedInvoices.length > 0) {
+            let clinicalSnapshots = null;
+            if (usesClinicalSources) {
+                const professional = doctorRipsList.find(d => d.id === selectedDoctor);
+                if (!professional) throw new Error('Seleccione el profesional que genera RIPS.');
+                clinicalSnapshots = await Promise.all(['pacientes', 'listas_precios', 'documentos_clinicos', 'evoluciones', 'treatment_plans', 'profiles']
+                    .map(table => readRipsSource(supabase, table, inquilino).then(data => ({ data }))));
+                clinicalSnapshots[4].data = await applyRipsHistoricalLinks(clinicalSnapshots[4].data, clinicalSnapshots[1].data, effectiveConfig, inquilino);
+                facturas = splitRipsClinicalSources(buildRipsClinicalSources({ plans: clinicalSnapshots[4].data, evolutions: clinicalSnapshots[3].data,
+                    consultations: collectRipsConsultations(clinicalSnapshots[2].data, clinicalSnapshots[0].data, inquilino), patients: clinicalSnapshots[0].data,
+                    priceLists: clinicalSnapshots[1].data,
+                    professional, tenantId: inquilino, range: dateRange, normalizeDate: normalizeFecha,
+                    branchId: selectedSucursal, patientFilter: selectedEps }));
+            } else if (selectedInvoices.length > 0) {
                 facturas = [...selectedInvoices];
                 setLogs(prev => [...prev, `📋 Procesando ${facturas.length} facturas seleccionadas en la lista`]);
             } else {
@@ -878,15 +924,7 @@ export default function RipsGenerator() {
                     };
                 };
 
-                const inRange = (docData) => {
-                    if (!dateRange.start || !dateRange.end) return true;
-                    const raw = filterType === 'facturacion'
-                        ? (docData.fecha_emision || docData.fecha || docData.fechaFactura || docData.fechaCreacion || docData.created_at || docData.createdAt)
-                        : (docData.fechaRealizado || docData.fechaServicio || docData.fecha_emision || docData.fecha || docData.created_at || docData.createdAt);
-                    const fechaDoc = normalizeFecha(raw);
-                    if (!fechaDoc) return false;
-                    return fechaDoc >= dateRange.start && fechaDoc <= dateRange.end;
-                };
+                const inRange = (docData) => ripsDocumentInRange(docData, filterType, dateRange, normalizeFecha);
 
                 const colecciones = [
                     { nombre: "facturas_electronicas", tipoDoc: "Factura Electrónica" },
@@ -896,9 +934,7 @@ export default function RipsGenerator() {
 
                 const snapshots = await Promise.all(
                     colecciones.map(({ nombre }) =>
-                        supabase.from(nombre).select("*").eq("tenant_id", inquilino)
-                            .then(res => res.data || [])
-                            .catch(() => [])
+                        readRipsSource(supabase, nombre, inquilino, { optional: true })
                     )
                 );
 
@@ -971,7 +1007,7 @@ export default function RipsGenerator() {
             }
 
             if (facturas.length === 0) {
-                setDianDocs([]);
+                setRipsDocuments([]);
                 setUsuarios([]);
                 setConsultas([]);
                 setProcedimientos([]);
@@ -992,21 +1028,22 @@ export default function RipsGenerator() {
                 snapEvoluciones,
                 snapPlanes,
                 snapProfiles
-            ] = await Promise.all([
-                supabase.from("pacientes").select("*").eq("tenant_id", inquilino),
-                supabase.from("listas_precios").select("*").eq("tenant_id", inquilino),
-                supabase.from("documentos_clinicos").select("*").eq("tenant_id", inquilino),
-                supabase.from("evoluciones").select("*").eq("tenant_id", inquilino),
-                supabase.from("treatment_plans").select("*").eq("tenant_id", inquilino),
-                supabase.from("profiles").select("*").eq("tenant_id", inquilino)
+            ] = clinicalSnapshots || await Promise.all([
+                readRipsSource(supabase, 'pacientes', inquilino).then(data => ({ data })),
+                readRipsSource(supabase, 'listas_precios', inquilino).then(data => ({ data })),
+                readRipsSource(supabase, 'documentos_clinicos', inquilino).then(data => ({ data })),
+                readRipsSource(supabase, 'evoluciones', inquilino).then(data => ({ data })),
+                readRipsSource(supabase, 'treatment_plans', inquilino).then(data => ({ data })),
+                readRipsSource(supabase, 'profiles', inquilino).then(data => ({ data }))
             ]);
 
             const pacientesList = snapPacientes.data || [];
             const listasPrecios = snapListas.data || [];
-            const docClinicosList = snapDocClinicos.data || [];
+            const docClinicosList = collectRipsConsultations(snapDocClinicos.data || [], pacientesList, inquilino);
             const evolucionesList = snapEvoluciones.data || [];
-            const planesList = snapPlanes.data || [];
-            const profilesList = snapProfiles.data || [];
+            const planesList = await applyRipsHistoricalLinks(snapPlanes.data || [], listasPrecios, effectiveConfig, inquilino);
+            const details = tenantConfig.rawConfig?.user_details || {};
+            const profilesList = (snapProfiles.data || []).map(p => ({ ...p, ...details[p.id] }));
 
             // Mapas de búsqueda rápida
             const pacientesById = new Map();
@@ -1019,21 +1056,6 @@ export default function RipsGenerator() {
                 if (doc) pacientesByDoc.set(doc, p);
                 const name = (`${p.nombres || p.nombre || ""} ${p.apellidos || ""}`).trim().toLowerCase() || (p.nombreCompleto || "").toLowerCase();
                 if (name) pacientesByName.set(name, p);
-            });
-
-            // Catálogo unificado de listas de precios (nombre / código -> ítem de tarifario)
-            const catalogMap = new Map();
-            listasPrecios.forEach(lp => {
-                let pItems = [];
-                try {
-                    pItems = typeof lp.descripcion === "string" ? JSON.parse(lp.descripcion) : (lp.descripcion || []);
-                } catch (_) {}
-                if (Array.isArray(pItems)) {
-                    pItems.forEach(it => {
-                        if (it.codigo) catalogMap.set(String(it.codigo).trim().toUpperCase(), it);
-                        if (it.nombre) catalogMap.set(String(it.nombre).trim().toUpperCase(), it);
-                    });
-                }
             });
 
             // Agrupar documentos clínicos por paciente
@@ -1064,9 +1086,7 @@ export default function RipsGenerator() {
             planesList.forEach(pl => {
                 const pId = pl.paciente_id;
                 if (!pId) return;
-                let itemsArr = [];
-                if (Array.isArray(pl.items)) itemsArr = pl.items;
-                else if (Array.isArray(pl.detalles?.items)) itemsArr = pl.detalles.items;
+                const itemsArr = getRipsPlanItems(pl);
                 if (!planesByPatient.has(pId)) planesByPatient.set(pId, []);
                 planesByPatient.get(pId).push({ ...pl, _items: itemsArr });
             });
@@ -1075,8 +1095,8 @@ export default function RipsGenerator() {
             const selDocName = (selectedDoctorObj?.nombreCompleto || selectedDoctorObj?.nombre || "").toLowerCase().trim();
             const selDocNum = String(selectedDoctorObj?.numeroDocumento || "").trim();
 
-            const nitObligado = currentProviderContext?.obligatedDocument || tenantConfig.nit || "900000000";
-            const codPrestador = currentProviderContext?.providerCode || tenantConfig.codigoPrestador || "000000000001";
+            const nitObligado = currentProviderContext?.obligatedDocument || tenantConfig.nit || "";
+            const codPrestador = currentProviderContext?.providerCode || tenantConfig.codigoPrestador || "";
 
             // 3. Procesar cada factura contra las fuentes clínicas reales
             for (const f of facturas) {
@@ -1086,6 +1106,7 @@ export default function RipsGenerator() {
                     patientPlanes: patientPlanesForDoc,
                     providerProfile: tenantConfig?.providerProfile,
                     providerContext: currentProviderContext,
+                    mode: usesClinicalSources ? RIPS_MODES.OFFICIAL_RIPS_WITHOUT_FEV : undefined,
                 });
 
                 const pacId = normalizedDoc.pacienteId;
@@ -1103,7 +1124,9 @@ export default function RipsGenerator() {
 
                 const invoiceErrors = [];
                 if (!pacienteData) invoiceErrors.push("Paciente no encontrado en base de datos oficial");
-                if (!tenantConfig.nit) invoiceErrors.push("Falta NIT de empresa emisora");
+                if (!nitObligado) invoiceErrors.push("Falta documento del prestador responsable");
+                if (normalizedDoc.modeEligibilityError) invoiceErrors.push(normalizedDoc.modeEligibilityError);
+                if (currentProviderContext.valid === false) invoiceErrors.push(currentProviderContext.error || 'Configuración del prestador incompleta');
                 if (!codPrestador || codPrestador.length < 10) invoiceErrors.push("Código REPS inválido o ausente");
                 if (normalizedDoc.metadataError) invoiceErrors.push(normalizedDoc.metadataError);
 
@@ -1149,16 +1172,16 @@ export default function RipsGenerator() {
                 const patientPlanes = effectivePacId ? (planesByPatient.get(effectivePacId) || []) : [];
 
                 for (let i = 0; i < invoiceItems.length; i++) {
-                    const item = invoiceItems[i];
+                    const rawItem = invoiceItems[i];
+                    const sourcePlan = patientPlanes.find(plan => plan.id === (rawItem.planId || f.planId)) || {};
+                    const item = resolveRipsServiceSettings(rawItem, sourcePlan, listasPrecios);
                     const descText = String(item.descripcion || item.concepto || item.desc || item.nombre || "").trim();
                     const upperDesc = descText.toUpperCase();
                     const rawCupsCandidate = String(item.cups || item.codigo_cups || item.codigo || item.code || "").trim().toUpperCase();
 
                     // Buscar en catálogo
-                    const catalogItem = catalogMap.get(rawCupsCandidate) || catalogMap.get(upperDesc) || null;
-                    if (catalogItem && catalogItem.genera_rips === false) {
-                        continue;
-                    }
+                    const catalogItem = resolveRipsTariffItem(item, sourcePlan, listasPrecios).item;
+                    const ripsDisabled = item.genera_rips === false;
 
                     const explicitCups = rawCupsCandidate || catalogItem?.codigo || "";
                     const isOtroServicio = Boolean(
@@ -1167,15 +1190,18 @@ export default function RipsGenerator() {
                         catalogItem?.tipo_servicio === "otrosServicios" ||
                         item.tipoOS
                     );
-                    const isConsulta = !isOtroServicio && Boolean(
-                        item.es_consulta ||
-                        catalogItem?.es_consulta ||
-                        item.asocConsultaId ||
-                        (explicitCups && explicitCups.startsWith("890"))
-                    );
+                    const isConsulta = !isOtroServicio && item.es_consulta;
 
                     const valorServ = Number(item.total || item.valor || item.precio || item.precioUnitario || 0);
                     const itemErrors = [];
+                    if (item._ripsConfigError) itemErrors.push(item._ripsConfigError);
+                    if (ripsDisabled && !item._ripsConfigError) itemErrors.push(`El servicio «${descText}» tiene desactivado Genera RIPS ${item._ripsTariffSource ? `en ${item._ripsTariffSource}` : 'en la copia histórica del presupuesto; no se localizó una opción vigente del tarifario'}.`);
+                    if ((item._ripsConfigError || ripsDisabled) && sourcePlan.id && item.id != null) {
+                        const key = await ripsHistoricalLinkKey(inquilino, sourcePlan.id, item.id, rawCupsCandidate);
+                        if (!linkIssues.some(issue => issue.key === key)) linkIssues.push({ key, tenantId: inquilino,
+                            planId: sourcePlan.id, itemId: item.id, cups: rawCupsCandidate, patient: pacNombre,
+                            description: descText, candidates: ripsHistoricalLinkOptions(item, listasPrecios) });
+                    }
 
                     if (isOtroServicio) {
                         // ── FLUJO OTROS SERVICIOS (Fuente: insumos / contrataciones DT1 v003) ──
@@ -1208,7 +1234,8 @@ export default function RipsGenerator() {
 
                         const osRow = {
                             docPaciente: patientDoc,
-                            invoiceId,
+                            invoiceId: normalizedDoc.numFactura,
+                            ripsDocumentId: invoiceId,
                             codPrestador,
                             fechaSuministroTecnologia: fechaAtencion,
                             numAutorizacion: f.nroAutorizacion || f.autorizacion || null,
@@ -1253,13 +1280,13 @@ export default function RipsGenerator() {
                         if (item.asocConsultaId) {
                             matchedDoc = patientConsultas.find(d => d.id === item.asocConsultaId || d.legacy_id === item.asocConsultaId);
                         }
-                        if (!matchedDoc && explicitCups) {
+                        if (!usesClinicalSources && !matchedDoc && explicitCups) {
                             matchedDoc = patientConsultas.find(d => 
                                 (d.tipo === "Consulta" || d.tipoDocumento === "Consulta") &&
                                 (d.metadata?.cups === explicitCups || d.metadata?.codigo_cups === explicitCups)
                             );
                         }
-                        if (!matchedDoc) {
+                        if (!usesClinicalSources && !matchedDoc) {
                             matchedDoc = patientConsultas.find(d => (d.tipo === "Consulta" || d.tipoDocumento === "Consulta"));
                         }
 
@@ -1269,6 +1296,12 @@ export default function RipsGenerator() {
 
                         const docMeta = matchedDoc?.metadata || {};
                         const docCups = docMeta.cups || docMeta.codigo_cups || explicitCups;
+                        if (matchedDoc && explicitCups && String(docCups) !== String(explicitCups)) {
+                            itemErrors.push('RIPS_CLINICAL_CUPS_MISMATCH: La consulta vinculada debe tener el mismo código CUPS del presupuesto.');
+                        }
+                        if (matchedDoc && (matchedDoc.finalizado === false || docMeta.finalizado === false || ['borrador', 'draft', 'en_proceso', 'en proceso'].includes(String(matchedDoc.estado || docMeta.estado || '').toLowerCase()))) {
+                            itemErrors.push('RIPS_CLINICAL_SOURCE_INCOMPLETE: La consulta vinculada no está finalizada.');
+                        }
                         if (!docCups || docCups.length !== 6) {
                             itemErrors.push("INVALID_CUPS_CODE: Código CUPS de consulta ausente o inválido (debe tener 6 caracteres)");
                         }
@@ -1283,7 +1316,7 @@ export default function RipsGenerator() {
                         const dxRelArray = Array.isArray(docMeta.dxRelacionadosConsulta) ? docMeta.dxRelacionadosConsulta : [];
                         const codDxRel1 = dxRelArray[0]?.code || dxRelArray[0] || null;
 
-                        const profObj = resolveDoctorInfo(matchedDoc?.profesional_id || docMeta.profesionalNombre, profilesList, tenantConfig);
+                        const profObj = resolveDoctorInfo(matchedDoc?.profesional_id || docMeta.profesionalNombre || docMeta.profesional, profilesList, tenantConfig);
                         if (!isIps && selectedDoctor) {
                             const isAssignedToOtherDoctor = doctorRipsList.some(otherDoc => {
                                 if (otherDoc.id === selectedDoctor) return false;
@@ -1296,13 +1329,14 @@ export default function RipsGenerator() {
                                 if (otherName && docMeta?.profesionalNombre && docMeta.profesionalNombre.toLowerCase().includes(otherName)) return true;
                                 return false;
                             });
-                            if (isAssignedToOtherDoctor) continue;
+                            if (!usesClinicalSources && isAssignedToOtherDoctor) continue;
                         }
-                        const fechaAtencion = formatDateTimeRips(matchedDoc?.fecha || matchedDoc?.created_at || fechaDoc);
+                        const fechaAtencion = formatDateTimeRips(matchedDoc?.fecha || docMeta.fechaIso || matchedDoc?.created_at || fechaDoc);
 
                         const consultaRow = {
                             docPaciente: patientDoc,
-                            invoiceId,
+                            invoiceId: normalizedDoc.numFactura,
+                            ripsDocumentId: invoiceId,
                             codPrestador,
                             fechaInicio: fechaAtencion,
                             numAutorizacion: f.nroAutorizacion || f.autorizacion || null,
@@ -1349,10 +1383,13 @@ export default function RipsGenerator() {
                         // ── FLUJO PROCEDIMIENTOS (Fuente: evoluciones + planes realizados) ──
                         let matchedPlanItem = null;
                         for (const pl of patientPlanes) {
+                            if (item.planId && pl.id !== item.planId) continue;
                             const it = pl._items.find(pi => 
-                                (item.id && pi.id === item.id) ||
-                                (explicitCups && (pi.codigo === explicitCups || pi.codigo_cups === explicitCups)) ||
-                                (pi.nombre && pi.nombre.trim().toUpperCase() === upperDesc)
+                                item.clinicalSourceType === 'PLAN_ITEM' || item.planId
+                                    ? pi.id === item.planItemId
+                                    : (((item.planItemId || item.id) && pi.id === (item.planItemId || item.id)) ||
+                                        (explicitCups && (pi.codigo === explicitCups || pi.codigo_cups === explicitCups)) ||
+                                        (pi.nombre && pi.nombre.trim().toUpperCase() === upperDesc))
                             );
                             if (it) {
                                 matchedPlanItem = it;
@@ -1365,17 +1402,14 @@ export default function RipsGenerator() {
                             matchedEvo = patientEvoluciones.find(e => e.id === item.evolutionId);
                         }
                         if (!matchedEvo && matchedPlanItem) {
-                            matchedEvo = patientEvoluciones.find(e => e._tData?.procedimientoId === matchedPlanItem.id);
+                            matchedEvo = patientEvoluciones.find(e => (!item.planId || e._tData?.planId === item.planId) &&
+                                (e._tData?.procedimientoId === matchedPlanItem.id || e._tData?.plantillaItems?.[matchedPlanItem.id]?.realizado === true ||
+                                (e._tData?.plantillaItems?.[matchedPlanItem.id]?.realizado === undefined && e._tData?.plantillaItems?.[matchedPlanItem.id]?.checked === true)));
                         }
-                        if (!matchedEvo) {
+                        if (!usesClinicalSources && !matchedEvo) {
                             matchedEvo = patientEvoluciones.find(e => 
                                 e._tData?.procedimientoTexto && e._tData.procedimientoTexto.trim().toUpperCase() === upperDesc
                             );
-                        }
-                        if (!matchedEvo && patientEvoluciones.length > 0) {
-                            if (matchedPlanItem && (matchedPlanItem.realizado || matchedPlanItem.status === 'completed')) {
-                                matchedEvo = patientEvoluciones[0];
-                            }
                         }
 
                         const isRealizado = Boolean(
@@ -1417,13 +1451,14 @@ export default function RipsGenerator() {
                                 if (otherName && evoData?.doctor && String(evoData.doctor).toLowerCase().includes(otherName)) return true;
                                 return false;
                             });
-                            if (isAssignedToOtherDoctor) continue;
+                            if (!usesClinicalSources && isAssignedToOtherDoctor) continue;
                         }
                         const fechaAtencion = formatDateTimeRips(matchedEvo?.fecha || evoData.date || matchedPlanItem?.fechaRealizado || fechaDoc);
 
                         const procRow = {
                             docPaciente: patientDoc,
-                            invoiceId,
+                            invoiceId: normalizedDoc.numFactura,
+                            ripsDocumentId: invoiceId,
                             codPrestador,
                             fechaProcedimiento: fechaAtencion,
                             numAutorizacion: f.nroAutorizacion || f.autorizacion || null,
@@ -1478,13 +1513,13 @@ export default function RipsGenerator() {
                     invoiceErrors.push(...patientErrors);
                 }
 
-                // Si se está filtrando por profesional independiente, omitir facturas que no tengan servicios de este doctor
-                if (!isIps && selectedDoctor && adaptedAtencionesForInvoice.length === 0) {
-                    continue;
+                // Una atención inválida debe permanecer visible para poder corregirla.
+                if (adaptedAtencionesForInvoice.length === 0 && invoiceErrors.length === 0) {
+                    invoiceErrors.push('No hay servicios RIPS elegibles para el profesional y la configuración seleccionados. Revise los vínculos clínicos y la opción genera RIPS del tarifario.');
                 }
 
-                // Solo agregar a la tabla de Usuarios si la factura tiene atenciones correspondientes
-                if (adaptedAtencionesForInvoice.length > 0 && !userList.some(u => u.numDocumentoIdentificacion === usuarioWithValidation.numDocumentoIdentificacion)) {
+                // Mantener al paciente visible aunque la atención requiera corregir datos.
+                if (!userList.some(u => u.numDocumentoIdentificacion === usuarioWithValidation.numDocumentoIdentificacion)) {
                     userList.push(usuarioWithValidation);
                 }
 
@@ -1592,13 +1627,15 @@ export default function RipsGenerator() {
                 });
             }
 
-            setDianDocs(dianList);
+            setRipsDocuments(dianList);
+            setHistoricalLinkIssues(linkIssues);
             setUsuarios(userList);
             setConsultas(conList);
             setProcedimientos(procList);
             setOtrosServicios(otrosList);
 
             setSelectedDianDocIds(new Set());
+        setSelectedClinicalDocIds(new Set());
             setPageDian(1);
             setPageUsuarios(1);
             setPageConsultas(1);
@@ -1607,7 +1644,7 @@ export default function RipsGenerator() {
 
             setPreflightValidationMap(validationMap);
             setPreflightSummary({
-                total: facturas.length,
+                total: dianList.length,
                 valid: totalValidFacturas,
                 error: totalErrorFacturas,
                 totalErrors: cumulativeErrorsCount
@@ -1646,12 +1683,31 @@ export default function RipsGenerator() {
 
         } catch (error) {
             console.error("Error en validación preflight:", error);
-            setPreflightStatus("HAS_ERRORS");
+            setPreflightStatus("LOAD_ERROR");
             setLogs(prev => [...prev, `❌ Error en preflight: ${error.message}`]);
-            toast.error("Error al ejecutar validación preflight.");
+            toast.error(`No se pudo completar la consulta RIPS: ${error.message}`);
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleSaveHistoricalLink = async issue => {
+        if (historicalLinkChoices[issue.key] == null || historicalLinkChoices[issue.key] === '') return;
+        const choice = issue.candidates.find(candidate => `${candidate.listId}:${candidate.productId}` === historicalLinkChoices[issue.key]);
+        if (!choice || !choice.productId || choice.cups !== issue.cups || issue.tenantId !== inquilino) return;
+        setSavingHistoricalLink(true);
+        try {
+            const link = { tenantId: inquilino, planId: issue.planId, itemId: issue.itemId,
+                cups: issue.cups, listId: choice.listId, productId: choice.productId,
+                updatedAt: new Date().toISOString(), updatedBy: userProfile?.id || userProfile?.uid || null };
+            const updated = await saveConfigSection(inquilino, issue.key, link);
+            const config = { ...tenantConfig.rawConfig, ...updated, [issue.key]: link };
+            setTenantConfig(previous => ({ ...previous, rawConfig: config }));
+            toast.success('Vínculo RIPS guardado. Se conservan la evolución y los valores originales.');
+            await handleGenerate({ ripsHistoricalLinkConfig: config });
+        } catch (error) {
+            toast.error(`No se pudo guardar el vínculo RIPS: ${error.message}`);
+        } finally { setSavingHistoricalLink(false); }
     };
 
     // ─────────────────────────────────────────────────────────────
@@ -1668,7 +1724,11 @@ export default function RipsGenerator() {
 
     const handleSendRipsWithoutFevToMuv = async (docId) => {
         if (transmittingMuv) return;
-        const targetDoc = dianDocs.find(d => d.id === docId);
+        if (muvValidationsMap.get(docId)?.cuv) {
+            toast.info('Esta prestación ya tiene CUV.');
+            return;
+        }
+        const targetDoc = ripsDocuments.find(d => d.id === docId);
         if (!targetDoc || targetDoc.sourceMode !== RIPS_MODES.OFFICIAL_RIPS_WITHOUT_FEV) {
             toast.error("Este documento no está configurado bajo la modalidad oficial de RIPS sin Factura.");
             return;
@@ -1681,11 +1741,14 @@ export default function RipsGenerator() {
         }
 
         setTransmittingMuv(true);
+        setMuvValidationsMap(previous => new Map(previous).set(docId, { uiState: MUV_UI_STATES.VALIDATING, estadoDb: 'PENDIENTE' }));
         const toastId = toast.loading(`Transmitiendo RIPS sin Factura ${docId} al MUV...`);
 
         try {
             const res = await transmitRipsWithoutFev({
                 ripsJson: preflightData.ripsJson,
+                doctorIdOverride: selectedDoctor || undefined,
+                documentoId: docId,
             });
 
             toast.dismiss(toastId);
@@ -1705,11 +1768,17 @@ export default function RipsGenerator() {
                     return next;
                 });
             } else if (res.estado === "REJECTED") {
+                setMuvValidationsMap(previous => new Map(previous).set(docId, { uiState: MUV_UI_STATES.REJECTED,
+                    estadoDb: 'RECHAZADO', errores: res.errores || [], cuv: null }));
                 toast.error(`Rechazado por MUV: ${res.errores?.[0]?.friendlyDescription || res.message}`);
             } else {
+                setMuvValidationsMap(previous => new Map(previous).set(docId, { uiState: MUV_UI_STATES.ERROR,
+                    estadoDb: 'ERROR', message: res.message || 'No se recibió CUV.', cuv: null }));
                 toast.error(`Aviso MUV: ${res.message || "Error en validación"}`);
             }
         } catch (err) {
+            setMuvValidationsMap(previous => new Map(previous).set(docId, { uiState: MUV_UI_STATES.ERROR,
+                estadoDb: 'ERROR', message: err.message, cuv: null }));
             toast.dismiss(toastId);
             toast.error(`Fallo de transmisión: ${err.message}`);
         } finally {
@@ -1720,7 +1789,7 @@ export default function RipsGenerator() {
     const handleSendSingleToMuv = async (invoiceId) => {
         if (transmittingMuv) return; // Protección anti doble-clic
 
-        const targetDianDoc = dianDocs.find(d => d.id === invoiceId);
+        const targetDianDoc = ripsDocuments.find(d => d.id === invoiceId);
         if (targetDianDoc?.sourceMode === RIPS_MODES.LOCAL_PREVIEW) {
             toast.error("OFFICIAL_FEV_REQUIRED: No se puede enviar a MUV desde un recibo de previsualización local. Se requiere una Factura Electrónica en Salud (FEV) oficial emitida ante la DIAN, o configurar el perfil de Profesional Independiente no obligado a facturar.");
             return;
@@ -1837,12 +1906,12 @@ export default function RipsGenerator() {
 
     const handleSendBatchToMuv = async () => {
         if (transmittingMuv) return; // Anti doble-clic
-        if (preflightStatus !== 'READY') {
+        if (!['READY', 'OFFICIAL_RIPS_WITHOUT_FEV'].includes(preflightStatus)) {
             toast.error("Corrige los datos clínicos antes de enviar.");
             return;
         }
 
-        const validEntries = Array.from(preflightValidationMap.values()).filter(v => v.valid && v.ripsJson);
+        const validEntries = Array.from(preflightValidationMap.values()).filter(v => v.valid && v.ripsJson && (!usesClinicalSources || selectedClinicalDocIds.size === 0 || selectedClinicalDocIds.has(v.invoiceId)));
         if (validEntries.length === 0) {
             toast.error("No hay facturas con validación clínica aprobada para enviar al MUV.");
             return;
@@ -1873,7 +1942,7 @@ export default function RipsGenerator() {
         setDetailModalData(null);
         toast.info(`Regenerando RIPS desde historia clínica para factura ${invoiceId}...`);
         setLogs(prev => [...prev, `🔄 [REINTENTO] Regenerando RIPS y recalculando preflight para factura ${invoiceId}...`]);
-        await handlePreflightValidation();
+        await handleGenerate();
     };
 
     // ─────────────────────────────────────────────────────────────
@@ -2221,10 +2290,12 @@ export default function RipsGenerator() {
         }
 
         let targetDocs = [];
-        if (selectedDianDocIds.size > 0) {
-            targetDocs = dianDocs.filter(d => selectedDianDocIds.has(d.id));
+        if (usesClinicalSources && selectedClinicalDocIds.size > 0) {
+            targetDocs = ripsDocuments.filter(doc => selectedClinicalDocIds.has(doc.id));
+        } else if (selectedDianDocIds.size > 0) {
+            targetDocs = ripsDocuments.filter(d => selectedDianDocIds.has(d.id));
         } else {
-            targetDocs = dianDocs;
+            targetDocs = ripsDocuments;
         }
 
         if (targetDocs.length === 0) {
@@ -2329,10 +2400,12 @@ export default function RipsGenerator() {
         }
 
         let targetDocs = [];
-        if (selectedDianDocIds.size > 0) {
-            targetDocs = dianDocs.filter(d => selectedDianDocIds.has(d.id));
+        if (usesClinicalSources && selectedClinicalDocIds.size > 0) {
+            targetDocs = ripsDocuments.filter(doc => selectedClinicalDocIds.has(doc.id));
+        } else if (selectedDianDocIds.size > 0) {
+            targetDocs = ripsDocuments.filter(d => selectedDianDocIds.has(d.id));
         } else {
-            targetDocs = dianDocs.filter(d => d.errors.length === 0);
+            targetDocs = ripsDocuments.filter(d => d.errors.length === 0);
         }
 
         if (targetDocs.length === 0) {
@@ -2340,7 +2413,7 @@ export default function RipsGenerator() {
             return;
         }
 
-        const localPreviews = targetDocs.filter(d => d.sourceMode === 'LOCAL_PREVIEW' || !d.isOfficialInvoice);
+        const localPreviews = targetDocs.filter(d => d.sourceMode === RIPS_MODES.LOCAL_PREVIEW);
         if (localPreviews.length > 0) {
             toast.error("OFFICIAL_FEV_REQUIRED: Se seleccionaron documentos de previsualización local (recibos/pagos). Se requiere Factura Electrónica en Salud (FEV) oficial para enviar a MinSalud.");
             return;
@@ -2348,6 +2421,7 @@ export default function RipsGenerator() {
 
         // Validación de AttachedDocument
         const unattached = targetDocs.filter(d => {
+            if (d.sourceMode === RIPS_MODES.OFFICIAL_RIPS_WITHOUT_FEV) return false;
             const hasXml = Boolean(d.rawDoc?.attached_document_xml || d.rawDoc?.xml_content || d.rawDoc?.xml);
             const hasCufe = Boolean(d.cufe && d.cufe !== "SIN_CUFE");
             const hasFactus = Boolean(d.rawDoc?.factus_id);
@@ -2373,6 +2447,41 @@ export default function RipsGenerator() {
         setTransmittingMuv(false);
     };
 
+    const toggleClinicalSelection = id => setSelectedClinicalDocIds(previous => {
+        const next = new Set(previous);
+        if (next.has(id)) next.delete(id); else next.add(id);
+        return next;
+    });
+    const toggleClinicalSection = rows => setSelectedClinicalDocIds(previous => {
+        const next = new Set(previous);
+        const ids = rows.map(row => row.ripsDocumentId);
+        const remove = ids.every(id => next.has(id));
+        ids.forEach(id => remove ? next.delete(id) : next.add(id));
+        return next;
+    });
+    const renderClinicalStatus = row => {
+        const info = muvValidationsMap.get(row.ripsDocumentId);
+        const ready = preflightValidationMap.get(row.ripsDocumentId)?.valid;
+        const label = info?.cuv ? 'ACEPTADO MUV' : info?.uiState === MUV_UI_STATES.VALIDATING ? 'ENVIANDO'
+            : info?.uiState === MUV_UI_STATES.REJECTED ? 'RECHAZADO MUV' : info?.uiState === MUV_UI_STATES.ERROR ? 'ERROR TÉCNICO'
+            : row.errors?.length ? 'CON ERRORES' : ready ? 'LISTO PARA ENVIAR' : 'PENDIENTE DE DATOS';
+        return <span title={(row.errors || []).join('\n')} className={`px-2 py-0.5 rounded text-[10px] font-bold border ${info?.cuv
+            ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : row.errors?.length || info?.uiState === MUV_UI_STATES.REJECTED
+                ? 'bg-rose-100 text-rose-800 border-rose-200' : 'bg-slate-100 text-slate-700 border-slate-200'}`}>{label}</span>;
+    };
+    const renderClinicalActions = (row, kind) => {
+        const info = muvValidationsMap.get(row.ripsDocumentId);
+        if (info?.cuv) return <button type="button" onClick={() => setDetailModalData({ type: 'ACCEPTED', invoiceId: row.ripsDocumentId, info })} className="text-emerald-700 font-semibold">Ver CUV</button>;
+        if (!usesClinicalSources) return <span className="text-slate-400">En Documentos DIAN</span>;
+        if (info?.uiState === MUV_UI_STATES.REJECTED || info?.uiState === MUV_UI_STATES.ERROR) return <button type="button"
+            onClick={() => setDetailModalData({ type: info.uiState === MUV_UI_STATES.REJECTED ? 'REJECTED' : 'ERROR', invoiceId: row.ripsDocumentId, info })}
+            className="text-rose-700 font-semibold">Ver resultado</button>;
+        return <button type="button" aria-label={`Enviar ${kind} ${row.codConsulta || row.codProcedimiento || row.codTecnologiaSalud} de ${row.docPaciente}`}
+            disabled={transmittingMuv || !preflightValidationMap.get(row.ripsDocumentId)?.valid}
+            onClick={() => handleSendRipsWithoutFevToMuv(row.ripsDocumentId)}
+            className="px-2 py-1 rounded bg-sky-600 text-white disabled:opacity-40 inline-flex items-center gap-1"><FiSend size={12} />Enviar {kind}</button>;
+    };
+
     return (
         <div className="p-6 max-w-7xl mx-auto animation-fade-in-up font-sans text-slate-800 space-y-5 pb-12">
             
@@ -2386,7 +2495,7 @@ export default function RipsGenerator() {
                         <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400">
                             <span>Administración</span>
                             <FiChevronRight size={12} />
-                            <span className="text-sky-600 font-bold">RIPS JSON (Res. 2275)</span>
+                            <span className="text-sky-600 font-bold">RIPS JSON (Res. 948 de 2026)</span>
                         </div>
                         <h1 className="text-sm font-bold text-slate-800 tracking-tight">Generador de RIPS JSON</h1>
                     </div>
@@ -2420,20 +2529,20 @@ export default function RipsGenerator() {
             </div>
 
             {/* Warning Banner if Tenant Config is incomplete */}
-            {configWarning && (
+            {providerWarning && (
                 <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-2xs animate-in fade-in">
                     <div className="flex items-center gap-2.5">
                         <FiAlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
                         <div>
                             <h4 className="text-xs font-bold text-amber-900">Configuración Incompleta para RIPS</h4>
-                            <p className="text-xs text-amber-700">{configWarning}</p>
+                            <p className="text-xs text-amber-700">{providerWarning}</p>
                         </div>
                     </div>
                     <button
-                        onClick={() => navigate(buildDashboardPath("config"))}
+                        onClick={() => navigate(buildDashboardPath(isIps ? "config/datos-basicos" : "config/usuarios"))}
                         className="h-8 px-3.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all shrink-0 cursor-pointer shadow-2xs"
                     >
-                        <FiSettings size={13} /> Configurar Empresa
+                        <FiSettings size={13} /> {isIps ? 'Configurar Empresa' : 'Configurar Profesional'}
                     </button>
                 </div>
             )}
@@ -2532,11 +2641,12 @@ export default function RipsGenerator() {
                             Generar con
                         </label>
                         <div className="flex flex-wrap items-center gap-6">
-                            <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-600">
+                            <label className={usesClinicalSources ? 'hidden' : 'flex items-center gap-2 cursor-pointer text-xs text-slate-600'}>
                                 <input 
                                     type="radio" 
                                     name="filterType"
                                     value="facturacion"
+                                    disabled={usesClinicalSources}
                                     checked={filterType === 'facturacion'}
                                     onChange={() => setFilterType('facturacion')}
                                     className="w-3.5 h-3.5 text-sky-600 border-slate-300 focus:ring-sky-500 cursor-pointer"
@@ -2635,7 +2745,7 @@ export default function RipsGenerator() {
                     </div>
 
                     {/* Row 5: Dual Listbox / Transfer List 1:1 OralDrive (Solo visible cuando se selecciona un Tercero / Paciente) */}
-                    {selectedEps && (
+                    {selectedEps && !usesClinicalSources && (
                         <div className="pt-4 border-t border-slate-100 animate-in fade-in duration-200">
                             <div className="grid grid-cols-1 md:grid-cols-11 gap-3 items-center">
                                 
@@ -2778,7 +2888,17 @@ export default function RipsGenerator() {
                 <div className="space-y-4 w-full mt-6 animate-in fade-in duration-300">
 
                     {/* Banner de Estado Preflight Normativo v003 */}
-                    {preflightStatus && (
+                    {preflightStatus === 'LOAD_ERROR' && (
+                        <div role="alert" className="p-4 rounded-xl border border-amber-300 bg-amber-50 text-sm text-amber-900">
+                            No se pudo completar la consulta RIPS. {logs[logs.length - 1]}
+                        </div>
+                    )}
+                    {!loading && !preflightStatus && ripsDocuments.length === 0 && (
+                        <div role="status" className="p-4 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-600">
+                            {usesClinicalSources ? 'No se encontraron atenciones realizadas de este profesional en el período. Revise el profesional de la evolución y la consulta vinculada al presupuesto.' : 'No se encontraron facturas con estos filtros. Revise las fechas y el profesional seleccionado.'}
+                        </div>
+                    )}
+                    {preflightStatus && !['VALIDATING', 'LOAD_ERROR'].includes(preflightStatus) && (
                         <div className={`p-4 rounded-xl border shadow-2xs transition-all ${
                             preflightStatus === 'READY'
                                 ? 'bg-emerald-50/95 border-emerald-300 text-emerald-900'
@@ -2955,7 +3075,47 @@ export default function RipsGenerator() {
                         </div>
                     )}
                     
-                    {/* 1. Documentos DIAN */}
+                    {historicalLinkIssues.length > 0 && (
+                        <section aria-label="Vincular productos históricos RIPS" className="p-4 rounded-xl border border-amber-200 bg-amber-50 text-xs text-slate-700 space-y-4">
+                            <h3 className="font-bold">Resolver productos históricos para RIPS</h3>
+                            <p>Vincule el servicio realizado con su producto actual. Se conservan el presupuesto, la evolución, el nombre histórico y sus valores.</p>
+                            {historicalLinkIssues.map(issue => (
+                                <div key={issue.key} className="space-y-2 border-t border-amber-200 pt-3">
+                                    <p className="font-semibold">{issue.patient} — {issue.description} · CUPS {issue.cups}</p>
+                                    {issue.candidates.length > 0 ? <div className="flex flex-col sm:flex-row gap-2">
+                                        <select aria-label={`Producto RIPS de ${issue.patient}: ${issue.description}`}
+                                            value={historicalLinkChoices[issue.key] ?? ''}
+                                            onChange={event => setHistoricalLinkChoices(previous => ({ ...previous, [issue.key]: event.target.value }))}
+                                            className="flex-1 border border-slate-300 rounded p-2 bg-white">
+                                            <option value="">Seleccione el producto de origen…</option>
+                                            {issue.candidates.map(candidate => <option key={`${candidate.listId}:${candidate.productId}`} value={`${candidate.listId}:${candidate.productId}`}>
+                                                {candidate.listName} / {candidate.productName} · Genera RIPS: {candidate.generaRips === true ? 'Sí' : 'No'} · {candidate.esConsulta === true ? 'Consulta' : 'Procedimiento'}
+                                            </option>)}
+                                        </select>
+                                        <button type="button" disabled={loading || savingHistoricalLink || historicalLinkChoices[issue.key] == null || historicalLinkChoices[issue.key] === ''}
+                                            onClick={() => handleSaveHistoricalLink(issue)} className="rounded px-3 py-2 bg-sky-600 text-white font-semibold disabled:opacity-40">
+                                            Vincular solo para RIPS
+                                        </button>
+                                    </div> : <p>No se encontró un producto con el mismo CUPS. Revise el código y el producto de origen en la lista de precios.</p>}
+                                </div>
+                            ))}
+                        </section>
+                    )}
+                    {ripsDocuments.some(doc => doc.errors.length > 0) && (
+                        <section aria-label="Observaciones RIPS" className="p-4 rounded-xl border border-rose-200 bg-rose-50 text-xs text-rose-900 space-y-3">
+                            <h3 className="font-bold">Datos por corregir para generar RIPS</h3>
+                            {ripsDocuments.filter(doc => doc.errors.length > 0).map(doc => (
+                                <div key={doc.id}>
+                                    <p className="font-semibold">{doc.paciente}</p>
+                                    <ul className="list-disc pl-5">
+                                        {[...new Set(doc.errors)].map((error, index) => <li key={index}>{error}</li>)}
+                                    </ul>
+                                </div>
+                            ))}
+                        </section>
+                    )}
+
+                    {/* 1. Documentos DIAN: exclusivamente facturas electrónicas */}
                     <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
                         <div 
                             onClick={() => setOpenDian(!openDian)}
@@ -3031,8 +3191,8 @@ export default function RipsGenerator() {
                                                         badgeLabel = "VALIDADO";
                                                         badgeClass = "bg-emerald-100 text-emerald-800 border-emerald-300 font-bold";
                                                     } else if (doc.errors.length === 0) {
-                                                        badgeLabel = "VALIDADO";
-                                                        badgeClass = "bg-blue-50 text-blue-700 border-blue-200 font-semibold";
+                                                        badgeLabel = "LISTO PARA ENVIAR";
+                                                        badgeClass = "bg-slate-50 text-blue-700 border-blue-200 font-semibold";
                                                     } else {
                                                         badgeLabel = "CON ERRORES";
                                                         badgeClass = "bg-rose-50 text-rose-700 border-rose-200";
@@ -3320,7 +3480,7 @@ export default function RipsGenerator() {
                                     <table className="w-full text-left border-collapse text-xs">
                                         <thead>
                                             <tr className="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold text-[11px] whitespace-nowrap">
-                                                <th className="py-2 px-3 text-center w-12"><input type="checkbox" className="w-3.5 h-3.5 rounded text-sky-600 border-slate-300" /></th>
+                                                <th className="py-2 px-3 text-center w-12"><input type="checkbox" aria-label="Seleccionar todas las consultas" disabled={!usesClinicalSources || filteredConsultas.length === 0} checked={usesClinicalSources && filteredConsultas.length > 0 && filteredConsultas.every(row => selectedClinicalDocIds.has(row.ripsDocumentId))} onChange={() => toggleClinicalSection(filteredConsultas)} className="w-3.5 h-3.5 rounded text-sky-600 border-slate-300" /></th>
                                                 <th className="py-2 px-3">Estado</th>
                                                 <th className="py-2 px-3">Identificación del paciente</th>
                                                 <th className="py-2 px-3">Número de la factura</th>
@@ -3356,15 +3516,9 @@ export default function RipsGenerator() {
                                             ) : (
                                                 paginatedConsultas.map((c, idx) => (
                                                     <tr key={idx} className="hover:bg-slate-50/60">
-                                                        <td className="py-2 px-3 text-center"><input type="checkbox" className="w-3.5 h-3.5 rounded text-sky-600 border-slate-300" /></td>
+                                                        <td className="py-2 px-3 text-center"><input type="checkbox" aria-label={`Seleccionar consulta de ${c.docPaciente}`} disabled={!usesClinicalSources} checked={usesClinicalSources && selectedClinicalDocIds.has(c.ripsDocumentId)} onChange={() => toggleClinicalSelection(c.ripsDocumentId)} className="w-3.5 h-3.5 rounded text-sky-600 border-slate-300" /></td>
                                                         <td className="py-2 px-3">
-                                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                                                c.errors.length === 0 
-                                                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
-                                                                    : 'bg-rose-100 text-rose-800 border border-rose-200'
-                                                            }`}>
-                                                                {c.errors.length === 0 ? 'VALIDADO' : 'CON ERRORES'}
-                                                            </span>
+                                                            {renderClinicalStatus(c)}
                                                         </td>
                                                         <td className="py-2 px-3 font-bold">{c.docPaciente}</td>
                                                         <td className="py-2 px-3">{c.invoiceId}</td>
@@ -3388,8 +3542,8 @@ export default function RipsGenerator() {
                                                         <td className="py-2 px-3 font-mono">{c.conceptoRecaudo || "05"}</td>
                                                         <td className="py-2 px-3 text-right font-mono">{fmt(c.valorPagoModerador || 0)}</td>
                                                         <td className="py-2 px-3 font-mono">{c.numFEVPagoModerador || '-'}</td>
-                                                        <td className="py-2 px-3 font-mono text-slate-400">-</td>
-                                                        <td className="py-2 px-3 text-center text-slate-400">-</td>
+                                                        <td className="py-2 px-3 font-mono" title={muvValidationsMap.get(c.ripsDocumentId)?.cuv || ''}>{muvValidationsMap.get(c.ripsDocumentId)?.cuv || '-'}</td>
+                                                        <td className="py-2 px-3 text-center">{renderClinicalActions(c, 'consulta')}</td>
                                                     </tr>
                                                 ))
                                             )}
@@ -3398,9 +3552,9 @@ export default function RipsGenerator() {
                                 </div>
                                 <div className="bg-slate-50/50 px-4 py-2 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-slate-500 font-medium">
                                     <div className="flex flex-wrap items-center gap-4">
-                                        <span>Validado correctamente: <strong className="text-emerald-700 font-bold">{consultas.filter(c => c.errors.length === 0).length}</strong></span>
-                                        <span>Validado con errores: <strong className="text-rose-700 font-bold">{consultas.filter(c => c.errors.length > 0).length}</strong></span>
-                                        <span>Sin validar: <strong className="text-slate-700 font-bold">{preflightStatus === null ? consultas.length : 0}</strong></span>
+                                        <span>Validado correctamente: <strong className="text-emerald-700 font-bold">{consultas.filter(row => muvValidationsMap.get(row.ripsDocumentId)?.cuv).length}</strong></span>
+                                        <span>Validado con errores: <strong className="text-rose-700 font-bold">{consultas.filter(row => row.errors?.length > 0 || muvValidationsMap.get(row.ripsDocumentId)?.uiState === MUV_UI_STATES.REJECTED).length}</strong></span>
+                                        <span>Sin validar: <strong className="text-slate-700 font-bold">{consultas.filter(row => !muvValidationsMap.get(row.ripsDocumentId)?.cuv && !row.errors?.length).length}</strong></span>
                                     </div>
                                     {filteredConsultas.length > PAGE_SIZE && (
                                         <div className="flex items-center gap-2">
@@ -3460,7 +3614,7 @@ export default function RipsGenerator() {
                                     <table className="w-full text-left border-collapse text-xs">
                                         <thead>
                                             <tr className="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold text-[11px] whitespace-nowrap">
-                                                <th className="py-2 px-3 text-center w-12"><input type="checkbox" className="w-3.5 h-3.5 rounded text-sky-600 border-slate-300" /></th>
+                                                <th className="py-2 px-3 text-center w-12"><input type="checkbox" aria-label="Seleccionar todas las procedimientos" disabled={!usesClinicalSources || filteredProcedimientos.length === 0} checked={usesClinicalSources && filteredProcedimientos.length > 0 && filteredProcedimientos.every(row => selectedClinicalDocIds.has(row.ripsDocumentId))} onChange={() => toggleClinicalSection(filteredProcedimientos)} className="w-3.5 h-3.5 rounded text-sky-600 border-slate-300" /></th>
                                                 <th className="py-2 px-3">Estado</th>
                                                 <th className="py-2 px-3">Nro. Identificación del paciente</th>
                                                 <th className="py-2 px-3">Número de la factura</th>
@@ -3493,15 +3647,9 @@ export default function RipsGenerator() {
                                             ) : (
                                                 paginatedProcedimientos.map((p, idx) => (
                                                     <tr key={idx} className="hover:bg-slate-50/60">
-                                                        <td className="py-2 px-3 text-center"><input type="checkbox" className="w-3.5 h-3.5 rounded text-sky-600 border-slate-300" /></td>
+                                                        <td className="py-2 px-3 text-center"><input type="checkbox" aria-label={`Seleccionar procedimiento de ${p.docPaciente}`} disabled={!usesClinicalSources} checked={usesClinicalSources && selectedClinicalDocIds.has(p.ripsDocumentId)} onChange={() => toggleClinicalSelection(p.ripsDocumentId)} className="w-3.5 h-3.5 rounded text-sky-600 border-slate-300" /></td>
                                                         <td className="py-2 px-3">
-                                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                                                p.errors.length === 0 
-                                                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
-                                                                    : 'bg-rose-100 text-rose-800 border border-rose-200'
-                                                            }`}>
-                                                                {p.errors.length === 0 ? 'VALIDADO' : 'CON ERRORES'}
-                                                            </span>
+                                                            {renderClinicalStatus(p)}
                                                         </td>
                                                         <td className="py-2 px-3 font-bold">{p.docPaciente}</td>
                                                         <td className="py-2 px-3">{p.invoiceId}</td>
@@ -3522,8 +3670,8 @@ export default function RipsGenerator() {
                                                         <td className="py-2 px-3 font-mono">{p.conceptoRecaudo || '05'}</td>
                                                         <td className="py-2 px-3 text-right font-mono">{fmt(p.valorPagoModerador || 0)}</td>
                                                         <td className="py-2 px-3 font-mono">{p.numFEVPagoModerador || '-'}</td>
-                                                        <td className="py-2 px-3 font-mono text-slate-400">-</td>
-                                                        <td className="py-2 px-3 text-center text-slate-400">-</td>
+                                                        <td className="py-2 px-3 font-mono" title={muvValidationsMap.get(p.ripsDocumentId)?.cuv || ''}>{muvValidationsMap.get(p.ripsDocumentId)?.cuv || '-'}</td>
+                                                        <td className="py-2 px-3 text-center">{renderClinicalActions(p, 'procedimiento')}</td>
                                                     </tr>
                                                 ))
                                             )}
@@ -3532,9 +3680,9 @@ export default function RipsGenerator() {
                                 </div>
                                 <div className="bg-slate-50/50 px-4 py-2 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-slate-500 font-medium">
                                     <div className="flex flex-wrap items-center gap-4">
-                                        <span>Validado correctamente: <strong className="text-emerald-700 font-bold">{procedimientos.filter(p => p.errors.length === 0).length}</strong></span>
-                                        <span>Validado con errores: <strong className="text-rose-700 font-bold">{procedimientos.filter(p => p.errors.length > 0).length}</strong></span>
-                                        <span>Sin validar: <strong className="text-slate-700 font-bold">{preflightStatus === null ? procedimientos.length : 0}</strong></span>
+                                        <span>Validado correctamente: <strong className="text-emerald-700 font-bold">{procedimientos.filter(row => muvValidationsMap.get(row.ripsDocumentId)?.cuv).length}</strong></span>
+                                        <span>Validado con errores: <strong className="text-rose-700 font-bold">{procedimientos.filter(row => row.errors?.length > 0 || muvValidationsMap.get(row.ripsDocumentId)?.uiState === MUV_UI_STATES.REJECTED).length}</strong></span>
+                                        <span>Sin validar: <strong className="text-slate-700 font-bold">{procedimientos.filter(row => !muvValidationsMap.get(row.ripsDocumentId)?.cuv && !row.errors?.length).length}</strong></span>
                                     </div>
                                     {filteredProcedimientos.length > PAGE_SIZE && (
                                         <div className="flex items-center gap-2">
@@ -3594,7 +3742,7 @@ export default function RipsGenerator() {
                                     <table className="w-full text-left border-collapse text-xs">
                                         <thead>
                                             <tr className="bg-slate-50/70 border-b border-slate-200 text-slate-500 font-semibold text-[11px] whitespace-nowrap">
-                                                <th className="py-2 px-3 text-center w-12"><input type="checkbox" className="w-3.5 h-3.5 rounded text-sky-600 border-slate-300" /></th>
+                                                <th className="py-2 px-3 text-center w-12"><input type="checkbox" aria-label="Seleccionar todas las otrosServicios" disabled={!usesClinicalSources || filteredOtrosServicios.length === 0} checked={usesClinicalSources && filteredOtrosServicios.length > 0 && filteredOtrosServicios.every(row => selectedClinicalDocIds.has(row.ripsDocumentId))} onChange={() => toggleClinicalSection(filteredOtrosServicios)} className="w-3.5 h-3.5 rounded text-sky-600 border-slate-300" /></th>
                                                 <th className="py-2 px-3">Estado</th>
                                                 <th className="py-2 px-3">Nro. Identificación del paciente</th>
                                                 <th className="py-2 px-3">Número de la factura</th>
@@ -3623,15 +3771,9 @@ export default function RipsGenerator() {
                                             ) : (
                                                 paginatedOtrosServicios.map((o, idx) => (
                                                     <tr key={idx} className="hover:bg-slate-50/60">
-                                                        <td className="py-2 px-3 text-center"><input type="checkbox" className="w-3.5 h-3.5 rounded text-sky-600 border-slate-300" /></td>
+                                                        <td className="py-2 px-3 text-center"><input type="checkbox" aria-label={`Seleccionar servicio de ${o.docPaciente}`} disabled={!usesClinicalSources} checked={usesClinicalSources && selectedClinicalDocIds.has(o.ripsDocumentId)} onChange={() => toggleClinicalSelection(o.ripsDocumentId)} className="w-3.5 h-3.5 rounded text-sky-600 border-slate-300" /></td>
                                                         <td className="py-2 px-3">
-                                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                                                (!o.errors || o.errors.length === 0) 
-                                                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' 
-                                                                    : 'bg-rose-100 text-rose-800 border border-rose-200'
-                                                            }`}>
-                                                                {(!o.errors || o.errors.length === 0) ? 'VALIDADO' : 'CON ERRORES'}
-                                                            </span>
+                                                            {renderClinicalStatus(o)}
                                                         </td>
                                                         <td className="py-2 px-3 font-bold">{o.docPaciente}</td>
                                                         <td className="py-2 px-3">{o.invoiceId}</td>
@@ -3648,8 +3790,8 @@ export default function RipsGenerator() {
                                                         <td className="py-2 px-3 font-mono">{o.conceptoRecaudo || '05'}</td>
                                                         <td className="py-2 px-3 text-right font-mono">{fmt(o.valorPagoModerador || 0)}</td>
                                                         <td className="py-2 px-3 font-mono">{o.numFEVPagoModerador || '-'}</td>
-                                                        <td className="py-2 px-3 font-mono text-slate-400">-</td>
-                                                        <td className="py-2 px-3 text-center text-slate-400">-</td>
+                                                        <td className="py-2 px-3 font-mono" title={muvValidationsMap.get(o.ripsDocumentId)?.cuv || ''}>{muvValidationsMap.get(o.ripsDocumentId)?.cuv || '-'}</td>
+                                                        <td className="py-2 px-3 text-center">{renderClinicalActions(o, 'servicio')}</td>
                                                     </tr>
                                                 ))
                                             )}
@@ -3660,7 +3802,7 @@ export default function RipsGenerator() {
                                     <div className="flex flex-wrap items-center gap-4">
                                         <span>Validado correctamente: <strong className="text-emerald-700 font-bold">{otrosServicios.filter(o => !o.errors || o.errors.length === 0).length}</strong></span>
                                         <span>Validado con errores: <strong className="text-rose-700 font-bold">{otrosServicios.filter(o => o.errors && o.errors.length > 0).length}</strong></span>
-                                        <span>Sin validar: <strong className="text-slate-700 font-bold">{preflightStatus === null ? otrosServicios.length : 0}</strong></span>
+                                        <span>Sin validar: <strong className="text-slate-700 font-bold">{otrosServicios.filter(row => !muvValidationsMap.get(row.ripsDocumentId)?.cuv && !row.errors?.length).length}</strong></span>
                                     </div>
                                     {filteredOtrosServicios.length > PAGE_SIZE && (
                                         <div className="flex items-center gap-2">

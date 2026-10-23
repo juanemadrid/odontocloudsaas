@@ -19,6 +19,7 @@ export const MUV_PROXY_OPERATIONS = {
   FEV_RIPS: "FEV_RIPS",
   NC_PARTIAL: "NC_PARTIAL",
   NC_TOTAL: "NC_TOTAL",
+  RIPS_WITHOUT_FEV: "RIPS_WITHOUT_FEV",
 } as const;
 
 class HttpError extends Error {
@@ -353,6 +354,7 @@ Deno.serve(async (request) => {
 
   let adminClient: any = null;
   let validationId: string | null = null;
+  let acceptedWithoutFevCuv: string | null = null;
   let computedIdempotencyKey: string | null = null;
   let cleanTenantId: string | null = null;
 
@@ -404,6 +406,101 @@ Deno.serve(async (request) => {
 
     const tenantId = isSuperadmin && body?.tenantId ? String(body.tenantId) : String(profile.tenant_id);
     cleanTenantId = tenantId;
+
+    if (body?.operation === MUV_PROXY_OPERATIONS.RIPS_WITHOUT_FEV) {
+      if (facturaId || creditNoteId || !ripsJson || ripsJson.numFactura !== null || !doctorIdOverride) {
+        throw new HttpError(400, 'RIPS sin FEV requiere profesional, ripsJson y numFactura null; no admite factura ni nota crédito.');
+      }
+      const doctorId = String(doctorIdOverride);
+      if (!isSuperadmin && ['doctor', 'odontologo'].includes(role) && doctorId !== authData.user.id) {
+        throw new HttpError(403, 'El profesional solo puede transmitir sus propias atenciones.');
+      }
+      const [{ data: cfgRow, error: cfgError }, { data: doctor, error: doctorError }, { data: secRow, error: secError }] = await Promise.all([
+        adminClient.from('website_config').select('config').eq('tenant_id', tenantId).maybeSingle(),
+        adminClient.from('profiles').select('id, activo').eq('tenant_id', tenantId).eq('id', doctorId).maybeSingle(),
+        adminClient.from('tenant_secrets').select('sispro_config').eq('tenant_id', tenantId).maybeSingle(),
+      ]);
+      if (cfgError || doctorError || secError) throw new HttpError(500, 'No se pudo verificar la configuración del prestador.');
+      if (!doctor || doctor.activo === false) throw new HttpError(403, 'Profesional no autorizado en esta clínica.');
+      const config = cfgRow?.config || {};
+      const provider = config.providerProfile || config.perfil_tributario || config.empresa_datos || {};
+      const professional = config.user_details?.[doctorId] || config.usuarios?.find((entry: any) => entry.id === doctorId) || {};
+      if (provider.providerType !== 'PROFESIONAL_INDEPENDIENTE' || provider.billingObligation !== 'NOT_REQUIRED' || professional.generaRips !== true) {
+        throw new HttpError(400, 'La configuración guardada no habilita RIPS sin FEV para este profesional.');
+      }
+      const obligatedDoc = String(professional.numeroDocumento || professional.numDocumentoIdentificacion || professional.nit || '').replace(/[^0-9A-Za-z]/g, '');
+      if (!obligatedDoc || String(ripsJson.numDocumentoIdObligado) !== obligatedDoc) {
+        throw new HttpError(400, 'El documento del obligado no coincide con el profesional configurado.');
+      }
+      const byBranch = professional.ripsTipoPrestador === 'sucursal' || professional.providerCodeMode === 'BY_BRANCH';
+      const allowedCodes = byBranch ? Object.values(professional.ripsSucursales || professional.providerCodesByBranch || {}).map((entry: any) => String(entry?.codigo || entry || '').trim())
+        : [String(professional.ripsCodigoUnico || professional.providerCode || professional.codigoPrestador || '').trim()];
+      const users = ripsJson.usuarios;
+      if (!Array.isArray(users) || !users.length) throw new HttpError(400, 'El RIPS debe contener usuarios y servicios.');
+      const requestedDocs = new Set(users.map((user: any) => String(user.numDocumentoIdentificacion)));
+      for (let offset = 0; requestedDocs.size; offset += 500) {
+        const { data: patients, error } = await adminClient.from('pacientes').select('*').eq('tenant_id', tenantId).order('id').range(offset, offset + 499);
+        if (error) throw new HttpError(500, 'No se pudo verificar la pertenencia de los pacientes.');
+        for (const patient of patients || []) requestedDocs.delete(String(patient.nroDocumento || patient.documento || patient.cedula || patient.numDoc || ''));
+        if ((patients || []).length < 500) break;
+      }
+      if (requestedDocs.size) throw new HttpError(403, 'El paquete contiene pacientes ajenos a la clínica.');
+      let serviceCount = 0;
+      for (const user of users) for (const services of Object.values(user.servicios || {})) {
+        if (services === null) continue;
+        if (!Array.isArray(services)) throw new HttpError(400, 'Estructura de servicios inválida.');
+        for (const service of services) {
+          serviceCount++;
+          if (!service.codPrestador || !allowedCodes.includes(String(service.codPrestador))) {
+            throw new HttpError(400, 'Código de prestador no autorizado para el profesional.');
+          }
+        }
+      }
+      if (!serviceCount) throw new HttpError(400, 'El paquete no contiene atenciones realizadas.');
+      const secret = secRow?.sispro_config?.doctores?.[doctorId];
+      if (!secret?.sisproPasswordEncrypted) throw new HttpError(400, 'Configure las credenciales SISPRO del profesional en Usuarios.');
+      const payloadHash = await sha256Hex(JSON.stringify(ripsJson));
+      computedIdempotencyKey = await sha256Hex(`${tenantId}::${doctorId}::RIPS_WITHOUT_FEV::${payloadHash}`);
+      const documentId = typeof body.documentoId === 'string' && /^RIPS-[A-Za-z0-9_-]{1,220}$/.test(body.documentoId)
+        ? body.documentoId : `RIPS-${payloadHash}`;
+      const { data: existing } = await adminClient.from('rips_validaciones').select('id, estado, cuv')
+        .eq('tenant_id', tenantId).eq('idempotency_key', computedIdempotencyKey).maybeSingle();
+      if (existing?.cuv) return json({ success: true, estado: 'ALREADY_VALIDATED_WITH_CUV', cuv: existing.cuv, validationId: existing.id });
+      const { data: lock, error: lockError } = await adminClient.from('rips_validaciones').insert([{
+        tenant_id: tenantId, factura_id: null, tipo_documento: 'RIPS_WITHOUT_FEV', documento_id: documentId,
+        esquema_version: 'DT1-v003-2026', estado: 'PENDIENTE', idempotency_key: computedIdempotencyKey,
+        payload_hash: payloadHash, creado_por: authData.user.id,
+        payload_resumen: { muv_status: 'VALIDATING', doctorId, userId: authData.user.id },
+      }]).select('id').single();
+      if (lockError) {
+        if (lockError.code === '23505') return json({ success: false, estado: 'VALIDATION_ALREADY_IN_PROGRESS', message: 'Este paquete ya está en validación.' }, 409);
+        throw lockError;
+      }
+      validationId = lock.id;
+      const password = await decryptDoctorSisproSecret(tenantId, doctorId, secret.sisproPasswordEncrypted);
+      if (!password) throw new HttpError(400, 'No se pudo recuperar la contraseña SISPRO del profesional.');
+      const token = await createMuvGatewayToken({ tenantId, userId: authData.user.id, operation: 'RIPS_WITHOUT_FEV', payloadHash }, gatewaySharedSecret);
+      const gatewayResponse = await fetch(`${gatewayUrl}/api/v1/transmit-fev-rips`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ operation: 'RIPS_WITHOUT_FEV', identidad: { tipoDoc: secret.tipoDoc || professional.tipoDocumento || 'CC',
+          numDoc: secret.documento || professional.sisproUsuario || obligatedDoc, nit: obligatedDoc, tipoUsuario: 'PIN' }, password, rips: ripsJson }),
+      });
+      const result = await gatewayResponse.json().catch(() => ({}));
+      const accepted = Boolean(gatewayResponse.ok && result.success && result.cuv);
+      const technical = !gatewayResponse.ok || result.estado === 'ERROR';
+      if (accepted) acceptedWithoutFevCuv = String(result.cuv);
+      const state = accepted ? 'ACCEPTED' : technical ? 'ERROR' : 'REJECTED';
+      const errors = result.errores || result.errors || (result.message ? [result.message] : []);
+      const { error: updateError } = await adminClient.from('rips_validaciones').update({
+        estado: accepted ? 'VALIDADO' : technical ? 'ERROR' : 'RECHAZADO', cuv: accepted ? result.cuv : null,
+        errores: errors, advertencias: result.advertencias || [], idempotency_key: accepted ? computedIdempotencyKey : null,
+        payload_resumen: { muv_status: state, doctorId, fechaRadicacion: result.fechaRadicacion || null, httpStatus: gatewayResponse.status },
+        updated_at: new Date().toISOString(),
+      }).eq('tenant_id', tenantId).eq('id', validationId);
+      if (updateError) throw new HttpError(500, 'No se pudo guardar el resultado de validación.');
+      return json({ success: accepted, estado: state, cuv: accepted ? result.cuv : null, validationId,
+        fechaRadicacion: result.fechaRadicacion || null, errores: errors, advertencias: result.advertencias || [], message: result.message });
+    }
 
     // ─────────────────────────────────────────────────────────────────────────────
     // RAMA A: TRANSMISIÓN DE NOTA CRÉDITO (TOTAL O PARCIAL)
@@ -946,7 +1043,7 @@ Deno.serve(async (request) => {
     const status = err.status || 500;
     const message = err.message || "Error interno en transmisión MUV.";
 
-    if (adminClient && validationId) {
+    if (adminClient && validationId && !acceptedWithoutFevCuv) {
       try {
         await adminClient.from("rips_validaciones").update({
           estado: "ERROR",
@@ -961,6 +1058,7 @@ Deno.serve(async (request) => {
     return json({
       success: false,
       estado: "ERROR",
+      cuv: acceptedWithoutFevCuv,
       error: err.code || "MUV_PROXY_ERROR",
       message,
     }, status);

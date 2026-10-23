@@ -341,7 +341,7 @@ export async function loadMuvValidationsMap(tenantId, invoiceIds = []) {
       const facKey = row.factura_id;
 
       let uiState = MUV_UI_STATES.DRAFT;
-      if (row.estado === "VALIDADO" || row.estado === "valido" || row.cuv) {
+      if (row.cuv) {
         uiState = MUV_UI_STATES.ACCEPTED;
       } else if (row.estado === "PENDIENTE") {
         uiState = MUV_UI_STATES.VALIDATING;
@@ -555,7 +555,7 @@ export async function getCreditNoteMuvValidation(tenantId, creditNoteId) {
  * @param {string} [params.doctorIdOverride] - ID opcional de profesional para credencial SISPRO
  * @returns {Promise<Object>} Resultado saneado con estado MUV y CUV si es aceptado
  */
-export async function transmitRipsWithoutFev({ ripsJson, doctorIdOverride }) {
+export async function transmitRipsWithoutFev({ ripsJson, doctorIdOverride, documentoId }) {
   if (!ripsJson) {
     throw new Error("El archivo JSON de RIPS es obligatorio.");
   }
@@ -569,6 +569,7 @@ export async function transmitRipsWithoutFev({ ripsJson, doctorIdOverride }) {
         operation: "RIPS_WITHOUT_FEV",
         ripsJson,
         doctorIdOverride,
+        documentoId,
       },
     });
 

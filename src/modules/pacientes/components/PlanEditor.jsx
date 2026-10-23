@@ -412,12 +412,25 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
 
     const isItemConsulta = (item) => {
         if (!item) return false;
+        if (typeof item.es_consulta === 'boolean') return item.es_consulta;
         if (item.es_consulta === true || item.is_consulta === true) return true;
         const cups = String(item.codigo_cups || item.code || item.codigo || '').trim();
         if (cups.startsWith('890')) return true;
         const desc = (item.desc || item.nombre || '').toLowerCase();
         if (desc.startsWith('consulta') || desc.includes('consulta valoracion') || desc.includes('consulta odontol')) return true;
         return false;
+    };
+
+    const matchesConsultationItem = (item, document) => {
+        let meta = document.metadata || {};
+        if (typeof meta === 'string') { try { meta = JSON.parse(meta); } catch { return false; } }
+        const expected = String(item.codigo_cups || item.cups || item.code || item.codigo || '').trim();
+        const actual = String(meta.cups || meta.codigo_cups || document.cups || document.codigo_cups || '').trim();
+        const status = String(document.estado || meta.estado || '').toLowerCase();
+        return expected.length === 6 && expected === actual &&
+            document.finalizado !== false && meta.finalizado !== false &&
+            !['borrador', 'draft', 'en_proceso', 'en proceso'].includes(status) &&
+            (!document.paciente_id || document.paciente_id === patientId);
     };
 
     const openAsocConsultaModal = async (item) => {
@@ -430,7 +443,8 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                 .from("documentos_clinicos")
                 .select("*")
                 .eq("paciente_id", patientId)
-                .or("tipo.eq.Consulta,tipoDocumento.eq.Consulta")
+                .eq("tipo", "Consulta")
+                .eq("tenant_id", userProfile.tenant_id)
                 .order("created_at", { ascending: false });
             if (!error && dbList) {
                 list = dbList;
@@ -444,7 +458,7 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                     merged.push(h);
                 }
             });
-            setConsultasList(merged);
+            setConsultasList(merged.filter(document => matchesConsultationItem(item, document)));
         } catch (err) {
             console.error("Error cargando consultas médicas:", err);
             toast.error("Error al cargar las consultas médicas del paciente");
@@ -455,6 +469,10 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
 
     const handleAssociateConsulta = async (selectedConsulta) => {
         if (!targetConsultaItem) return;
+        if (!matchesConsultationItem(targetConsultaItem, selectedConsulta)) {
+            toast.error("Seleccione una consulta finalizada del paciente con el mismo código CUPS del presupuesto.");
+            return;
+        }
         try {
             const nowIso = new Date().toISOString();
             const updatedItems = items.map(it => {
@@ -1042,6 +1060,8 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
             // Inyectar al presupuesto
             const newItems = planItems.map(it => ({
                 id: Math.random().toString(36).substr(2, 9),
+                catalogItemId: it.catalogItemId || it.id || null,
+                genera_rips: it.genera_rips,
                 code: it.codigo || it.code || "",
                 codigo: it.codigo || it.code || "",
                 codigo_cups: it.codigo || it.code || it.codigo_cups || "",
@@ -1611,6 +1631,10 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
 
         setItems(items.map(i => i.id === itemId ? {
             ...i,
+            catalogItemId: proc.id || null,
+            priceListId: baseListId || null,
+            genera_rips: proc.genera_rips,
+            es_consulta: Boolean(proc.es_consulta),
             desc: proc.nombre || proc.label,
             amount: proc.precio || proc.value || 0,
             code: proc.codigo || "",

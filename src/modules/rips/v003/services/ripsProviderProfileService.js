@@ -57,14 +57,16 @@ export function resolveProviderProfile(tenantData = {}, configData = {}) {
 
   // 1. Tipo de prestador
   let providerType = PROVIDER_TYPES.UNCONFIRMED;
-  if (profileCfg.esIps === true || tenantData.esIps === true) {
-    providerType = PROVIDER_TYPES.IPS;
-  } else if (profileCfg.esIps === false || tenantData.esIps === false) {
-    providerType = PROVIDER_TYPES.PROFESIONAL_INDEPENDIENTE;
-  } else if (profileCfg.providerType && Object.values(PROVIDER_TYPES).includes(profileCfg.providerType)) {
+  if (profileCfg.providerType && Object.values(PROVIDER_TYPES).includes(profileCfg.providerType)) {
     providerType = profileCfg.providerType;
+  } else if (profileCfg.esIps === true) {
+    providerType = PROVIDER_TYPES.IPS;
+  } else if (profileCfg.esIps === false) {
+    providerType = PROVIDER_TYPES.PROFESIONAL_INDEPENDIENTE;
   } else if (tenantData.tipoPrestador && Object.values(PROVIDER_TYPES).includes(tenantData.tipoPrestador)) {
     providerType = tenantData.tipoPrestador;
+  } else if (typeof tenantData.esIps === 'boolean') {
+    providerType = tenantData.esIps ? PROVIDER_TYPES.IPS : PROVIDER_TYPES.PROFESIONAL_INDEPENDIENTE;
   } else {
     providerType = PROVIDER_TYPES.UNCONFIRMED;
   }
@@ -148,7 +150,7 @@ export function shouldDoctorShowGeneraRips(providerTypeOrTenant, doctor = {}) {
  * 1. Una IPS NUNCA puede emitir RIPS sin factura (Art. 616-1 E.T. y Res. MinSalud).
  * 2. Si billingObligation es UNCONFIRMED, se bloquea la emisión oficial.
  * 3. Si billingObligation es ELECTRONIC_INVOICE_REQUIRED, se exige FEV oficial.
- * 4. Requiere providerType = PROFESIONAL_INDEPENDIENTE (o EOSD) + billingObligation = NOT_REQUIRED + confirmación expresa.
+ * 4. Requiere providerType = PROFESIONAL_INDEPENDIENTE (o EOSD) + billingObligation = NOT_REQUIRED configurado explícitamente.
  * 
  * @param {object} profile - Perfil retornado por resolveProviderProfile
  * @returns {{ eligible: boolean, reason?: string, errorCode?: string }}
@@ -205,13 +207,8 @@ export function validateRipsWithoutFevEligibility(profile) {
     };
   }
 
-  if (!profile.administrativeConfirmation) {
-    return {
-      eligible: false,
-      errorCode: "ADMINISTRATIVE_CONFIRMATION_REQUIRED",
-      reason: "Se requiere confirmación administrativa expresa de la situación tributaria del profesional.",
-    };
-  }
+  // La elección explícita NOT_REQUIRED es la configuración administrativa.
+  // No exigir una segunda bandera interna que la interfaz histórica no solicitaba.
 
   return { eligible: true };
 }

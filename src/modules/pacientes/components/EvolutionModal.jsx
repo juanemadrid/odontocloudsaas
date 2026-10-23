@@ -91,23 +91,51 @@ export const CUADRANTES_ORTODONCIA = {
 };
 
 // Helper para verificar si un profesional está vinculado a Ortodoncia
-export const isDoctorOrthodontist = (doc, targetParam = "Ortodoncia") => {
+export const isDoctorOrthodontist = (doc, targetParam = "Ortodoncia", specialtiesMap = {}) => {
     if (!doc) return false;
     const target = (targetParam || "Ortodoncia").toLowerCase().trim();
     const specs = [];
     if (doc.especialidad) specs.push(String(doc.especialidad).toLowerCase().trim());
     if (Array.isArray(doc.especialidades)) {
-        doc.especialidades.forEach(s => specs.push(String(s).toLowerCase().trim()));
+        doc.especialidades.forEach(s => {
+            const strVal = String(s).toLowerCase().trim();
+            specs.push(strVal);
+            if (specialtiesMap && specialtiesMap[s]) {
+                specs.push(String(specialtiesMap[s]).toLowerCase().trim());
+            }
+        });
     }
     if (doc.role) specs.push(String(doc.role).toLowerCase().trim());
-    if (doc.raw?.especialidad) specs.push(String(doc.raw.especialidad).toLowerCase().trim());
-    if (Array.isArray(doc.raw?.especialidades)) {
-        doc.raw.especialidades.forEach(s => specs.push(String(s).toLowerCase().trim()));
-    }
+    if (doc.rol) specs.push(String(doc.rol).toLowerCase().trim());
+    if (doc.cargo) specs.push(String(doc.cargo).toLowerCase().trim());
+    if (doc.profileName) specs.push(String(doc.profileName).toLowerCase().trim());
+    if (doc.profileId) specs.push(String(doc.profileId).toLowerCase().trim());
+    if (doc.profile_name) specs.push(String(doc.profile_name).toLowerCase().trim());
+    if (doc.perfil) specs.push(String(doc.perfil).toLowerCase().trim());
     if (doc.specialty) specs.push(String(doc.specialty).toLowerCase().trim());
+
+    if (doc.raw) {
+        if (doc.raw.especialidad) specs.push(String(doc.raw.especialidad).toLowerCase().trim());
+        if (Array.isArray(doc.raw.especialidades)) {
+            doc.raw.especialidades.forEach(s => {
+                const strVal = String(s).toLowerCase().trim();
+                specs.push(strVal);
+                if (specialtiesMap && specialtiesMap[s]) {
+                    specs.push(String(specialtiesMap[s]).toLowerCase().trim());
+                }
+            });
+        }
+        if (doc.raw.role) specs.push(String(doc.raw.role).toLowerCase().trim());
+        if (doc.raw.rol) specs.push(String(doc.raw.rol).toLowerCase().trim());
+        if (doc.raw.profileName) specs.push(String(doc.raw.profileName).toLowerCase().trim());
+        if (doc.raw.profileId) specs.push(String(doc.raw.profileId).toLowerCase().trim());
+        if (doc.raw.cargo) specs.push(String(doc.raw.cargo).toLowerCase().trim());
+        if (doc.raw.perfil) specs.push(String(doc.raw.perfil).toLowerCase().trim());
+    }
 
     return specs.some(s => 
         s.includes("ortodon") || 
+        s.includes("ortop") || 
         (target && (s === target || s.includes(target) || target.includes(s)))
     );
 };
@@ -170,6 +198,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
     const [pastEvolutions, setPastEvolutions] = useState([]);
     const [sterilizationCycles, setSterilizationCycles] = useState([]);
     const [orthoParam, setOrthoParam] = useState('Ortodoncia');
+    const [specialtiesMap, setSpecialtiesMap] = useState({});
 
     const getLocalISOStrings = () => {
         const d = new Date();
@@ -225,15 +254,15 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
     const isOrthoDoctor = useMemo(() => {
         const doc = esDoctor ? userProfile : selectedDoctor;
         if (!doc) return false;
-        return isDoctorOrthodontist(doc, orthoParam);
-    }, [esDoctor, userProfile, selectedDoctor, orthoParam]);
+        return isDoctorOrthodontist(doc, orthoParam, specialtiesMap);
+    }, [esDoctor, userProfile, selectedDoctor, orthoParam, specialtiesMap]);
 
-    // Si el usuario cambia de doctor y el nuevo doctor no es de ortodoncia, volver a 'evolucion'
+    // Si el doctor seleccionado o en sesión es ortodoncista y es una nueva evolución, pre-activar la pestaña de ortodoncia
     useEffect(() => {
-        if (!isOrthoDoctor && activeTab === 'ortodoncia') {
-            setActiveTab('evolucion');
+        if (isOrthoDoctor && !initialData) {
+            setActiveTab('ortodoncia');
         }
-    }, [isOrthoDoctor, activeTab]);
+    }, [isOrthoDoctor, initialData]);
 
     const toggleReparacion = (tooth) => {
         const current = watch("reparaciones") || [];
@@ -466,8 +495,19 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                             setOrthoParam(p.general.especialidadOrtodoncia);
                         }
                     }
+                    if (inq) {
+                        const { data: espRows } = await supabase
+                            .from("especialidades")
+                            .select("id, nombre")
+                            .eq("tenant_id", inq);
+                        if (espRows && espRows.length > 0) {
+                            const mapObj = {};
+                            espRows.forEach(e => { if (e?.id && e?.nombre) mapObj[e.id] = e.nombre; });
+                            setSpecialtiesMap(mapObj);
+                        }
+                    }
                 } catch (e) {
-                    console.warn("Notice: could not load tenant orthodontic parameter:", e);
+                    console.warn("Notice: could not load tenant orthodontic parameter or specialties:", e);
                 }
 
                 if (esDoctor) {
@@ -1042,19 +1082,17 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                         >
                             Evolución
                         </button>
-                        {isOrthoDoctor && (
-                            <button
-                                type="button"
-                                onClick={() => setActiveTab('ortodoncia')}
-                                className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
-                                    activeTab === 'ortodoncia' 
-                                        ? 'bg-[#8dc63f] text-white shadow-sm' 
-                                        : 'text-slate-400 hover:text-slate-600'
-                                }`}
-                            >
-                                Evolución Ortodoncia
-                            </button>
-                        )}
+                        <button
+                            type="button"
+                            onClick={() => setActiveTab('ortodoncia')}
+                            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                                activeTab === 'ortodoncia' 
+                                    ? 'bg-[#8dc63f] text-white shadow-sm' 
+                                    : 'text-slate-400 hover:text-slate-600'
+                            }`}
+                        >
+                            Evolución Ortodoncia
+                        </button>
                         <button
                             type="button"
                             onClick={() => setActiveTab('nota')}
@@ -1360,19 +1398,17 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                 Evolución
                             </button>
 
-                            {isOrthoDoctor && (
-                                <button
-                                    type="button"
-                                    onClick={() => setActiveTab('ortodoncia')}
-                                    className={`flex-1 py-1.5 px-3 rounded-md text-xs font-semibold text-center transition-all cursor-pointer ${
-                                        activeTab === 'ortodoncia'
-                                            ? 'bg-[#8dc63f] text-white shadow-xs'
-                                            : 'bg-white text-[#68942b] border border-[#8dc63f] hover:bg-[#8dc63f]/10'
-                                    }`}
-                                >
-                                    Evolución ortodoncia
-                                </button>
-                            )}
+                            <button
+                                type="button"
+                                onClick={() => setActiveTab('ortodoncia')}
+                                className={`flex-1 py-1.5 px-3 rounded-md text-xs font-semibold text-center transition-all cursor-pointer ${
+                                    activeTab === 'ortodoncia'
+                                        ? 'bg-[#8dc63f] text-white shadow-xs'
+                                        : 'bg-white text-[#68942b] border border-[#8dc63f] hover:bg-[#8dc63f]/10'
+                                }`}
+                            >
+                                Evolución ortodoncia
+                            </button>
 
                             <button
                                 type="button"

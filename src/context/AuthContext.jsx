@@ -53,7 +53,7 @@ export const AuthProvider = ({ children }) => {
       // Consultar perfil e información completa del tenant en Supabase
       let { data: profile, error } = await supabase
         .from("profiles")
-        .select("id, role, full_name, tenant_id, telefono, registro_medico, activo, tenant:tenants(id, nombre, direccion, telefono, logo_url, nit, plan, activo, created_at, parametros)")
+        .select("id, role, full_name, tenant_id, telefono, registro_medico, activo, especialidad, tenant:tenants(id, nombre, direccion, telefono, logo_url, nit, plan, activo, created_at, parametros)")
         .eq("id", authUser.id)
         .maybeSingle();
 
@@ -247,6 +247,12 @@ export const AuthProvider = ({ children }) => {
           rol: (profile.role || "odontologo").trim().toLowerCase(),
           role: profile.role,
           esDoctor: esDoctorResuelto,
+          especialidad: profile.especialidad || userDetail?.especialidad || (Array.isArray(userDetail?.especialidades) ? userDetail.especialidades.join(", ") : ""),
+          especialidades: userDetail?.especialidades || (profile.especialidad ? profile.especialidad.split(",").map(s => s.trim()) : []),
+          profileId: userDetail?.profileId || profile.role || "",
+          profileName: userDetail?.profileName || matchedPerfil?.nombre || "",
+          cargo: userDetail?.cargo || "",
+          raw: { ...userDetail, ...profile },
           permisos: permisosConfig,
           inquilino: profile.tenant_id,
           nombre: profile.full_name || userDetail.nombreCompleto || "",

@@ -673,19 +673,48 @@ export const getDoctorsList = async (userProfile, patient = null) => {
   }
 
   try {
-    const [profesionalesRes, profilesRes, directoryRes] = await Promise.all([
+    const [profesionalesRes, profilesRes, directoryRes, espRes] = await Promise.all([
       supabase.from('profesionales').select('*').eq('tenant_id', inquilino),
       supabase
         .from('profiles')
         .select('id,full_name,email,role,especialidad,registro_medico,telefono,activo')
         .eq('tenant_id', inquilino),
-      supabase.rpc('get_my_tenant_user_directory')
+      supabase.rpc('get_my_tenant_user_directory'),
+      supabase.from('especialidades').select('id,nombre').eq('tenant_id', inquilino)
     ]);
 
-    const directory = directoryRes.data || {};
+    const directory = directoryRes?.data || {};
     const userDetails = directory.user_details || {};
     const configUsuarios = directory.usuarios || directory.users || [];
     const configDoctores = directory.doctores || directory.profesionales || [];
+
+    const espMap = new Map();
+    if (espRes?.data && Array.isArray(espRes.data)) {
+      espRes.data.forEach(e => {
+        if (e?.id && e?.nombre) espMap.set(String(e.id), e.nombre);
+      });
+    }
+
+    const resolveDoctorSpecs = (specs, singleSpec) => {
+      const result = [];
+      if (Array.isArray(specs)) {
+        specs.forEach(s => {
+          const str = String(s).trim();
+          result.push(str);
+          if (espMap.has(str)) result.push(espMap.get(str));
+        });
+      }
+      if (singleSpec && typeof singleSpec === 'string') {
+        singleSpec.split(',').forEach(s => {
+          const str = s.trim();
+          if (str) {
+            result.push(str);
+            if (espMap.has(str)) result.push(espMap.get(str));
+          }
+        });
+      }
+      return result.length > 0 ? Array.from(new Set(result)) : ["Odontología General"];
+    };
 
     // A. Tabla profesionales
     if (profesionalesRes.data && Array.isArray(profesionalesRes.data)) {
@@ -701,7 +730,7 @@ export const getDoctorsList = async (userProfile, patient = null) => {
               displayName: name,
               email: d.correo || d.email || '',
               role: d.especialidad || 'Doctor',
-              especialidades: d.especialidades || (d.especialidad ? [d.especialidad] : ["Odontología General"]),
+              especialidades: resolveDoctorSpecs(d.especialidades, d.especialidad),
               identificacion: d.identificacion || d.registro_medico || d.documento || "",
               raw: d
             });
@@ -726,7 +755,7 @@ export const getDoctorsList = async (userProfile, patient = null) => {
               displayName: name,
               email: u.email || '',
               role: u.role || detail.rol || 'Doctor',
-              especialidades: detail.especialidades || u.especialidades || (u.especialidad ? [u.especialidad] : (detail.especialidad ? [detail.especialidad] : ["Odontología General"])),
+              especialidades: resolveDoctorSpecs(detail.especialidades || u.especialidades, u.especialidad || detail.especialidad),
               identificacion: u.registro_medico || detail.registroMedico || u.documento || detail.documento || "",
               raw: { ...detail, ...u }
             });
@@ -748,7 +777,7 @@ export const getDoctorsList = async (userProfile, patient = null) => {
             displayName: name,
             email: detail.email || '',
             role: detail.rol || 'Doctor',
-            especialidades: detail.especialidades || (detail.especialidad ? [detail.especialidad] : ["Odontología General"]),
+            especialidades: resolveDoctorSpecs(detail.especialidades, detail.especialidad),
             identificacion: detail.registroMedico || detail.documento || "",
             raw: detail
           });
@@ -771,7 +800,7 @@ export const getDoctorsList = async (userProfile, patient = null) => {
             displayName: name,
             email: u.email || '',
             role: u.rol || detail.rol || 'Doctor',
-            especialidades: detail.especialidades || u.especialidades || (u.especialidad ? [u.especialidad] : ["Odontología General"]),
+            especialidades: resolveDoctorSpecs(detail.especialidades || u.especialidades, detail.especialidad || u.especialidad),
             identificacion: u.documento || detail.documento || detail.registroMedico || "",
             raw: { ...detail, ...u }
           });
@@ -791,7 +820,7 @@ export const getDoctorsList = async (userProfile, patient = null) => {
           displayName: name,
           email: d.email || '',
           role: d.rol || 'Doctor',
-          especialidades: d.especialidades || (d.especialidad ? [d.especialidad] : ["Odontología General"]),
+          especialidades: resolveDoctorSpecs(d.especialidades, d.especialidad),
           identificacion: d.identificacion || d.registro_medico || d.documento || "",
           raw: d
         });
@@ -820,7 +849,7 @@ export const getDoctorsList = async (userProfile, patient = null) => {
           displayName: myName,
           email: userProfile.email || '',
           role: userProfile.rol || 'Doctor',
-          especialidades: userProfile.especialidades || (userProfile.especialidad ? [userProfile.especialidad] : ["Odontología General"]),
+          especialidades: resolveDoctorSpecs(userProfile.especialidades, userProfile.especialidad),
           identificacion: userProfile.registroMedico || userProfile.documento || "",
           raw: userProfile
         });
