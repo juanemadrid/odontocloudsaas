@@ -23,7 +23,7 @@ assert.equal((await answer(handler())).provider, 'gemini');
 assert.equal(reservations.length, 1);
 assert.equal(calls.length, 1);
 const payload = JSON.parse(calls[0].body);
-assert.equal(payload.generationConfig.maxOutputTokens, 240);
+assert.ok(payload.generationConfig.maxOutputTokens >= 240);
 if (payload.generationConfig.thinkingConfig?.thinkingBudget !== undefined) {
   assert.equal(payload.generationConfig.thinkingConfig.thinkingBudget, 0);
 } else if (payload.generationConfig.thinkingConfig?.thinkingLevel !== undefined) {

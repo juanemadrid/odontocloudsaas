@@ -35,8 +35,8 @@ export async function generateManagedHelp({ guide, reference: selectedReference,
   const isV3 = typeof model === 'string' && (model.startsWith('gemini-3') || model.includes('-3.'));
   const isV25 = typeof model === 'string' && model.includes('2.5');
   const generationConfig = {
-    temperature: 0.1,
-    maxOutputTokens: 240,
+    temperature: 0.2,
+    maxOutputTokens: 400,
     ...(isV3 ? { thinkingConfig: { thinkingLevel: 'low' } } :
         isV25 ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
   };
@@ -44,7 +44,7 @@ export async function generateManagedHelp({ guide, reference: selectedReference,
     method: 'POST', redirect: 'error', signal,
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: 'Eres la ayuda de uso de OdontoCloud. Usa exclusivamente la REFERENCIA. Sin consejos clínicos ni acciones ejecutadas. Responde en español, sin saludo ni introducción, con 3 a 5 pasos y hasta 80 palabras. Conserva nombres literales de botones entre corchetes y requisitos de seguridad. No inventes datos, botones, permisos ni pasos. Si la referencia no basta, indica consultar la guía completa. No incluyas enlaces externos.' }] },
+      systemInstruction: { parts: [{ text: 'Eres OdontoIA, el asistente inteligente de OdontoCloud impulsado por IA. Responde de forma clara, amable y profesional en español. Guía al usuario paso a paso indicando la ruta y botones en [corchetes] basándote en la REFERENCIA. Sin consejos clínicos ni datos inventados.' }] },
       contents: [{ role: 'user', parts: [{ text: `${safeHelpIntent(question)}\n${screenContext ? `Pantalla: ${screenContext}\n` : ''}REFERENCIA:\n${reference}` }] }],
       generationConfig,
     }),
