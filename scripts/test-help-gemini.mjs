@@ -73,7 +73,7 @@ for (const options of [
   assert.ok(result.sources.some(s => s.id === 'rips'));
 }
 calls = []; reservations = [];
-for (const body of [{ question: 'Cómo apartar una cita' }, { question: 'Quiero hacer un presupuesto' }, { mode: 'public', question: 'Planes de suscripción' }, { question: 'hola' }, { question: 'cómo preparo una torta' }]) {
+for (const body of [{ mode: 'public', question: 'Planes de suscripción' }, { question: 'hola' }, { question: 'cómo preparo una torta' }]) {
   assert.notEqual((await answer(handler(), body)).provider, 'gemini');
 }
 assert.equal(calls.length, 0); assert.equal(reservations.length, 0);

@@ -393,18 +393,31 @@ function detectScreenContext() {
                                     <div className="font-medium whitespace-pre-wrap break-words">{message.text}</div>
                                 ) : (
                                     <>
-                                        <div className="flex items-center gap-1.5 mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                                            <FiMessageSquare size={11} /> 
-                                            <span>{message.pending ? 'OdontoIA está escribiendo…' : message.provider === 'ollama' ? 'OdontoIA' : message.provider === 'manual' ? 'Guía verificada' : 'OdontoIA'}</span>
+                                        <div className="flex items-center gap-1.5 mb-2 text-[10px] font-bold uppercase tracking-wider">
+                                            {message.pending ? (
+                                                <span className="text-slate-400">OdontoIA está escribiendo…</span>
+                                            ) : message.provider === 'gemini' ? (
+                                                <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-bold text-[10px] flex items-center gap-1 shadow-2xs">
+                                                    ✨ Respuesta generada con Gemini AI
+                                                </span>
+                                            ) : message.provider === 'manual' ? (
+                                                <span className="text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full font-semibold text-[10px] flex items-center gap-1">
+                                                    📖 Guía de la biblioteca
+                                                </span>
+                                            ) : (
+                                                <span className="text-slate-500 flex items-center gap-1">
+                                                    <FiMessageSquare size={11} /> OdontoIA
+                                                </span>
+                                            )}
                                         </div>
                                         {['unavailable', 'not_configured'].includes(message.reason) && (
                                             <p className="text-[11px] text-amber-800 bg-amber-50 rounded-lg p-2 mb-2 border border-amber-200">
-                                                La IA no completó la respuesta. Puedes continuar con esta guía:
+                                                La IA no completó la respuesta en este momento. Te mostramos la guía documentada del sistema:
                                             </p>
                                         )}
                                         {['disabled', 'quota'].includes(message.reason) && (
-                                            <p className="text-[11px] text-slate-600 bg-slate-50 rounded-lg p-2 mb-2">
-                                                {message.reason === 'quota' ? 'La IA alcanzó su límite de consultas. Puedes continuar con esta guía.' : 'La IA está apagada. Puedes continuar con esta guía.'}
+                                            <p className="text-[11px] text-slate-700 bg-slate-100 rounded-lg p-2 mb-2 border border-slate-200 font-medium">
+                                                {message.reason === 'quota' ? 'La IA alcanzó su límite de consultas. Mostrando guía del manual:' : 'ℹ️ El asistente IA está apagado para esta clínica o en el interruptor general. Mostrando el manual documentado:'}
                                             </p>
                                         )}
                                         <FormattedMessage text={message.text || (message.pending ? "Revisando tu pregunta…" : "")} />

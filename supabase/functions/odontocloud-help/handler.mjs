@@ -240,13 +240,11 @@ export function createHelpHandler({ authenticate, reserve, resolveConfig, env, f
       }
       if (providerEnv('ODONTO_HELP_ENABLED') !== 'true') return fallback('disabled');
       if (providerEnv('ODONTO_HELP_PROVIDER') === 'gemini') {
-        // Common complete questions use the verified guide without spending tokens.
-        if (isGeneralAppointment(question) || isGeneralBudget(question)) return fallback('manual');
         const controller = new AbortController();
         const abort = () => controller.abort();
         request.signal.addEventListener('abort', abort, { once: true });
         if (request.signal.aborted) abort();
-        const timer = setTimeout(abort, 18000);
+        const timer = setTimeout(abort, 40000);
         try {
           const reference = helpPrompt(guides[0], question, false, trustedScreenContext(body.screenContext), recentModelHistory(history)).split('\nREFERENCIA:\n').at(-1);
           const result = await generateManagedHelp({ guide: guides[0], reference, question,
