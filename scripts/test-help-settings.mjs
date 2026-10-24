@@ -7,6 +7,7 @@ import { authenticateHelpSettings } from '../supabase/functions/odontocloud-help
 import { resolveStoredHelpConfig } from '../supabase/functions/odontocloud-help/credentialStore.mjs';
 import { createHelpHandler } from '../supabase/functions/odontocloud-help/handler.mjs';
 import { createHelpCrypto, HELP_MASTER_FILE } from '../supabase/functions/_shared/helpCrypto.mjs';
+import { isHelpApiKey } from '../supabase/functions/_shared/helpApiKey.mjs';
 
 // Compile the actual shared crypto module, preserving compatibility with Node 20 CI.
 const cryptoSource = await transformWithOxc(readFileSync('supabase/functions/tenant-secrets/crypto.ts', 'utf8'), 'crypto.ts');
@@ -66,7 +67,7 @@ try {
     { action: 'save', apiKey, model: 'unapproved' }, { action: 'status', apiKey }, { action: 'delete' }]) {
     assert.equal((await result(handler, body)).status, 400);
   }
-  assert.equal((await result(handler, { action: 'save', apiKey: 'a'.repeat(3000) })).status, 413);
+  assert.equal((await result(handler, { action: 'save', apiKey: 'a'.repeat(5000) })).status, 413);
   assert.equal((await result(handler, { action: 'test', apiKey })).body.success, true);
   assert.equal(providerCalls, 1); assert.equal(writes, 0);
   assert.equal((await result(handler, { action: 'save', apiKey })).body.success, true);
@@ -148,8 +149,29 @@ try {
   assert.equal((await result(dedicatedHandler, { action: 'save', apiKey })).body.success, true);
   const dedicatedConfig = await resolveStoredHelpConfig({ readCredential: async () => stored, decrypt: helpCrypto.decrypt, env });
   assert.equal(dedicatedConfig.ODONTO_HELP_GEMINI_API_KEY, apiKey);
+  for (const authKey of ['AQ.' + 'syntheticSegment_-'.repeat(20) + '.tail', 'AQ.' + 'x'.repeat(1021)]) {
+    assert.equal(isHelpApiKey(authKey), true);
+    let received = 0;
+    const authHandler = makeHandler({ fetchImpl: async (_url, options) => {
+      received++; assert.equal(options.headers['x-goog-api-key'], authKey);
+      return Response.json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'OK' }] } }] });
+    } });
+    assert.equal((await result(authHandler, { action: 'test', apiKey: authKey })).status, 200);
+    assert.equal((await result(authHandler, { action: 'save', apiKey: authKey })).status, 200);
+    assert.equal(received, 2);
+    assert.equal((await resolveStoredHelpConfig({ readCredential: async () => stored, decrypt: decryptSecret, env })).ODONTO_HELP_GEMINI_API_KEY, authKey);
+  }
+  for (const malformed of ['a'.repeat(19), 'a'.repeat(1025), 'AQ.' + 'x'.repeat(40) + '\r\nInjected: yes', 'AQ.' + 'x'.repeat(40) + '\u200b']) {
+    assert.equal(isHelpApiKey(malformed), false);
+    const response = await result(makeHandler({ fetchImpl: async () => { throw new Error('Must not reach Google'); } }), { action: 'test', apiKey: malformed });
+    assert.equal(response.status, 400);
+    assert.ok(response.body.error.includes('clave completa'));
+  }
+  const badModel = await result(handler, { action: 'test', apiKey, model: 'unsupported-model' });
+  assert.ok(badModel.body.error.includes('modelo de ayuda'));
   console.log('Help settings: superadmin-only access, AES-GCM/AAD, minimal connection test, safe replacement, masked status, quotas, timeout, and immediate help integration verified.');
   console.log('Dedicated help key: private file provisioning contract, legacy compatibility, random IVs, tamper detection and missing/corrupt key fail-closed verified.');
+  console.log('Google auth key regression: dotted/long keys survive test, encrypted save and runtime load; whitespace/control characters and unsupported models return distinct errors.');
 } finally {
   if (oldMaster === undefined) delete process.env.TENANT_SECRETS_MASTER_KEY_V1; else process.env.TENANT_SECRETS_MASTER_KEY_V1 = oldMaster;
   if (oldKeyId === undefined) delete process.env.TENANT_SECRETS_ACTIVE_KEY_ID; else process.env.TENANT_SECRETS_ACTIVE_KEY_ID = oldKeyId;

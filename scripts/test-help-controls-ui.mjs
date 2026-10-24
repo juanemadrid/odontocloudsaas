@@ -86,7 +86,10 @@ try {
   const settings = page.getByRole('region', { name: 'Conexión de Gemini para ayuda' });
   const keyField = settings.getByLabel('Nueva clave API de Gemini');
   assert.equal(await keyField.getAttribute('type'), 'password');
-  await keyField.fill('synthetic_key_' + 'X'.repeat(24));
+  assert.equal(await keyField.getAttribute('maxlength'), '1024');
+  const authKey = 'AQ.' + 'syntheticSegment_-'.repeat(20) + '.tail';
+  await keyField.fill(authKey);
+  assert.equal(await keyField.inputValue(), authKey);
   await settings.getByRole('button', { name: 'Probar conexión', exact: true }).click();
   await settings.getByText('Conexión correcta.', { exact: true }).waitFor();
   assert.ok(await keyField.inputValue());

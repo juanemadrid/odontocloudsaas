@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { manageHelpAiKey } from '../../services/helpAiSettingsService';
+import { HELP_API_KEY_MAX_LENGTH, HELP_GEMINI_MODELS, HELP_GEMINI_DEFAULT_MODEL, isHelpApiKey } from '../../../supabase/functions/_shared/helpApiKey.mjs';
 
 export default function HelpAiKeySettings() {
   const [status, setStatus] = useState(null);
@@ -18,10 +19,14 @@ export default function HelpAiKeySettings() {
     try {
       const result = await manageHelpAiKey('status');
       if (!mounted.current) return;
-      setStatus(result); setModel(result.model); setError('');
+      setStatus(result); setModel(HELP_GEMINI_MODELS.includes(result.model) ? result.model : HELP_GEMINI_DEFAULT_MODEL); setError('');
     } catch (e) { if (mounted.current) setError(e.message); }
   }
   async function run(action) {
+    if (!isHelpApiKey(apiKey.trim())) {
+      setError('Pega la clave completa usando «Copiar clave de API» de Google AI Studio. No debe contener espacios ni saltos de línea.');
+      setMessage(''); return;
+    }
     setBusy(true); setError(''); setMessage('');
     try {
       const result = await manageHelpAiKey(action, { apiKey: apiKey.trim(), model });
@@ -42,7 +47,7 @@ export default function HelpAiKeySettings() {
     {status && !status.encryptionReady && <p className="text-xs text-amber-800 mb-2">{status.message}</p>}
     <label className="block text-xs font-semibold text-slate-700" htmlFor="help-gemini-key">Nueva clave API de Gemini</label>
     <input id="help-gemini-key" type="password" autoComplete="new-password" spellCheck={false} value={apiKey}
-      disabled={busy} maxLength={200} onChange={e => { setApiKey(e.target.value); setMessage(''); }}
+      disabled={busy} maxLength={HELP_API_KEY_MAX_LENGTH} onChange={e => { setApiKey(e.target.value); setMessage(''); setError(''); }}
       placeholder="Pega aquí la clave; no se mostrará después de guardarla"
       className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm mt-1 mb-3" />
     <label className="block text-xs font-semibold text-slate-700" htmlFor="help-gemini-model">Modelo de ayuda</label>

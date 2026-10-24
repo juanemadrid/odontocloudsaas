@@ -1,6 +1,9 @@
+import { HELP_GEMINI_DEFAULT_MODEL, HELP_GEMINI_MODELS, isHelpApiKey } from '../_shared/helpApiKey.mjs';
+
 export const HELP_KEY_AAD = 'odontocloud|help|gemini|v1';
-export const HELP_DEFAULT_MODEL = 'gemini-2.5-flash-lite';
-export const HELP_MODELS = new Set([HELP_DEFAULT_MODEL, 'gemini-2.5-flash']);
+export const HELP_DEFAULT_MODEL = HELP_GEMINI_DEFAULT_MODEL;
+export const HELP_MODELS = new Set(HELP_GEMINI_MODELS);
+export const HELP_SETTINGS_VERSION = '2026-10-24-auth-keys-1';
 class SettingsError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
@@ -30,7 +33,8 @@ export function createHelpSettingsHandler({ authenticate, readCredential, writeC
   return async request => {
     const headers = { 'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
+      'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Content-Type': 'application/json', 'Cache-Control': 'no-store',
+      'X-Odonto-Help-Version': HELP_SETTINGS_VERSION };
     const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers });
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers });
     if (request.method !== 'POST') return json({ success: false, error: 'Método no permitido.' }, 405);
@@ -51,7 +55,7 @@ export function createHelpSettingsHandler({ authenticate, readCredential, writeC
         const { done, value } = await reader.read();
         if (done) break;
         bytes += value.length;
-        if (bytes > 2048) { await reader.cancel(); throw new SettingsError(413, 'Solicitud demasiado grande.'); }
+        if (bytes > 4096) { await reader.cancel(); throw new SettingsError(413, 'Solicitud demasiado grande.'); }
         chunks.push(value);
       }
       const buffer = new Uint8Array(bytes); let offset = 0;
@@ -68,15 +72,17 @@ export function createHelpSettingsHandler({ authenticate, readCredential, writeC
         const row = await readCredential(controller.signal);
         return json({ success: true, configured: !!row || !!env('ODONTO_HELP_GEMINI_API_KEY'),
           source: row ? 'panel' : env('ODONTO_HELP_GEMINI_API_KEY') ? 'server' : 'none',
-          model: row?.model || env('ODONTO_HELP_GEMINI_MODEL') || HELP_DEFAULT_MODEL,
+          model: HELP_MODELS.has(row?.model || env('ODONTO_HELP_GEMINI_MODEL')) ? (row?.model || env('ODONTO_HELP_GEMINI_MODEL')) : HELP_DEFAULT_MODEL,
+          version: HELP_SETTINGS_VERSION,
           updatedAt: row?.updated_at || null, verifiedAt: row?.verified_at || null,
           encryptionReady, serverDisabled: env('ODONTO_HELP_ENABLED') === 'false',
-          message: encryptionReady ? '' : 'El servidor necesita habilitar el cifrado antes de guardar claves desde el panel.' });
+          message: encryptionReady ? '' : 'La instalación del cifrado de ayuda está pendiente. Ejecuta el instalador actualizado del servidor y pulsa «Actualizar conexión».' });
       }
       const apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
       const model = body.model || HELP_DEFAULT_MODEL;
-      if (!/^[A-Za-z0-9_-]{20,200}$/.test(apiKey) || !HELP_MODELS.has(model)) throw new SettingsError(400, 'Revisa el formato de la clave y el modelo.');
-      if (body.action === 'save' && !encryptionReady) throw new SettingsError(503, 'El servidor necesita habilitar el cifrado antes de guardar claves desde el panel.');
+      if (!isHelpApiKey(apiKey)) throw new SettingsError(400, 'Pega la clave completa usando «Copiar clave de API» de Google AI Studio. No debe contener espacios ni saltos de línea.');
+      if (!HELP_MODELS.has(model)) throw new SettingsError(400, 'Selecciona Gemini 2.5 Flash-Lite o Gemini 2.5 Flash como modelo de ayuda.');
+      if (body.action === 'save' && !encryptionReady) throw new SettingsError(503, 'La instalación del cifrado de ayuda está pendiente. Ejecuta el instalador actualizado del servidor y pulsa «Actualizar conexión».');
       if (!await reserveCheck(caller.userId, controller.signal)) throw new SettingsError(429, 'Se alcanzó el límite de pruebas de conexión. Intenta más tarde.');
       // Encrypt before testing/writing so a missing master key can never replace the old key.
       const envelope = body.action === 'save' ? await encrypt(apiKey, HELP_KEY_AAD) : null;
