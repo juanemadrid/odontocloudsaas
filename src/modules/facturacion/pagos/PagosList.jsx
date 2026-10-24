@@ -31,6 +31,15 @@ const fmtDate = (ts) => {
   return d.toLocaleDateString("es-CO", { day: "2-digit", month: "2-digit", year: "numeric" });
 };
 
+export const formatEgresoConcepto = (concepto, pago) => {
+  if (!concepto) return "Egreso / Pago";
+  const s = String(concepto).trim();
+  if (pago?.liquidacionId || /^liquidaci[oó]n\s+(de\s+)?comisiones/i.test(s)) {
+    return "Liquidación comisiones";
+  }
+  return s;
+};
+
 export default function PagosList({ onNew }) {
   const { userProfile } = useAuth();
   const inquilino = userProfile?.inquilino || "";
@@ -175,12 +184,17 @@ export default function PagosList({ onNew }) {
     });
   };
 
-  const filtered = pagos.filter(p =>
-    (p.proveedor || p.tercero || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (p.concepto || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (p.medioPago || p.bancoCaja || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-    String(p.consecutivo || p.numero || p.nroConsecutivo || "").toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filtered = pagos.filter(p => {
+    const rawConcept = p.items && p.items.length > 0 ? p.items[0]?.concepto : (p.concepto || "");
+    const formattedConcept = formatEgresoConcepto(rawConcept, p);
+    return (
+      (p.proveedor || p.tercero || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (p.concepto || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      formattedConcept.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (p.medioPago || p.bancoCaja || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      String(p.consecutivo || p.numero || p.nroConsecutivo || "").toLowerCase().includes(searchTerm.toLowerCase())
+    );
+  });
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paginatedList = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
@@ -545,7 +559,7 @@ export default function PagosList({ onNew }) {
             }
 
             return {
-              desc: descItem,
+              desc: formatEgresoConcepto(descItem, pago),
               monto: it.total || it.precioUnitario || 0
             };
           })
@@ -580,13 +594,16 @@ export default function PagosList({ onNew }) {
       const isAnulado = pago.anulado || (pago.estado || "").toLowerCase() === "anulado";
       const motivoAnulacionTexto = pago.motivo_anulacion || pago.motivoAnulacion || "";
 
+      const rawCompConcepto = (itemsList && itemsList[0]?.desc) || pago.concepto || "Egreso / Pago a proveedor";
+      const finalCompConcepto = formatEgresoConcepto(rawCompConcepto, pago);
+
       const pagoPayload = {
         ...pago,
         tipo: "egreso",
         tipoDocumento: "Egreso",
         documentTitle: isAnulado ? "COMPROBANTE DE EGRESO (ANULADO)" : "COMPROBANTE DE EGRESO",
         monto: Number(pago.monto || pago.total || 0),
-        concepto: (itemsList && itemsList[0]?.desc) || pago.concepto || "Egreso / Pago a proveedor",
+        concepto: finalCompConcepto,
         nroConsecutivo: getExpenseNumber(pago) || "S/N",
         medio: pago.medioPago || pago.bancoCaja || "Efectivo",
         registradoPor: pago?.registradoPor || pago?.registrado_por || pago?.usuarioCreador || pago?.usuario_nombre || pago?.usuarioNombre || pago?.creadoPor || pago?.creado_por || pago?.cajero || pago?.usuario || userProfile?.nombreCompleto || "Administrador",
@@ -758,7 +775,7 @@ export default function PagosList({ onNew }) {
                         <td className="py-3 px-4 text-slate-600">
                           <div className="flex flex-col">
                             <span className={isAnulado ? "text-slate-400" : "text-slate-700"}>
-                              {p.items && p.items.length > 0 ? p.items[0]?.concepto : (p.concepto || "Egreso / Pago")}
+                              {formatEgresoConcepto(p.items && p.items.length > 0 ? p.items[0]?.concepto : p.concepto, p)}
                               {p.items && p.items.length > 1 && (
                                 <span className="ml-1 text-[10px] text-slate-400 font-normal">
                                   (+{p.items.length - 1} más)

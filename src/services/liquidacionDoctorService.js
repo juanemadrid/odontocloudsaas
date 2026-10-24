@@ -1025,11 +1025,11 @@ export const pagarLiquidacion = async (tenantId, liquidacion, pagoOptions = {}, 
         bancoCaja: pagoOptions.bancoCaja || "CAJA PRINCIPAL",
         medioPago: pagoOptions.medioPago || "Transferencia",
         condicionPago: "Contado",
-        concepto: `Liquidación de comisiones período ${liquidacion.fechaInicio} al ${liquidacion.fechaFin}`,
+        concepto: "Liquidación comisiones",
         monto: safeNumber(liquidacion.totalPagar),
         total: safeNumber(liquidacion.totalPagar),
         items: [{
-            concepto: `Liquidación comisiones ${doctorName} (${liquidacion.fechaInicio} a ${liquidacion.fechaFin})`,
+            concepto: "Liquidación comisiones",
             cantidad: 1,
             precio: safeNumber(liquidacion.totalPagar),
             total: safeNumber(liquidacion.totalPagar)
