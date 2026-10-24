@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import supabase from '../../lib/supabaseClient';
 import HelpAiKeySettings from './HelpAiKeySettings';
+import { manageHelpAiKey } from '../../services/helpAiSettingsService';
+import { helpFallbackMessage } from '../../../supabase/functions/_shared/helpFeedback.mjs';
 
 export default function HelpAiControls({ tenants }) {
   const [global, setGlobal] = useState(null);
@@ -8,6 +10,15 @@ export default function HelpAiControls({ tenants }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [loaded, setLoaded] = useState(false);
+  const [diagnostics, setDiagnostics] = useState({});
+  async function testClinic(tenantId) {
+    setBusy(true); setError('');
+    try {
+      const response = await manageHelpAiKey('diagnose', { tenantId });
+      setDiagnostics(previous => ({ ...previous, [tenantId]: response.result }));
+    } catch (e) { setDiagnostics(previous => ({ ...previous, [tenantId]: { error: e.message } })); }
+    finally { setBusy(false); }
+  }
   async function load() {
     setLoaded(false);
     try {
@@ -48,6 +59,7 @@ export default function HelpAiControls({ tenants }) {
     <summary className="cursor-pointer font-bold text-sm text-slate-800">Asistente IA de ayuda · Control por clínica</summary>
     <HelpAiKeySettings />
     <p className="text-xs text-slate-500 my-3">Las guías siguen disponibles con la IA apagada. Solo explica el uso del sistema y no ejecuta operaciones.</p>
+    <p className="text-xs text-slate-500 mb-3">«Probar IA» comprueba una pregunta de uso con la configuración de esa clínica. Respeta sus interruptores y consume una consulta si se envía a Gemini.</p>
     {error && <p role="alert" className="text-sm text-amber-800 mb-3">{error}</p>}
     {!loaded && <button type="button" onClick={load} className="text-xs text-blue-700">Actualizar estado</button>}
     {global && <>
@@ -59,11 +71,19 @@ export default function HelpAiControls({ tenants }) {
       </div>
       {tenants.map(t => {
         const c = clinics.find(row => row.tenant_id === t.id);
-        return <div key={t.id} className="flex justify-between items-center gap-3 py-2 border-b last:border-0">
+        return <div key={t.id} className="py-2 border-b last:border-0"><div className="flex justify-between items-center gap-3">
           <div className="text-sm">{t.name}
             <p className="text-xs text-slate-500">Máximo {c?.daily_limit ?? 15}/día y {c?.monthly_limit ?? 150}/mes.{!global.enabled && c?.enabled ? ' Pausada por el interruptor general.' : ''}</p>
           </div>
-          {switchButton(!!c?.enabled, `Asistente IA para ${t.name}`, () => toggle(t.id))}
+          <div className="flex gap-2 items-center">
+            <button type="button" aria-label={`Probar IA para ${t.name}`} disabled={busy || !loaded} onClick={() => testClinic(t.id)}
+              className="text-xs text-blue-700 border rounded-lg px-2 py-1.5 disabled:opacity-50">Probar IA</button>
+            {switchButton(!!c?.enabled, `Asistente IA para ${t.name}`, () => toggle(t.id))}
+          </div></div>
+          {diagnostics[t.id] && <div role="status" className="text-xs rounded-lg bg-slate-50 p-3 mt-2">
+            <strong>{diagnostics[t.id].provider === 'gemini' ? `Gemini respondió · ${diagnostics[t.id].model || 'modelo configurado'}` : 'La prueba no obtuvo respuesta de Gemini'}</strong>
+            <p>{diagnostics[t.id].error || helpFallbackMessage(diagnostics[t.id]) || diagnostics[t.id].answer}</p>
+          </div>}
         </div>;
       })}
     </>}

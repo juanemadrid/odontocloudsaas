@@ -147,6 +147,7 @@ export function createHelpHandler({ authenticate, reserve, resolveConfig, env, f
       'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
       'Content-Type': 'application/json',
+      'X-Odonto-Help-Version': '2026-10-24-clinic-routing-1',
       'Cache-Control': 'no-store',
     };
     const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers });
@@ -218,10 +219,10 @@ export function createHelpHandler({ authenticate, reserve, resolveConfig, env, f
       if (/\bedunexus\b/.test(normalize(question).replace(/(?: por favor)? explicame paso a paso(?: por favor)?$/, "").trim())) return json(clarificationReply(question));
       const guides = resolveHelpGuides(question, previousIds, isPublic ? 'public' : 'app');
       if (!guides.length) return json(clarificationReply(question, isPublic ? 'public' : 'app'));
-      const fallback = reason => {
-        trace('manual_fallback', { reason });
+      const fallback = (reason, details = {}) => {
+        trace('manual_fallback', { reason, ...details });
         const publicReason = ['timeout', 'provider_error', 'incomplete_response'].includes(reason) ? 'unavailable' : reason;
-        return json({ success: true, provider: 'manual', reason: publicReason, version: KNOWLEDGE_VERSION, answer: formatGuide(guides[0], isPublic), sources: guides.map(({ id, title, category }) => ({ id, title, category })) });
+        return json({ success: true, provider: 'manual', reason: publicReason, ...details, version: KNOWLEDGE_VERSION, answer: formatGuide(guides[0], isPublic), sources: guides.map(({ id, title, category }) => ({ id, title, category })) });
       };
 
       const sources = guides.map(({ id, title, category }) => ({ id, title, category }));
@@ -235,7 +236,7 @@ export function createHelpHandler({ authenticate, reserve, resolveConfig, env, f
         try {
           const config = await resolveConfig(configController.signal);
           providerEnv = name => config[name] ?? env(name);
-        } catch { return fallback('unavailable'); }
+        } catch { return fallback('unavailable', { diagnostic: 'help_configuration_unavailable' }); }
         finally { clearTimeout(timer); }
       }
       if (providerEnv('ODONTO_HELP_ENABLED') !== 'true') return fallback('disabled');
@@ -249,8 +250,9 @@ export function createHelpHandler({ authenticate, reserve, resolveConfig, env, f
           const reference = helpPrompt(guides[0], question, false, trustedScreenContext(body.screenContext), recentModelHistory(history)).split('\nREFERENCIA:\n').at(-1);
           const result = await generateManagedHelp({ guide: guides[0], reference, question,
             screenContext: trustedScreenContext(body.screenContext), reserve, principal, env: providerEnv, fetchImpl, signal: controller.signal });
-          return result.success ? json(result) : fallback(result.reason);
-        } catch { return fallback('unavailable'); }
+          if (result.success) trace('gemini_completed', { model: result.model });
+          return result.success ? json(result) : fallback(result.reason, { diagnostic: result.diagnostic, model: result.model });
+        } catch { return fallback('unavailable', { diagnostic: controller.signal.aborted ? 'gemini_timeout' : 'gemini_connection_failed' }); }
         finally { clearTimeout(timer); request.signal.removeEventListener('abort', abort); }
       }
       if (providerEnv('ODONTO_HELP_PROVIDER') !== 'ollama') return fallback('not_configured');

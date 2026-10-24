@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { createHelpHandler } from '../supabase/functions/odontocloud-help/handler.mjs';
 import { helpSafetyReason, safeHelpIntent } from '../supabase/functions/odontocloud-help/managedHelp.mjs';
+import { hasDocumentedLabels } from '../supabase/functions/odontocloud-help/managedHelp.mjs';
+import { helpFallbackMessage } from '../supabase/functions/_shared/helpFeedback.mjs';
+import { readFileSync } from 'node:fs';
 
 const defaults = { ODONTO_HELP_ENABLED: 'true', ODONTO_HELP_PROVIDER: 'gemini', ODONTO_HELP_GEMINI_API_KEY: 'test-key' };
 const request = (body = {}) => new Request('https://test.invalid/help', { method: 'POST',
@@ -77,6 +80,54 @@ for (const body of [{ mode: 'public', question: 'Planes de suscripción' }, { qu
   assert.notEqual((await answer(handler(), body)).provider, 'gemini');
 }
 assert.equal(calls.length, 0); assert.equal(reservations.length, 0);
+// All actual clinic questions, including the old zero-token shortcuts and follow-ups,
+// reach the selected provider when enabled. Greeting/thanks remain local by design.
+for (const body of [
+  { question: 'Cómo apartar una cita' }, { question: 'Quiero hacer un presupuesto' },
+  { question: 'no encuentro ese botón', previousIds: ['presupuestos'] },
+  { question: 'ya agregué los procedimientos', previousIds: ['presupuestos'] },
+]) {
+  const before = calls.length;
+  const response = await answer(handler({ fetchImpl: async (_url, options) => {
+    calls.push(options);
+    return Response.json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'Sigue los pasos de la guía de referencia.' }] } }] });
+  } }), body);
+  assert.equal(response.provider, 'gemini'); assert.equal(calls.length, before + 1);
+}
+assert.equal(hasDocumentedLabels('Abre [Administración > RIPS JSON].', '[Administración] [RIPS JSON]'), true);
+assert.equal(hasDocumentedLabels('Pulsa [botón Buscar].', '[Buscar]'), true);
+assert.equal(hasDocumentedLabels('Pulsa [Administración > Botón inventado].', '[Administración] [RIPS JSON]'), false);
+const grouped = await answer(handler({ fetchImpl: async () => Response.json({ candidates: [{ finishReason: 'STOP',
+  content: { parts: [{ text: 'Abre [Administración > RIPS JSON].' }] } }] }) }));
+assert.equal(grouped.provider, 'gemini', 'A valid composed route must not be thrown away');
+const cut = await answer(handler({ fetchImpl: async () => Response.json({ candidates: [{ finishReason: 'MAX_TOKENS' }] }) }));
+assert.equal(cut.diagnostic, 'gemini_truncated');
+assert.ok(helpFallbackMessage(cut).includes('límite de respuesta'));
+const forbidden = await answer(handler({ fetchImpl: async () => new Response('', { status: 403 }) }));
+assert.equal(forbidden.diagnostic, 'gemini_http_403');
+assert.ok(helpFallbackMessage(forbidden).includes('permisos'));
+assert.ok(helpFallbackMessage({ reason: 'quota', diagnostic: 'reservation_quota' }).includes('10 segundos'));
+
+// Client -> authenticated handler -> provider -> client: preserve real provider/model.
+let source = readFileSync(new URL('../src/services/helpAssistantService.js', import.meta.url), 'utf8');
+source = source.replace("import supabase from '../lib/supabaseClient';", 'const supabase = globalThis.__helpGeminiClient;');
+for (const name of ['helpKnowledge', 'helpConversation']) source = source.replace('../../supabase/functions/_shared/' + name + '.mjs', new URL('../supabase/functions/_shared/' + name + '.mjs', import.meta.url).href);
+let useDisabledClinic = false, actualProviderRequests = 0;
+const clinicHandler = handler({ reserve: async () => ({ allowed: !useDisabledClinic, reason: useDisabledClinic ? 'disabled' : undefined }),
+  fetchImpl: async () => { actualProviderRequests++; return Response.json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'Abre [Administración > RIPS JSON].' }] } }] }); } });
+globalThis.__helpGeminiClient = { functions: { invoke: async (name, { body, signal }) => {
+  assert.equal(name, 'odontocloud-help');
+  const response = await clinicHandler(new Request('https://test.invalid/help', { method: 'POST', headers: { Authorization: 'Bearer session-test' }, body: JSON.stringify(body), signal }));
+  return { data: await response.json(), error: null };
+} } };
+const { askHelp } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+const clinicResponse = await askHelp('Dónde están los RIPS');
+assert.equal(clinicResponse.provider, 'gemini'); assert.equal(clinicResponse.model, 'gemini-3.8-flash');
+useDisabledClinic = true;
+const disabledClinic = await askHelp('Dónde están los RIPS');
+assert.equal(disabledClinic.provider, 'manual'); assert.equal(disabledClinic.reason, 'disabled');
+assert.equal(actualProviderRequests, 1);
+delete globalThis.__helpGeminiClient;
 const controller = new AbortController(); controller.abort();
 await handler({ fetchImpl: async (_url, options) => { assert.equal(options.signal.aborted, true); throw new Error('aborted'); } })(new Request(request(), { signal: controller.signal }));
-console.log('Gemini help: private input isolation, switches, quotas, compact payload, no tools, truncation/failure fallback and zero-token common questions verified.');
+console.log('Gemini help: client-to-provider clinic flow, general questions/follow-ups, model identity, composed routes, isolation, switches and specific failure diagnostics verified.');

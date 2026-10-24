@@ -3,7 +3,7 @@ import { HELP_GEMINI_DEFAULT_MODEL, HELP_GEMINI_MODELS, isHelpApiKey } from '../
 export const HELP_KEY_AAD = 'odontocloud|help|gemini|v1';
 export const HELP_DEFAULT_MODEL = HELP_GEMINI_DEFAULT_MODEL;
 export const HELP_MODELS = new Set(HELP_GEMINI_MODELS);
-export const HELP_SETTINGS_VERSION = '2026-10-24-auth-keys-1';
+export const HELP_SETTINGS_VERSION = '2026-10-24-clinic-routing-1';
 class SettingsError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
@@ -35,7 +35,7 @@ export async function testHelpKey({ apiKey, model, fetchImpl = fetch, signal }) 
   }
 }
 
-export function createHelpSettingsHandler({ authenticate, readCredential, writeCredential, encrypt, canEncrypt,
+export function createHelpSettingsHandler({ authenticate, readCredential, writeCredential, encrypt, canEncrypt, diagnose,
   reserveCheck, env, fetchImpl = fetch, timeoutMs = 45000 }) {
   return async request => {
     const headers = { 'Access-Control-Allow-Origin': '*',
@@ -69,9 +69,13 @@ export function createHelpSettingsHandler({ authenticate, readCredential, writeC
       for (const chunk of chunks) { buffer.set(chunk, offset); offset += chunk.length; }
       let body;
       try { body = JSON.parse(new TextDecoder().decode(buffer)); } catch { throw new SettingsError(400, 'Solicitud inválida.'); }
-      if (!body || typeof body !== 'object' || Array.isArray(body) || !['status', 'test', 'save'].includes(body.action) ||
-        Object.keys(body).some(k => !(body.action === 'status' ? ['action'] : ['action', 'apiKey', 'model']).includes(k))) {
+      if (!body || typeof body !== 'object' || Array.isArray(body) || !['status', 'test', 'save', 'diagnose'].includes(body.action) ||
+        Object.keys(body).some(k => !(body.action === 'status' ? ['action'] : body.action === 'diagnose' ? ['action', 'tenantId'] : ['action', 'apiKey', 'model']).includes(k))) {
         throw new SettingsError(400, 'Solicitud inválida.');
+      }
+      if (body.action === 'diagnose') {
+        if (typeof body.tenantId !== 'string' || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(body.tenantId) || !diagnose) throw new SettingsError(400, 'Selecciona una clínica válida.');
+        return json({ success: true, result: await diagnose(body.tenantId, controller.signal) });
       }
       let encryptionReady = false;
       try { await canEncrypt(); encryptionReady = true; } catch { /* Return only a safe status. */ }

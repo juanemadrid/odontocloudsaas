@@ -36,9 +36,10 @@ export async function askHelp(question, previousIds = [], options = {}) {
     }
     if (!valid(data)) throw new Error('Invalid response');
     return data;
-  } catch {
+  } catch (error) {
     if (signal?.aborted) return { provider: 'assistant', answer: 'Respuesta detenida. Puedes reformular tu pregunta cuando quieras.', sources: [], reason: 'cancelled' };
-    return guideResponse(question, previousIds, 'unavailable', mode);
+    return { ...guideResponse(question, previousIds, 'unavailable', mode), diagnostic:
+      error?.context?.status === 401 || error?.context?.status === 403 ? 'help_session_rejected' : 'help_endpoint_unavailable' };
   } finally { clearTimeout(timer); signal?.removeEventListener('abort', abort); }
 }
 

@@ -6,6 +6,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { screenContextFromLocation } from '../../supabase/functions/_shared/helpConversation.mjs';
 import { askHelp } from '../services/helpAssistantService';
+import { helpFallbackMessage } from '../../supabase/functions/_shared/helpFeedback.mjs';
 import { HELP_GUIDES, formatGuide, normalize, searchGuides } from '../../supabase/functions/_shared/helpKnowledge.mjs';
 
 function FormattedMessage({ text }) {
@@ -240,7 +241,7 @@ function detectScreenContext() {
         });
         if (requestId !== generation.current) return;
         const sources = (result.sources || []).filter(s => s && HELP_GUIDES.some(g => g.id === s.id));
-        setMessages(prev => prev.map(m => m.id === replyId ? { sender: 'bot', text: result.answer, provider: result.provider, reason: result.reason, sources } : m));
+        setMessages(prev => prev.map(m => m.id === replyId ? { sender: 'bot', text: result.answer, provider: result.provider, model: result.model, reason: result.reason, diagnostic: result.diagnostic, sources } : m));
         if (sources.length && result.reason !== 'conversation' && result.reason !== 'cancelled') setPreviousIds(sources.map(s => s.id));
         pending.current = false;
         setIsTyping(false);
@@ -398,7 +399,7 @@ function detectScreenContext() {
                                                 <span className="text-slate-400">OdontoIA está escribiendo…</span>
                                             ) : message.provider === 'gemini' ? (
                                                 <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-bold text-[10px] flex items-center gap-1 shadow-2xs">
-                                                    ✨ Respuesta generada con Gemini AI
+                                                    ✨ Respuesta generada con Gemini AI {message.model ? `· ${message.model}` : ''}
                                                 </span>
                                             ) : message.provider === 'manual' ? (
                                                 <span className="text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full font-semibold text-[10px] flex items-center gap-1">
@@ -406,18 +407,13 @@ function detectScreenContext() {
                                                 </span>
                                             ) : (
                                                 <span className="text-slate-500 flex items-center gap-1">
-                                                    <FiMessageSquare size={11} /> OdontoIA
+                                                    <FiMessageSquare size={11} /> Mensaje automático de ayuda
                                                 </span>
                                             )}
                                         </div>
-                                        {['unavailable', 'not_configured'].includes(message.reason) && (
+                                        {helpFallbackMessage(message) && (
                                             <p className="text-[11px] text-amber-800 bg-amber-50 rounded-lg p-2 mb-2 border border-amber-200">
-                                                La IA no completó la respuesta en este momento. Te mostramos la guía documentada del sistema:
-                                            </p>
-                                        )}
-                                        {['disabled', 'quota'].includes(message.reason) && (
-                                            <p className="text-[11px] text-slate-700 bg-slate-100 rounded-lg p-2 mb-2 border border-slate-200 font-medium">
-                                                {message.reason === 'quota' ? 'La IA alcanzó su límite de consultas. Mostrando guía del manual:' : 'ℹ️ El asistente IA está apagado para esta clínica o en el interruptor general. Mostrando el manual documentado:'}
+                                                {helpFallbackMessage(message)}
                                             </p>
                                         )}
                                         <FormattedMessage text={message.text || (message.pending ? "Revisando tu pregunta…" : "")} />

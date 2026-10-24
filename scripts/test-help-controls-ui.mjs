@@ -25,6 +25,10 @@ try {
     window.__supabase = { functions: { invoke: async (name, { body }) => {
       if (name !== 'odontocloud-help-settings') throw new Error('Unexpected function');
       state.keyCalls.push(body.action);
+      if (body.action === 'diagnose') {
+        const enabled = state.global.enabled && state.clinics.find(c => c.tenant_id === body.tenantId)?.enabled;
+        return { data: { success: true, result: enabled ? { provider: 'gemini', model: 'gemini-3.8-flash', answer: 'Abre el módulo indicado.' } : { provider: 'manual', reason: 'disabled' } }, error: null };
+      }
       if (body.action === 'status') return { data: { success: true, configured: state.keyConfigured, source: state.keyConfigured ? 'panel' : 'none',
         model: 'gemini-2.5-flash-lite', encryptionReady: true }, error: null };
       if (state.keyFail) return { data: { success: false, error: 'Prueba rechazada. Se conserva la clave anterior.' }, error: null };
@@ -103,5 +107,12 @@ try {
   await page.waitForFunction(() => document.getElementById('help-gemini-key').value === '');
   await settings.getByText('Clave configurada · Guardada desde este panel', { exact: true }).waitFor();
   assert.deepEqual(await page.evaluate(() => window.__helpState.keyCalls), ['status','test','save','save','status']);
+  await page.evaluate(() => { window.__helpState.fail = false; });
+  await page.getByRole('button', { name: 'Probar IA para Clínica A', exact: true }).click();
+  await page.getByText('La prueba no obtuvo respuesta de Gemini', { exact: true }).waitFor();
+  await clinicA.click();
+  await page.waitForFunction(() => document.querySelector('[aria-label="Asistente IA para Clínica A"]')?.getAttribute('aria-checked') === 'true');
+  await page.getByRole('button', { name: 'Probar IA para Clínica A', exact: true }).click();
+  await page.getByText('Gemini respondió · gemini-3.8-flash', { exact: true }).waitFor();
   console.log('Help controls browser: switches, isolated clinics, masked key entry, test/save, failed replacement and field clearing verified without remote requests.');
 } finally { await browser?.close(); await server.close(); }

@@ -61,6 +61,17 @@ try {
     assert.equal((await authenticateHelpSettings(fakeAdmin, 'token')).superadmin, expected);
   }
   const handler = makeHandler();
+  let diagnosisCalls = 0;
+  const diagnosticTenant = '10000000-0000-0000-0000-000000000001';
+  const diagnosticHandler = makeHandler({ diagnose: async tenantId => {
+    diagnosisCalls++; assert.equal(tenantId, diagnosticTenant);
+    return { provider: 'gemini', model: 'gemini-3.8-flash', answer: 'Abre el módulo documentado.' };
+  } });
+  assert.equal((await result(diagnosticHandler, { action: 'diagnose', tenantId: diagnosticTenant }, 'invalid')).status, 403);
+  assert.equal(diagnosisCalls, 0);
+  assert.equal((await result(diagnosticHandler, { action: 'diagnose', tenantId: diagnosticTenant, question: 'untrusted override' })).status, 400);
+  assert.equal((await result(diagnosticHandler, { action: 'diagnose', tenantId: diagnosticTenant })).body.result.provider, 'gemini');
+  assert.equal(diagnosisCalls, 1);
   assert.equal((await result(handler, undefined, null)).status, 401);
   assert.equal((await result(handler, undefined, 'invalid')).status, 403);
   assert.equal((await result(makeHandler({ authenticate: async () => ({ userId: 'clinic-user', superadmin: false }) }), { action: 'save', apiKey })).status, 403);

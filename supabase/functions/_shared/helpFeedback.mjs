@@ -1,0 +1,21 @@
+export function helpFallbackMessage(result = {}) {
+  const code = result.diagnostic;
+  if (code === 'help_session_rejected') return 'La sesión no permitió consultar la IA. Vuelve a iniciar sesión; esta respuesta procede del manual.';
+  if (code === 'help_endpoint_unavailable') return 'No se pudo conectar con el servicio de IA de ayuda. Esta respuesta procede del manual local.';
+  if (code === 'gemini_truncated') return 'Gemini alcanzó el límite de respuesta antes de terminar. Se muestra la guía de respaldo.';
+  if (code === 'gemini_unverified_labels') return 'La respuesta de Gemini incluyó una opción que no pudimos verificar en el manual. Se muestra la guía segura.';
+  if (code === 'gemini_http_400') return 'Google rechazó la configuración del modelo. El superadministrador debe probar la conexión.';
+  if (code === 'gemini_http_401' || code === 'gemini_http_403') return 'Google rechazó la clave o sus permisos. El superadministrador debe revisar la conexión.';
+  if (code === 'gemini_http_404') return 'El modelo configurado no está disponible en Google. El superadministrador debe seleccionar otro modelo compatible.';
+  if (code === 'gemini_timeout') return 'Gemini tardó demasiado. Se muestra la guía de respaldo.';
+  if (code === 'help_configuration_unavailable') return 'No se pudo cargar la conexión cifrada de la ayuda. El superadministrador debe revisar su estado.';
+  if (code === 'clinic_inactive') return 'La clínica está inactiva.';
+  if (code === 'clinic_no_active_profile') return 'No hay un perfil activo de esta clínica para ejecutar la prueba.';
+  if (result.reason === 'disabled') return 'La IA está apagada para esta clínica o en el interruptor general. Esta respuesta procede del manual.';
+  if (result.reason === 'quota') return code === 'gemini_http_429'
+    ? 'Google indica que no hay cuota disponible. Esta respuesta procede del manual.'
+    : 'Se alcanzó una cuota o el límite temporal de consultas. Espera al menos 10 segundos entre mensajes; si persiste, el superadministrador debe revisar los límites. Esta respuesta procede del manual.';
+  if (result.reason === 'not_configured') return 'La conexión de IA de ayuda no está configurada. Esta respuesta procede del manual.';
+  if (result.reason === 'unavailable') return 'No se recibió una respuesta válida de la IA. Esta respuesta procede del manual de respaldo.';
+  return '';
+}
