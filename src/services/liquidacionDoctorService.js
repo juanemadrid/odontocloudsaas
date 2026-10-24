@@ -1,3 +1,4 @@
+import { createSupplierExpense } from './supplierExpenseService';
 // src/services/liquidacionDoctorService.js
 import supabase from "../lib/supabaseClient";
 import { isDoctorUser } from "../utils/doctorHelpers";
@@ -1009,7 +1010,7 @@ export const anularLiquidacionGenerada = async (tenantId, liquidacionId) => {
 export const pagarLiquidacion = async (tenantId, liquidacion, pagoOptions = {}, userProfile) => {
     const nowIso = new Date().toISOString();
     const todayStr = nowIso.split("T")[0];
-    const pagoId = `pago_liq_${Date.now()}`;
+    const pagoId = `pago_liq_${crypto.randomUUID()}`;
 
     // 1. Crear registro de pago a proveedor (Médico)
     const doctorName = liquidacion.profesionalNombre || "Doctor";
@@ -1039,43 +1040,5 @@ export const pagarLiquidacion = async (tenantId, liquidacion, pagoOptions = {}, 
         created_by: userProfile?.nombre || userProfile?.email || "Administración"
     };
 
-    // Guardar en pagos_proveedor
-    try {
-        await supabase.from("pagos_proveedor").insert([pagoRecord]);
-    } catch (_) {}
-
-    try {
-        const currPagos = await getConfigSection(tenantId, "pagos_proveedor", []);
-        await saveConfigSection(tenantId, "pagos_proveedor", [
-            pagoRecord,
-            ...(Array.isArray(currPagos) ? currPagos : [])
-        ]);
-    } catch (e) {
-        console.error("Error guardando pago en config:", e);
-    }
-
-    // 2. Actualizar estado de la liquidación a "Pagada"
-    let currentLiqs = await getConfigSection(tenantId, "liquidaciones", []);
-    currentLiqs = currentLiqs.map(l => {
-        if (l.id === liquidacion.id) {
-            return {
-                ...l,
-                estado: "Pagada",
-                pagoProveedorId: pagoId,
-                fechaPago: todayStr,
-                medioPago: pagoRecord.medioPago,
-                bancoCaja: pagoRecord.bancoCaja,
-                pagadoPor: userProfile?.nombre || userProfile?.email || "Administración",
-                updated_at: nowIso
-            };
-        }
-        return l;
-    });
-    await saveConfigSection(tenantId, "liquidaciones", currentLiqs);
-
-    try {
-        await supabase.from("liquidaciones").update({ estado: "Pagada" }).eq("id", liquidacion.id);
-    } catch (_) {}
-
-    return pagoRecord;
+    return createSupplierExpense(tenantId, pagoRecord, liquidacion.id);
 };

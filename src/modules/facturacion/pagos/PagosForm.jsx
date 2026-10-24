@@ -1,3 +1,4 @@
+import { createSupplierExpense } from '../../../services/supplierExpenseService';
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { 
     FiCalendar, FiPlus, FiTrash2, FiSave, FiAlertCircle, 
@@ -947,25 +948,13 @@ export default function PagosForm({ onCancel, onSuccess }) {
                 nombre: terceroSearchQuery || terceroId || "Tercero",
                 documento: ""
             };
-            let nextEgresoNum = 1;
-            try {
-                const { consumeNextConsecutivo, CONSECUTIVO_TYPES } = await import("../../../services/consecutivosService");
-                nextEgresoNum = await consumeNextConsecutivo(inquilino, CONSECUTIVO_TYPES.EGRESOS);
-            } catch (e) {
-                console.warn("Aviso al obtener consecutivo de egreso:", e);
-            }
-            const consStr = String(nextEgresoNum);
-
             const selectedProf = (profesionales || []).find(
                 p => p.id === profesionalId || p.nombre === profesionalId || p.displayName === profesionalId
             );
 
-            const pagoRecord = {
-                id: `pago_${Date.now()}`,
+            let pagoRecord = {
+                id: `pago_${crypto.randomUUID()}`,
                 tenant_id: inquilino,
-                numero: consStr,
-                consecutivo: consStr,
-                nroConsecutivo: consStr,
                 pagadorEmail,
                 fecha,
                 profesionalId: selectedProf?.id || profesionalId || "",
@@ -1008,23 +997,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
                 usuario_nombre: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administrador"
             };
 
-            // 1. Guardar en tabla pagos_proveedor
-            try {
-                await supabase.from("pagos_proveedor").insert([pagoRecord]);
-            } catch (e) {
-                console.warn("Tabla pagos_proveedor no disponible, guardando en config:", e.message);
-            }
-
-            // 2. Sincronizar en website_config
-            try {
-                const currPagos = await getConfigSection(inquilino, "pagos_proveedor", []);
-                await saveConfigSection(inquilino, "pagos_proveedor", [
-                    pagoRecord,
-                    ...(Array.isArray(currPagos) ? currPagos : [])
-                ]);
-            } catch (e) {
-                console.error("Error saving in website_config:", e);
-            }
+            pagoRecord = await createSupplierExpense(inquilino, pagoRecord);
 
             // 3. Registrar Egreso en movimientos_caja y actualizar saldo de la caja (positivo o negativo)
             if (isPayingFromCaja && miCajaAbierta?.id) {

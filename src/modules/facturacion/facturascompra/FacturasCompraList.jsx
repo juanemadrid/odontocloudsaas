@@ -1,5 +1,7 @@
+import { associateSupplierExpense } from '../../../services/supplierExpenseService';
+import { expenseMatchesInvoice, getExpenseNumber } from '../../../services/supplierExpenseLinks';
 // src/modules/facturacion/facturascompra/FacturasCompraList.jsx
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { 
     FiPlus, FiSearch, FiCalendar, FiPrinter, FiEye, FiTrash2, 
     FiMoreVertical, FiHome, FiInfo, FiCheckSquare, FiSquare, 
@@ -106,6 +108,7 @@ export default function FacturasCompraList({ onNew }) {
   const [disponibleEgreso, setDisponibleEgreso] = useState(0);
   const [egresosList, setEgresosList] = useState([]);
   const [savingEgreso, setSavingEgreso] = useState(false);
+  const associationRequestId = useRef(null);
 
   // Modal Ver Detalle Factura
   const [viewingFactura, setViewingFactura] = useState(null);
@@ -244,72 +247,17 @@ export default function FacturasCompraList({ onNew }) {
   }, [filteredFacturas, currentPage]);
 
   // Helper para resolver egresos asociados a una factura de compra / documento soporte
-  const getAssociatedEgresos = useCallback((factura, eList = egresosList) => {
-    if (!factura || !Array.isArray(eList) || eList.length === 0) return [];
-    const matched = [];
-    const fcNum = String(factura.nroFactura || factura.documentoNumero || factura.numero || factura.id || "").trim();
-    const fcNumClean = fcNum.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
-    const fcId = String(factura.id || "").trim();
-    const fcTercero = String(factura.proveedor || factura.tercero || "").trim().toLowerCase();
-    const fcTotal = Number(factura.totalNeto || factura.total || factura.subtotal || 0);
-
-    eList.forEach(pago => {
-      if (!pago) return;
-      let isMatch = false;
-      const pagoId = String(pago.id || "").trim();
-      const pagoCons = String(pago.consecutivo || pago.numero || pago.nroConsecutivo || "").trim();
-      const pagoTercero = String(pago.proveedor || pago.tercero || "").trim().toLowerCase();
-      const pagoMonto = Number(pago.monto || pago.total || 0);
-      const obsStr = `${pago.observaciones || ""} ${pago.notas || ""} ${pago.descripcion || ""} ${pago.concepto || ""}`.toLowerCase();
-
-      // 1. Vínculo directo en la factura
-      if (factura.egresoAsociadoId && (factura.egresoAsociadoId === pagoId || factura.egresoAsociadoId === pagoCons)) {
-        isMatch = true;
-      } else if (factura.egresoAsociadoDoc && (String(factura.egresoAsociadoDoc).trim() === pagoCons || String(factura.egresoAsociadoDoc).trim() === pagoId)) {
-        isMatch = true;
-      } else if (Array.isArray(factura.egresos_asociados) && (factura.egresos_asociados.includes(pagoId) || factura.egresos_asociados.includes(pagoCons))) {
-        isMatch = true;
-      }
-      // 2. Vínculo directo en el egreso
-      else if (pago.factura_asociada && (pago.factura_asociada === fcNum || pago.factura_asociada === fcId || (fcNumClean && pago.factura_asociada.replace(/[^a-zA-Z0-9]/g, "").toLowerCase() === fcNumClean))) {
-        isMatch = true;
-      } else if (pago.facturaId && (pago.facturaId === fcId || pago.facturaId === fcNum)) {
-        isMatch = true;
-      } else if (Array.isArray(pago.facturasSeleccionadas) && pago.facturasSeleccionadas.some(s => {
-        const sVal = String(s?.id || s?.numero || s?.nroFactura || s?.documentoNumero || s).trim();
-        return sVal === fcId || sVal === fcNum || (fcNumClean && sVal.replace(/[^a-zA-Z0-9]/g, "").toLowerCase() === fcNumClean);
-      })) {
-        isMatch = true;
-      } else if (Array.isArray(pago.items) && pago.items.some(i => i.isFactura && (String(i.facturaId) === fcId || String(i.numeroFactura || i.concepto) === fcNum || (fcNumClean && String(i.numeroFactura || i.concepto).replace(/[^a-zA-Z0-9]/g, "").toLowerCase() === fcNumClean)))) {
-        isMatch = true;
-      }
-      // 3. Mención del número de factura en observaciones / concepto
-      else if (fcNumClean && fcNumClean.length >= 3 && obsStr.replace(/[^a-zA-Z0-9]/g, "").includes(fcNumClean)) {
-        isMatch = true;
-      }
-      // 4. Mismo tercero y mismo monto exacto
-      else if (fcTercero && pagoTercero && fcTercero === pagoTercero && Math.abs(fcTotal - pagoMonto) < 1) {
-        isMatch = true;
-      }
-
-      if (isMatch && !matched.some(m => m.id === pago.id)) {
-        matched.push(pago);
-      }
-    });
-
-    return matched;
-  }, [egresosList]);
+  const getAssociatedEgresos = useCallback((factura, eList = egresosList) => eList.filter(p => expenseMatchesInvoice(p, factura)), [egresosList]);
 
   // Determinar si una factura está pagada / cancelada o asociada a egreso
   const isFacturaPaid = useCallback((factura) => {
     if (!factura) return false;
-    const est = String(factura.estado || "").toLowerCase();
-    if (est === "pagada" || est === "cancelada" || est === "pagado" || est === "cancelado") return true;
-    if (factura.saldoPendiente !== undefined && Number(factura.saldoPendiente) <= 0) return true;
-    if (factura.egresoAsociadoId || factura.egresoAsociadoDoc) return true;
-    const asocs = getAssociatedEgresos(factura);
-    return asocs.length > 0;
-  }, [getAssociatedEgresos]);
+    const state = String(factura.estado || '').toLowerCase();
+    if (['anulada', 'anulado', 'cancelada', 'cancelado'].includes(state)) return true;
+    const balance = factura.saldoPendiente ?? factura.saldo_pendiente;
+    if (balance != null) return Number(balance) <= 0;
+    return ['pagada', 'pagado'].includes(state);
+  }, []);
 
   // Cálculo de días restantes para vencimiento (Si ya está paga, retorna 0)
   const calcularVencimiento = (factura) => {
@@ -352,6 +300,7 @@ export default function FacturasCompraList({ onNew }) {
       ? targetFactura.saldoPendiente 
       : (targetFactura.totalNeto || targetFactura.total || 0);
 
+    associationRequestId.current = crypto.randomUUID();
     setFacturaToAsociar(targetFactura);
     setValorAPagar(String(pendiente));
     setSelectedEgresoId("");
@@ -364,7 +313,7 @@ export default function FacturasCompraList({ onNew }) {
     setSelectedEgresoId(egresoId);
     const egresoObj = egresosList.find(e => String(e.id) === String(egresoId));
     if (egresoObj) {
-      const disp = egresoObj.monto || egresoObj.total || 0;
+      const disp = Math.max(0, Number(egresoObj.monto || egresoObj.total || 0) - Number(egresoObj.valorAplicado || 0));
       setDisponibleEgreso(disp);
     } else {
       setDisponibleEgreso(0);
@@ -385,61 +334,15 @@ export default function FacturasCompraList({ onNew }) {
 
     setSavingEgreso(true);
     try {
-      const selectedEgreso = egresosList.find(e => String(e.id) === String(selectedEgresoId));
-      const currentPendiente = facturaToAsociar.saldoPendiente !== undefined 
-        ? facturaToAsociar.saldoPendiente 
-        : (facturaToAsociar.totalNeto || facturaToAsociar.total || 0);
-      
-      const nuevoSaldo = Math.max(0, currentPendiente - pagoNum);
-      const nuevoEstado = nuevoSaldo === 0 ? "Pagada" : "Parcial";
-
-      const updatedFactura = {
-        ...facturaToAsociar,
-        saldoPendiente: nuevoSaldo,
-        estado: nuevoEstado,
-        egresoAsociadoId: selectedEgresoId,
-        egresoAsociadoDoc: selectedEgreso?.nroPago || selectedEgreso?.id,
-        valorPagado: (facturaToAsociar.valorPagado || 0) + pagoNum
-      };
-
-      // 1. Actualizar en Supabase
-      try {
-        await supabase
-          .from("facturas_compra")
-          .update({
-            saldoPendiente: nuevoSaldo,
-            estado: nuevoEstado,
-            egresoAsociadoId: selectedEgresoId
-          })
-          .eq("id", facturaToAsociar.id);
-      } catch (e) {}
-
-      // 2. Sincronizar en website_config
-      try {
-        const { data: cfgRow } = await supabase
-          .from("website_config")
-          .select("config")
-          .eq("tenant_id", inquilino)
-          .maybeSingle();
-
-        const currentCfg = cfgRow?.config || {};
-        const currentFacturas = currentCfg.facturas_compra || [];
-        const nextFacturas = currentFacturas.map(f => f.id === facturaToAsociar.id ? updatedFactura : f);
-        currentCfg.facturas_compra = nextFacturas;
-
-        await supabase
-          .from("website_config")
-          .upsert({ tenant_id: inquilino, config: currentCfg });
-      } catch (e) {}
-
-      // Actualizar estado local
-      setFacturas(prev => prev.map(f => f.id === facturaToAsociar.id ? updatedFactura : f));
-      toast.success("Egreso asociado correctamente ✅");
+      const { factura, pago } = await associateSupplierExpense(inquilino, facturaToAsociar.id, selectedEgresoId, pagoNum, associationRequestId.current);
+      setFacturas(prev => prev.map(f => f.id === factura.id ? factura : f));
+      setEgresosList(prev => prev.map(p => p.id === pago.id ? pago : p));
+      toast.success('Egreso asociado correctamente');
       setShowAsociarModal(false);
       setSelectedFacturaId(null);
     } catch (err) {
       console.error("Error asociando egreso:", err);
-      toast.error("Error al asociar el egreso");
+      toast.error(err.message || "Error al asociar el egreso");
     } finally {
       setSavingEgreso(false);
     }
@@ -795,7 +698,7 @@ export default function FacturasCompraList({ onNew }) {
         monto: montoTotal,
         total: montoTotal,
         concepto: (itemsList[0]?.desc) || pago?.concepto || (numDocFac ? `Pago documento ${numDocFac}` : "Egreso / Pago a proveedor"),
-        nroConsecutivo: pago?.consecutivo || pago?.numero || (pago?.id && String(pago.id).replace(/\D/g, "").slice(-4)) || "EGR-0001",
+        nroConsecutivo: getExpenseNumber(pago) || "S/N",
         medio: pago?.medioPago || pago?.medio || pago?.bancoCaja || fallbackFactura?.medioPago || "Efectivo",
         registradoPor: pago?.registradoPor || pago?.registrado_por || pago?.usuarioCreador || pago?.usuario_nombre || pago?.usuarioNombre || pago?.creadoPor || pago?.creado_por || pago?.cajero || pago?.usuario || userProfile?.nombreCompleto || "Administración",
         itemPayments: itemsList,
@@ -1509,7 +1412,7 @@ export default function FacturasCompraList({ onNew }) {
                             className="text-blue-600 font-bold hover:underline cursor-pointer bg-transparent border-0 p-0 text-[11px] inline-flex items-center gap-1"
                             title="Ver comprobante de egreso asociado"
                           >
-                            <span>{asocs[0].consecutivo || asocs[0].numero || `EGR-${asocs[0].id?.slice(0, 6)}`}</span>
+                            <span>{getExpenseNumber(asocs[0]) || "Sin consecutivo"}</span>
                             {asocs.length > 1 && <span className="text-slate-400 font-semibold">(+{asocs.length - 1})</span>}
                           </button>
                         ) : (
@@ -1657,7 +1560,7 @@ export default function FacturasCompraList({ onNew }) {
                     <option value="">Seleccione...</option>
                     {egresosList.map(eg => (
                       <option key={eg.id} value={eg.id}>
-                        {eg.nroPago || eg.id} - {eg.proveedor || eg.tercero || "Egreso"} ({fmt(eg.monto || eg.total)})
+                        {getExpenseNumber(eg) || "Sin consecutivo"} - {eg.proveedor || eg.tercero || "Egreso"} ({fmt(eg.monto || eg.total)})
                       </option>
                     ))}
                   </select>
@@ -1755,7 +1658,7 @@ export default function FacturasCompraList({ onNew }) {
                       associatedDocsModal.egresos.map((egr, idx) => (
                         <tr key={egr.id || idx} className="hover:bg-slate-50/60">
                           <td className="py-3 px-4 font-bold font-mono text-slate-800">
-                            {egr.consecutivo || egr.numero || egr.nroConsecutivo || (egr.id && String(egr.id).replace(/\D/g, "").slice(-4)) || "EGR-0001"}
+                            {getExpenseNumber(egr) || "Sin consecutivo"}
                           </td>
                           <td className="py-3 px-4 text-slate-600 font-medium">
                             Comprobante de egreso

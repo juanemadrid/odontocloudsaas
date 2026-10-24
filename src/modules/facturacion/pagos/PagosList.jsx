@@ -1,3 +1,4 @@
+import { expenseMatchesInvoice, getExpenseNumber } from '../../../services/supplierExpenseLinks';
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { FiCreditCard, FiSearch, FiCalendar, FiPrinter, FiTrash2, FiPlus, FiHome, FiFileText, FiAlertTriangle, FiSlash, FiX, FiEye } from "react-icons/fi";
 import supabase from "../../../lib/supabaseClient";
@@ -150,62 +151,7 @@ export default function PagosList({ onNew }) {
   }, [searchTerm, fechaInicio, fechaFin]);
 
   // Helper para resolver facturas de compra / documentos soporte asociados a un egreso
-  const getAssociatedFacturas = useCallback((pago, fcList) => {
-    if (!pago || !Array.isArray(fcList) || fcList.length === 0) return [];
-    const matched = [];
-    const pagoCons = String(pago.consecutivo || pago.numero || pago.nroConsecutivo || (pago.id && String(pago.id).replace(/\D/g, "").slice(-4)) || "").trim();
-    const pagoId = String(pago.id || "").trim();
-    const fcAsoc = String(pago.factura_asociada || pago.facturaId || pago.factura_id || "").trim();
-    const fcSels = Array.isArray(pago.facturasSeleccionadas) ? pago.facturasSeleccionadas : [];
-    const rawItems = Array.isArray(pago.items) ? pago.items : [];
-    const obsStr = `${pago.observaciones || ""} ${pago.notas || ""} ${pago.descripcion || ""} ${pago.concepto || ""}`.toLowerCase();
-    const pagoTercero = String(pago.proveedor || pago.tercero || "").trim().toLowerCase();
-    const pagoMonto = Number(pago.monto || pago.total || 0);
-
-    fcList.forEach(fc => {
-      const fcNum = String(fc.nroFactura || fc.documentoNumero || fc.numero || fc.consecutivo || "").trim();
-      const fcNumClean = fcNum.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
-      const fcId = String(fc.id || "").trim();
-      const fcTotal = Number(fc.totalNeto || fc.total || fc.monto || fc.valor || 0);
-      const fcTercero = String(fc.proveedor || fc.tercero || fc.nombreProveedor || "").trim().toLowerCase();
-
-      let isMatch = false;
-
-      // 1. Vínculo directo por ID o consecutivo guardado en el egreso
-      if (fcAsoc && (fcAsoc === fcNum || fcAsoc === fcId || (fcNumClean && fcAsoc.replace(/[^a-zA-Z0-9]/g, "").toLowerCase() === fcNumClean))) {
-        isMatch = true;
-      } else if (fcSels.some(s => {
-        const sVal = String(s?.id || s?.numero || s?.nroFactura || s?.documentoNumero || s).trim();
-        return sVal === fcId || sVal === fcNum || (fcNumClean && sVal.replace(/[^a-zA-Z0-9]/g, "").toLowerCase() === fcNumClean);
-      })) {
-        isMatch = true;
-      } else if (rawItems.some(i => i.isFactura && (String(i.facturaId) === fcId || String(i.numeroFactura || i.concepto) === fcNum || (fcNumClean && String(i.numeroFactura || i.concepto).replace(/[^a-zA-Z0-9]/g, "").toLowerCase() === fcNumClean)))) {
-        isMatch = true;
-      } 
-      // 2. Vínculo inverso desde la factura de compra
-      else if (pagoCons && fc.egreso_asociado && String(fc.egreso_asociado).trim() === pagoCons) {
-        isMatch = true;
-      } else if (pagoCons && fc.pago_asociado && String(fc.pago_asociado).trim() === pagoCons) {
-        isMatch = true;
-      } else if (pagoCons && Array.isArray(fc.egresos_asociados) && fc.egresos_asociados.map(String).includes(pagoCons)) {
-        isMatch = true;
-      }
-      // 3. Mención del número de factura en observaciones / concepto
-      else if (fcNumClean && fcNumClean.length >= 3 && obsStr.replace(/[^a-zA-Z0-9]/g, "").includes(fcNumClean)) {
-        isMatch = true;
-      }
-      // 4. Mismo tercero y mismo monto exacto si la observación contiene indicios de factura o compra
-      else if (pagoTercero && fcTercero && pagoTercero === fcTercero && Math.abs(fcTotal - pagoMonto) < 1 && (obsStr.includes("factura") || obsStr.includes("compra") || obsStr.includes("doc") || obsStr.includes("soporte") || obsStr.includes("pastel"))) {
-        isMatch = true;
-      }
-
-      if (isMatch && !matched.some(m => m.id === fc.id)) {
-        matched.push(fc);
-      }
-    });
-
-    return matched;
-  }, []);
+  const getAssociatedFacturas = useCallback((pago, fcList) => (fcList || []).filter(fc => expenseMatchesInvoice(pago, fc)), []);
 
   // Imprimir factura de compra asociada desde el modal
   const handlePrintFacturaCompra = (factura) => {
@@ -641,7 +587,7 @@ export default function PagosList({ onNew }) {
         documentTitle: isAnulado ? "COMPROBANTE DE EGRESO (ANULADO)" : "COMPROBANTE DE EGRESO",
         monto: Number(pago.monto || pago.total || 0),
         concepto: (itemsList && itemsList[0]?.desc) || pago.concepto || "Egreso / Pago a proveedor",
-        nroConsecutivo: pago.consecutivo || pago.numero || (pago.id && String(pago.id).replace(/\D/g, "").slice(-4)) || "S/N",
+        nroConsecutivo: getExpenseNumber(pago) || "S/N",
         medio: pago.medioPago || pago.bancoCaja || "Efectivo",
         registradoPor: pago?.registradoPor || pago?.registrado_por || pago?.usuarioCreador || pago?.usuario_nombre || pago?.usuarioNombre || pago?.creadoPor || pago?.creado_por || pago?.cajero || pago?.usuario || userProfile?.nombreCompleto || "Administrador",
         itemPayments: itemsList,
@@ -769,7 +715,7 @@ export default function PagosList({ onNew }) {
                   paginatedList.map(p => {
                     const isAnulado = p.anulado || (p.estado || "").toLowerCase() === "anulado";
                     const motivoAnul = p.motivo_anulacion || p.motivoAnulacion || "";
-                    const docConsecutivo = p.consecutivo || p.numero || p.nroConsecutivo || (p.id && String(p.id).replace(/\D/g, "").slice(-4)) || "—";
+                    const docConsecutivo = getExpenseNumber(p) || "Sin consecutivo";
                     const associatedDocs = getAssociatedFacturas(p, facturasCompra);
 
                     return (

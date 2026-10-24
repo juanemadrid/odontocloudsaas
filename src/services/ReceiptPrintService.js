@@ -1,3 +1,4 @@
+import { getExpenseNumber } from './supplierExpenseLinks';
 import jsPDF from "jspdf";
 import html2canvas from "html2canvas";
 import DOMPurify from "dompurify";
@@ -243,7 +244,7 @@ export const ReceiptPrintService = {
             const patientPhone = patient?.celular || patient?.telefono || patient?.phone || patient?.movil || pago?.telefono || "—";
             
             // Clean consecutive number (avoid "No. No. REC-...")
-            let rawConsecutive = String(pago.nroConsecutivo || pago.consecutivo || pago.consecutivoNumero || pago.numero || (pago.id && String(pago.id).replace(/\D/g, "").slice(-4)) || "").trim();
+            let rawConsecutive = isEgreso ? getExpenseNumber(pago) : String(pago.nroConsecutivo || pago.consecutivo || pago.consecutivoNumero || pago.numero || (pago.id && String(pago.id).replace(/\D/g, "").slice(-4)) || "").trim();
             if (rawConsecutive.startsWith("No.")) {
                 rawConsecutive = rawConsecutive.replace(/^No\.\s*/i, "");
             }

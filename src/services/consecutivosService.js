@@ -1,3 +1,4 @@
+import { invalidateConfigCache } from './configCacheService';
 /**
  * consecutivosService.js
  * Servicio unificado y centralizado para la gestión de Consecutivos y DIAN en OdontoCloud.
@@ -75,6 +76,15 @@ export const getNextConsecutivoNumber = async (tenantId, tipoField) => {
  * Incrementa atómicamente el consecutivo y retorna el nuevo número asignado
  */
 export const consumeNextConsecutivo = async (tenantId, tipoField) => {
+  if (tipoField === CONSECUTIVO_TYPES.EGRESOS) {
+    if (!tenantId) throw new Error('Falta la clínica del egreso');
+    const { data, error } = await supabase.rpc('consume_supplier_expense_number', { p_tenant_id: tenantId });
+    if (error) throw error;
+    const value = Number(data);
+    if (!Number.isSafeInteger(value) || value <= 0) throw new Error('No se pudo asignar el consecutivo del egreso');
+    invalidateConfigCache(tenantId, 'consecutivos');
+    return value;
+  }
   if (!tenantId || !tipoField) return 1;
   try {
     let list = await getConfigItems(tenantId, "consecutivos", "consecutivos");
