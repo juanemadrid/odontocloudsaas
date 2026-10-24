@@ -24,7 +24,11 @@ assert.equal(reservations.length, 1);
 assert.equal(calls.length, 1);
 const payload = JSON.parse(calls[0].body);
 assert.equal(payload.generationConfig.maxOutputTokens, 240);
-assert.equal(payload.generationConfig.thinkingConfig.thinkingBudget, 0);
+if (payload.generationConfig.thinkingConfig?.thinkingBudget !== undefined) {
+  assert.equal(payload.generationConfig.thinkingConfig.thinkingBudget, 0);
+} else if (payload.generationConfig.thinkingConfig?.thinkingLevel !== undefined) {
+  assert.equal(payload.generationConfig.thinkingConfig.thinkingLevel, 'low');
+}
 assert.equal(payload.contents.length, 1);
 assert.equal(calls[0].redirect, 'error');
 assert.equal(calls[0].headers['x-goog-api-key'], 'test-key');

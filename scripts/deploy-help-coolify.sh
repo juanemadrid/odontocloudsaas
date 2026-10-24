@@ -62,6 +62,7 @@ install_migration() {
 install_migration 0 "SELECT (to_regclass('public.odonto_help_global') IS NOT NULL)::int + (to_regclass('public.odonto_help_clinics') IS NOT NULL)::int + (to_regclass('public.odonto_help_usage') IS NOT NULL)::int + (to_regprocedure('public.reserve_odonto_help_request(uuid,uuid)') IS NOT NULL)::int" 4
 install_migration 1 "SELECT (to_regclass('public.odonto_help_credentials') IS NOT NULL)::int + (to_regclass('public.odonto_help_key_checks') IS NOT NULL)::int + (to_regprocedure('public.reserve_odonto_help_key_check(uuid)') IS NOT NULL)::int" 3
 sql < "$STAGE/${MIGRATIONS[2]}"
+sql -c "UPDATE public.odonto_help_key_checks SET day_count = 0, minute_count = 0 WHERE id = true;"
 # Provision a dedicated persistent key without modifying existing tenant encryption.
 # Never regenerate a missing key when it already protects a saved help credential.
 SECRET_DIR="$ROOT/.odonto-help-secrets"

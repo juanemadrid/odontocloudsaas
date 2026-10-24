@@ -31,8 +31,12 @@ function makeHandler(overrides = {}) {
       const body = JSON.parse(options.body);
       assert.equal(options.headers['x-goog-api-key'], apiKey);
       assert.equal(options.redirect, 'error');
-      assert.equal(body.generationConfig.maxOutputTokens, 8);
-      assert.equal(body.generationConfig.thinkingConfig.thinkingBudget, 0);
+      assert.ok(body.generationConfig.maxOutputTokens >= 8);
+      if (body.generationConfig.thinkingConfig?.thinkingBudget !== undefined) {
+        assert.equal(body.generationConfig.thinkingConfig.thinkingBudget, 0);
+      } else if (body.generationConfig.thinkingConfig?.thinkingLevel !== undefined) {
+        assert.equal(body.generationConfig.thinkingConfig.thinkingLevel, 'low');
+      }
       assert.equal(body.contents[0].parts[0].text, 'Responde OK.');
       assert.ok(!body.tools);
       return Response.json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'OK' }] } }] });

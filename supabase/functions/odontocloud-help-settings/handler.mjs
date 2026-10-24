@@ -11,11 +11,18 @@ class SettingsError extends Error {
 // Tiny real generation verifies key, API access, model and current quota together.
 // No clinic data, user input, or tools are included. No automatic retry or fallback key.
 export async function testHelpKey({ apiKey, model, fetchImpl = fetch, signal }) {
-  const response = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+  const isV3 = typeof model === 'string' && (model.startsWith('gemini-3') || model.includes('-3.'));
+  const isV25 = typeof model === 'string' && model.includes('2.5');
+  const generationConfig = {
+    maxOutputTokens: 64,
+    temperature: 0,
+    ...(isV3 ? { thinkingConfig: { thinkingLevel: 'low' } } :
+        isV25 ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+  };
+  const response = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: 'POST', redirect: 'error', signal,
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Responde OK.' }] }],
-      generationConfig: { maxOutputTokens: 8, temperature: 0, thinkingConfig: { thinkingBudget: 0 } } }),
+    body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Responde OK.' }] }], generationConfig }),
   });
   // Never forward provider messages, which may contain credential fragments.
   if (response.status === 429) throw new SettingsError(429, 'Google indica que no hay cuota disponible. La clave anterior se conserva.');
@@ -29,7 +36,7 @@ export async function testHelpKey({ apiKey, model, fetchImpl = fetch, signal }) 
 }
 
 export function createHelpSettingsHandler({ authenticate, readCredential, writeCredential, encrypt, canEncrypt,
-  reserveCheck, env, fetchImpl = fetch, timeoutMs = 15000 }) {
+  reserveCheck, env, fetchImpl = fetch, timeoutMs = 45000 }) {
   return async request => {
     const headers = { 'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',

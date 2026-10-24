@@ -8,12 +8,11 @@ const helpCrypto = createHelpCrypto({ env: (name: string) => Deno.env.get(name),
   readPrivateFile: (path: string) => Deno.readTextFile(path),
   legacyEncrypt: encryptSecret, legacyDecrypt: decryptSecret, legacyCanEncrypt: loadEncryptionKey });
 
-function adminClient(signal?: AbortSignal) {
+function adminClient() {
   const url = Deno.env.get('SUPABASE_URL');
   const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if (!url || !key) throw new Error('Missing internal configuration');
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false },
-    global: { fetch: (input, init) => fetch(input, { ...init, signal }) } });
+  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
 }
 
 Deno.serve(createHelpSettingsHandler({

@@ -32,9 +32,15 @@ export async function generateManagedHelp({ guide, reference: selectedReference,
   const reservation = await reserve(principal, signal);
   if (!reservation?.allowed) return { reason: reservation?.reason === 'quota' ? 'quota' : 'disabled' };
   const reference = [guide.title, guide.prereq, selectedReference || guide.steps.map((s, i) => `${i + 1}. ${s}`).join('\n'), guide.note].filter(Boolean).join('\n');
-  if (reference.length > 8000) return { reason: 'unavailable' };
-  const generationConfig = { temperature: 0.1, maxOutputTokens: 240, thinkingConfig: { thinkingBudget: 0 } };
-  const response = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+  const isV3 = typeof model === 'string' && (model.startsWith('gemini-3') || model.includes('-3.'));
+  const isV25 = typeof model === 'string' && model.includes('2.5');
+  const generationConfig = {
+    temperature: 0.1,
+    maxOutputTokens: 240,
+    ...(isV3 ? { thinkingConfig: { thinkingLevel: 'low' } } :
+        isV25 ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+  };
+  const response = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: 'POST', redirect: 'error', signal,
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
     body: JSON.stringify({
