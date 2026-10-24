@@ -1,11 +1,12 @@
 import { normalize, KNOWLEDGE_VERSION } from '../_shared/helpKnowledge.mjs';
 import { HELP_GEMINI_MODELS, HELP_GEMINI_DEFAULT_MODEL } from '../_shared/helpApiKey.mjs';
 import { projectHelpMeaning, projectHelpHistory } from '../_shared/helpMeaning.mjs';
+import { HELP_TRIAGE_ID } from '../_shared/helpTriage.mjs';
 
 // No raw question, history, identifier or client supplied text crosses the provider boundary.
 export function helpSafetyReason(question) {
   const q = normalize(question);
-  if (/\b(edunexus|sql|hackear|hack|inyeccion|system prompt|api key|service role|jwt|token|credenciales|contrasena)\b/.test(q) ||
+  if (/\b(edunexus|sql|hackear|hack|inyeccion|system prompt|api key|service role|jwt|token|credenciales|contrasena|futbol|horoscopo|politica)\b/.test(q) || /(?:receta|prepar|cocinar).{0,25}(?:torta|pastel|cocina)|que hora|que clima/.test(q) ||
       /(?:ignora|olvida|omite|saltate|evita).{0,40}(?:reglas|instrucciones|permisos|seguridad|restricciones)/.test(q) ||
       /(?:otra|otras|ajena|ajenas).{0,20}clinica|clinica.{0,20}(?:otra|ajena)|borrar.{0,25}(?:todo|base)|eliminar.{0,25}(?:base|todo)/.test(q) ||
       /(?:diagnostica|diagnosticar|recetame|prescribeme|que medicamento|que antibiotico)/.test(q)) return 'out_of_scope';
@@ -14,6 +15,7 @@ export function helpSafetyReason(question) {
 
 export function safeHelpIntent(question, reference = '') {
   const q = normalize(question);
+  if (/tengo (?:una |otra )?duda|no se (?:como|que|por donde)|necesito ayuda|ayudame|estoy perdid|no se explic/.test(q)) return 'Acompaña la conversación: el usuario todavía está intentando expresar su duda. Invítalo con naturalidad a contar qué le pasa o qué quiere lograr, sin exigir nombres de módulos ni repetir un tutorial. Haz solo una pregunta sencilla.';
   if (/que pasa|que sucede|por que|significa|consecuencia|\bsi\b.*\bno\b|\bsin\b/.test(q)) return 'Responde al significado, motivo o condición que pregunta el usuario. Conserva las negaciones. No sustituyas esa duda por un tutorial de cómo generar o crear. Si hay dos interpretaciones, acláralas o pregunta cuál corresponde.';
   if (/no entendi|no entiendo|explicame mejor|mas despacio/.test(q)) return 'Explica de otra forma el próximo paso documentado, con palabras sencillas. No repitas toda la guía.';
   if (/^(?:si )?ya (?:lo |la |los |las )?(?:agregue|anadi|seleccione|guarde|cree|abri|termine|complete|hice)/.test(q)) return 'El usuario indica que completó un paso. Usa la etapa de la REFERENCIA para explicar únicamente el siguiente, sin afirmar que verificaste sus datos.';
@@ -82,5 +84,5 @@ export async function generateManagedHelp({ guide, reference: selectedReference,
   const documented = reference + '\n' + guide.steps.join('\n') + '\n' + guide.prereq + '\n' + guide.note;
   if (!hasDocumentedLabels(answer, documented)) return { reason: 'unavailable', diagnostic: 'gemini_unverified_labels', model };
   return { success: true, provider: 'gemini', model, version: KNOWLEDGE_VERSION, answer,
-    sources: [{ id: guide.id, title: guide.title, category: guide.category }] };
+    sources: guide.id === HELP_TRIAGE_ID ? [] : [{ id: guide.id, title: guide.title, category: guide.category }] };
 }

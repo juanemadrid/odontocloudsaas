@@ -9,6 +9,7 @@ export function conversationalReply(question, previousIds = [], mode = 'app') {
   } else if (/^(muchas gracias|gracias|gracias por la ayuda|listo gracias|perfecto gracias)$/.test(q)) {
     answer = '¡Con gusto! Si te atoras en otro paso, dime qué ves y lo revisamos juntos.';
   } else if (/^(que puedes hacer|en que me puedes ayudar|ayudame|necesito ayuda)$/.test(q)) {
+    if (mode === 'app') return null;
     answer = 'Puedo explicarte cómo usar OdontoCloud, acompañarte paso a paso y ayudarte a entender sus opciones. ¿Quieres trabajar con citas, pacientes, caja, facturación u otro módulo?';
   } else if (/^(eres (una )?ia|eres un robot|quien eres|eres chatgpt)$/.test(q)) {
     answer = 'Soy OdontoIA, el asistente de OdontoCloud. Puedo explicarte sus funciones y ayudarte a resolver dudas de uso. No soy una persona ni puedo realizar operaciones por ti.';
@@ -65,7 +66,7 @@ export function clarificationReply(question, mode = 'app') {
   return { success: true, provider: 'assistant', version: KNOWLEDGE_VERSION, sources: [], reason: 'clarification',
     answer: /\bedunexus\b/.test(normalize(question))
       ? 'Esta conversación te ayuda con OdontoCloud. Para Edunexus, utiliza la ayuda de esa aplicación. ¿Qué necesitas resolver aquí?'
-      : mode === 'public' ? '¿Tu duda es sobre precios, la prueba gratuita o alguna función de OdontoCloud? Cuéntame qué necesitas para orientarte sin inventar información.' : 'Quiero ubicar bien tu duda. ¿En qué módulo estás y qué quieres hacer? Por ejemplo: «Estoy en Caja y quiero registrar un pago». Si ves un error, describe el mensaje sin datos de pacientes.' };
+      : mode === 'public' ? '¿Tu duda es sobre precios, la prueba gratuita o alguna función de OdontoCloud? Cuéntame qué necesitas para orientarte sin inventar información.' : 'Claro, cuéntame qué te está pasando o qué intentabas hacer en OdontoCloud y lo vemos juntos. No incluyas datos personales de pacientes.' };
 }
 
 export function compactHistory(messages = []) {

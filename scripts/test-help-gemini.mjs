@@ -110,6 +110,19 @@ for (const body of [{ mode: 'public', question: 'Planes de suscripción' }, { qu
   assert.notEqual((await answer(handler(), body)).provider, 'gemini');
 }
 assert.equal(calls.length, 0); assert.equal(reservations.length, 0);
+for (const question of ['tengo una duda', 'necesito ayuda', 'no sé cómo explicarlo', 'estoy perdido', 'no sé por dónde empezar']) {
+  let triagePrompt;
+  const triage = await answer(handler({ fetchImpl: async (_url, options) => {
+    triagePrompt = JSON.parse(options.body);
+    return Response.json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'Claro, cuéntame qué te está pasando o qué intentabas hacer y lo vemos juntos.' }] } }] });
+  } }), { question });
+  assert.equal(triage.provider, 'gemini', question);
+  assert.deepEqual(triage.sources, [], 'A support opener must not pretend to cite a procedure');
+  assert.ok(triagePrompt.contents[0].parts[0].text.includes('No le exijas identificar un módulo'));
+}
+const triageDisabled = await answer(handler({ reserve: async () => ({ allowed: false, reason: 'disabled' }) }), { question: 'tengo una duda' });
+assert.notEqual(triageDisabled.provider, 'gemini');
+assert.ok(!triageDisabled.answer.includes('qué módulo'));
 // All actual clinic questions, including the old zero-token shortcuts and follow-ups,
 // reach the selected provider when enabled. Greeting/thanks remain local by design.
 for (const body of [
@@ -144,7 +157,9 @@ source = source.replace("import supabase from '../lib/supabaseClient';", 'const 
 for (const name of ['helpKnowledge', 'helpConversation']) source = source.replace('../../supabase/functions/_shared/' + name + '.mjs', new URL('../supabase/functions/_shared/' + name + '.mjs', import.meta.url).href);
 let useDisabledClinic = false, actualProviderRequests = 0;
 const clinicHandler = handler({ reserve: async () => ({ allowed: !useDisabledClinic, reason: useDisabledClinic ? 'disabled' : undefined }),
-  fetchImpl: async () => { actualProviderRequests++; return Response.json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: 'Abre [Administración > RIPS JSON].' }] } }] }); } });
+  fetchImpl: async (_url, options) => { actualProviderRequests++;
+    const initial = JSON.parse(options.body).contents[0].parts[0].text.includes('Conversación inicial de soporte');
+    return Response.json({ candidates: [{ finishReason: 'STOP', content: { parts: [{ text: initial ? 'Claro, cuéntame qué te pasa.' : 'Abre [Administración > RIPS JSON].' }] } }] }); } });
 globalThis.__helpGeminiClient = { functions: { invoke: async (name, { body, signal }) => {
   assert.equal(name, 'odontocloud-help');
   const response = await clinicHandler(new Request('https://test.invalid/help', { method: 'POST', headers: { Authorization: 'Bearer session-test' }, body: JSON.stringify(body), signal }));
@@ -157,6 +172,11 @@ useDisabledClinic = true;
 const disabledClinic = await askHelp('Dónde están los RIPS');
 assert.equal(disabledClinic.provider, 'manual'); assert.equal(disabledClinic.reason, 'disabled');
 assert.equal(actualProviderRequests, 1);
+useDisabledClinic = false;
+const helpOpener = await askHelp('necesito ayuda');
+assert.equal(helpOpener.provider, 'gemini', 'Client must not intercept a support request with a canned reply');
+assert.deepEqual(helpOpener.sources, []);
+assert.equal(actualProviderRequests, 2);
 delete globalThis.__helpGeminiClient;
 const controller = new AbortController(); controller.abort();
 await handler({ fetchImpl: async (_url, options) => { assert.equal(options.signal.aborted, true); throw new Error('aborted'); } })(new Request(request(), { signal: controller.signal }));

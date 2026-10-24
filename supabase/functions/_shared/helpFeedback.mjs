@@ -1,5 +1,8 @@
 export function helpFallbackMessage(result = {}) {
   const code = result.diagnostic;
+  if (result.provider === 'assistant' && ['disabled', 'quota', 'not_configured', 'unavailable'].includes(result.reason)) {
+    return result.reason === 'quota' ? 'La IA alcanzó una cuota o una espera temporal. Este es un mensaje automático; espera al menos 10 segundos antes de volver a intentar.' : 'La IA no está disponible para esta conversación en este momento. Este es un mensaje automático de apoyo.';
+  }
   if (code === 'help_session_rejected') return 'La sesión no permitió consultar la IA. Vuelve a iniciar sesión; esta respuesta procede del manual.';
   if (code === 'help_endpoint_unavailable') return 'No se pudo conectar con el servicio de IA de ayuda. Esta respuesta procede del manual local.';
   if (code === 'gemini_truncated') return 'Gemini alcanzó el límite de respuesta antes de terminar. Se muestra la guía de respaldo.';

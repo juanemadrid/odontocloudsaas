@@ -40,6 +40,7 @@ export function getModuleLocationReference(guideId) {
 import { conversationalReply, resolveHelpGuides, clarificationReply, readHelpEvents, isContextualReply, isBriefFollowup, trustedScreenContext } from '../_shared/helpConversation.mjs';
 import { normalize, formatGuide, KNOWLEDGE_VERSION, HELP_GUIDES, PUBLIC_GUIDE_IDS } from '../_shared/helpKnowledge.mjs';
 import { generateManagedHelp, helpSafetyReason } from './managedHelp.mjs';
+import { HELP_TRIAGE_GUIDE, HELP_TRIAGE_ID, isHelpOpening } from '../_shared/helpTriage.mjs';
 
 export class HelpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -147,7 +148,7 @@ export function createHelpHandler({ authenticate, reserve, resolveConfig, env, f
       'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
       'Content-Type': 'application/json',
-      'X-Odonto-Help-Version': '2026-10-24-meaning-1',
+      'X-Odonto-Help-Version': '2026-10-24-dialogue-1',
       'Cache-Control': 'no-store',
     };
     const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers });
@@ -217,15 +218,18 @@ export function createHelpHandler({ authenticate, reserve, resolveConfig, env, f
       const conversation = conversationalReply(question, previousIds, isPublic ? 'public' : 'app');
       if (conversation) return json(conversation);
       if (/\bedunexus\b/.test(normalize(question).replace(/(?: por favor)? explicame paso a paso(?: por favor)?$/, "").trim())) return json(clarificationReply(question));
-      const guides = resolveHelpGuides(question, previousIds, isPublic ? 'public' : 'app');
-      if (!guides.length) return json(clarificationReply(question, isPublic ? 'public' : 'app'));
+      const guides = !isPublic && isHelpOpening(question) ? [] : resolveHelpGuides(question, previousIds, isPublic ? 'public' : 'app');
+      if (!guides.length) {
+        if (isPublic) return json(clarificationReply(question, 'public'));
+        guides.push(HELP_TRIAGE_GUIDE);
+      }
+      const sources = guides.filter(g => g.id !== HELP_TRIAGE_ID).map(({ id, title, category }) => ({ id, title, category }));
       const fallback = (reason, details = {}) => {
         trace('manual_fallback', { reason, ...details });
         const publicReason = ['timeout', 'provider_error', 'incomplete_response'].includes(reason) ? 'unavailable' : reason;
-        return json({ success: true, provider: 'manual', reason: publicReason, ...details, version: KNOWLEDGE_VERSION, answer: formatGuide(guides[0], isPublic), sources: guides.map(({ id, title, category }) => ({ id, title, category })) });
+        if (guides[0].id === HELP_TRIAGE_ID) return json({ ...clarificationReply(question), reason: publicReason, ...details });
+        return json({ success: true, provider: 'manual', reason: publicReason, ...details, version: KNOWLEDGE_VERSION, answer: formatGuide(guides[0], isPublic), sources });
       };
-
-      const sources = guides.map(({ id, title, category }) => ({ id, title, category }));
       // Public product help remains available without providing anonymous access to generation.
       if (isPublic) return fallback('manual');
       if (env('ODONTO_HELP_ENABLED') === 'false') return fallback('disabled');
@@ -247,7 +251,7 @@ export function createHelpHandler({ authenticate, reserve, resolveConfig, env, f
         if (request.signal.aborted) abort();
         const timer = setTimeout(abort, 40000);
         try {
-          const reference = helpPrompt(guides[0], question, false, trustedScreenContext(body.screenContext), recentModelHistory(history)).split('\nREFERENCIA:\n').at(-1);
+          const reference = guides[0].id === HELP_TRIAGE_ID ? guides[0].steps.join('\n') : helpPrompt(guides[0], question, false, trustedScreenContext(body.screenContext), recentModelHistory(history)).split('\nREFERENCIA:\n').at(-1);
           const result = await generateManagedHelp({ guide: guides[0], reference, question, history,
             screenContext: trustedScreenContext(body.screenContext), reserve, principal, env: providerEnv, fetchImpl, signal: controller.signal });
           if (result.success) trace('gemini_completed', { model: result.model });
