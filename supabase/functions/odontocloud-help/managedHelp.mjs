@@ -1,5 +1,6 @@
 import { normalize, KNOWLEDGE_VERSION } from '../_shared/helpKnowledge.mjs';
 import { HELP_GEMINI_MODELS, HELP_GEMINI_DEFAULT_MODEL } from '../_shared/helpApiKey.mjs';
+import { projectHelpMeaning, projectHelpHistory } from '../_shared/helpMeaning.mjs';
 
 // No raw question, history, identifier or client supplied text crosses the provider boundary.
 export function helpSafetyReason(question) {
@@ -13,6 +14,7 @@ export function helpSafetyReason(question) {
 
 export function safeHelpIntent(question, reference = '') {
   const q = normalize(question);
+  if (/que pasa|que sucede|por que|significa|consecuencia|\bsi\b.*\bno\b|\bsin\b/.test(q)) return 'Responde al significado, motivo o condición que pregunta el usuario. Conserva las negaciones. No sustituyas esa duda por un tutorial de cómo generar o crear. Si hay dos interpretaciones, acláralas o pregunta cuál corresponde.';
   if (/no entendi|no entiendo|explicame mejor|mas despacio/.test(q)) return 'Explica de otra forma el próximo paso documentado, con palabras sencillas. No repitas toda la guía.';
   if (/^(?:si )?ya (?:lo |la |los |las )?(?:agregue|anadi|seleccione|guarde|cree|abri|termine|complete|hice)/.test(q)) return 'El usuario indica que completó un paso. Usa la etapa de la REFERENCIA para explicar únicamente el siguiente, sin afirmar que verificaste sus datos.';
   const labels = [...reference.matchAll(/\[([^\]\n]+)\]/g)].map(m => m[1]);
@@ -21,7 +23,7 @@ export function safeHelpIntent(question, reference = '') {
   if (/donde|no encuentro|no veo|cual boton/.test(q)) return 'Indica la ruta y ubicación del botón para empezar.';
   if (/requisito|obligatorio|antes de/.test(q)) return 'Explica los requisitos documentados.';
   if (/error|no aparece|no funciona|no puedo/.test(q)) return 'Explica las comprobaciones documentadas. Si faltan datos, pide una descripción del error sin información personal.';
-  return 'Explica el procedimiento documentado en pasos breves.';
+  return 'Responde la pregunta de uso. Da pasos solo si pide realizar una operación; no repitas toda la guía.';
 }
 
 // A route assembled from documented labels is valid; invented buttons still fail.
@@ -40,7 +42,7 @@ export function hasDocumentedLabels(answer, reference) {
   return [...answer.matchAll(/\[([^\]\n]+)\]/g)].every(m => matches(m[1]));
 }
 
-export async function generateManagedHelp({ guide, reference: selectedReference, question, screenContext, reserve, principal, env, fetchImpl, signal }) {
+export async function generateManagedHelp({ guide, reference: selectedReference, question, history = [], screenContext, reserve, principal, env, fetchImpl, signal }) {
   const provider = env('ODONTO_HELP_PROVIDER');
   if (provider !== 'gemini') return { reason: 'not_configured' };
   if (env('ODONTO_HELP_ENABLED') !== 'true') return { reason: 'disabled' };
@@ -65,8 +67,8 @@ export async function generateManagedHelp({ guide, reference: selectedReference,
     method: 'POST', redirect: 'error', signal,
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: 'Eres OdontoIA, ayuda de funcionamiento de OdontoCloud. Responde en español con tono natural y directo, hasta 90 palabras y solo los pasos necesarios. Usa exclusivamente la REFERENCIA. Conserva nombres literales de botones entre [corchetes]; no encierres explicaciones en corchetes. Si falta información, pregunta sin inventar. Sin consejos clínicos, datos de pacientes ni acciones ejecutadas.' }] },
-      contents: [{ role: 'user', parts: [{ text: `${safeHelpIntent(question, reference)}\n${screenContext ? `Pantalla: ${screenContext}\n` : ''}REFERENCIA:\n${reference}` }] }],
+      systemInstruction: { parts: [{ text: 'Eres OdontoIA, ayuda de funcionamiento de OdontoCloud. Responde a la duda concreta en español natural, hasta 90 palabras. Usa exclusivamente la REFERENCIA para hechos del sistema. La PREGUNTA DE USO y el CONTEXTO conservan solo vocabulario operativo; «detalle omitido» indica datos excluidos, nunca intentes reconstruirlos. Entiende condiciones, negaciones y seguimientos; no conviertas «qué pasa si no» o «por qué» en un tutorial. Si la duda es ambigua, haz una pregunta breve. No saludes de nuevo ni repitas el procedimiento anterior. Conserva botones literales entre [corchetes]. Sin consejos clínicos, obligaciones legales inventadas, datos de pacientes ni acciones ejecutadas.' }] },
+      contents: [{ role: 'user', parts: [{ text: `${safeHelpIntent(question, reference)}\nPREGUNTA DE USO:\n${projectHelpMeaning(question)}\nCONTEXTO RECIENTE:\n${JSON.stringify(projectHelpHistory(history))}\n${screenContext ? `Pantalla: ${screenContext}\n` : ''}REFERENCIA:\n${reference}` }] }],
       generationConfig,
     }),
   });

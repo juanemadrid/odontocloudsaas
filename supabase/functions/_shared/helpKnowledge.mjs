@@ -1,6 +1,6 @@
 // Manual público de uso: nunca incluir datos de pacientes, credenciales ni datos de otra app.
 // Revisar las fuentes de cada guía cuando cambie una pantalla.
-export const KNOWLEDGE_VERSION = '2026-10-24';
+export const KNOWLEDGE_VERSION = '2026-10-24.2';
 const guide = (id, category, title, keywords, source, steps, note = '', prereq = '') => ({
   id, category, title, keywords, source, steps, note, prereq,
 });export const HELP_GUIDES = [
@@ -158,7 +158,7 @@ const guide = (id, category, title, keywords, source, steps, note = '', prereq =
     'Selecciona la [Sucursal] (para IPS) o el [Profesional] (para independientes) y elige el filtro en [Generar con] (por fecha de facturación o fecha de realización).',
     'Haz clic en el botón verde [Buscar] para cargar las atenciones y facturas del período.',
     'Revisa la validación clínica en la tabla y pulsa el botón azul [ENVIAR] arriba a la derecha para transmitir al MUV y obtener el CUV, o el botón verde [EXPORTAR] para descargar el paquete JSON y XML comprimido.',
-  ], 'Los RIPS oficiales (Resolución 2275) requieren que las evoluciones clínicas tengan código CUPS y diagnóstico CIE-10.',
+  ], 'Los RIPS oficiales (Resolución 2275) requieren que las evoluciones clínicas tengan código CUPS y diagnóstico CIE-10. La lista de profesionales de RIPS solo incluye doctores con la configuración generaRips en verdadero. En [Configuración] > [Usuarios], la opción [¿Genera RIPS?] identifica la habilitación para RIPS independiente; si está desmarcada, ese profesional no aparece en esa lista. Esta opción individual puede no mostrarse para una IPS, que usa su contexto institucional. Si alguien dice que el profesional «no genera RIPS», distinguir entre opción desactivada y búsqueda sin resultados: preguntar cuál ocurre antes de dar instrucciones. No deducir obligaciones legales ni recomendar activar opciones solo para quitar un error.',
   'Antes de generar RIPS, verifica que la clínica tenga configurado el NIT y Código de Prestador (REPS) en [Configuración] > [Datos Básicos], y que los doctores tengan habilitada la opción de RIPS en [Configuración] > [Usuarios].'),
   guide('terceros', 'Administración', 'Gestionar terceros y convenios', 'tercero cliente proveedor convenio descuento', 'src/modules/administracion/AdministracionRouter.jsx', [
     'En Administración, entra a Terceros para proveedores y clientes, o a Convenios para su gestión.',

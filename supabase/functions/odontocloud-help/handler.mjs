@@ -147,7 +147,7 @@ export function createHelpHandler({ authenticate, reserve, resolveConfig, env, f
       'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
       'Content-Type': 'application/json',
-      'X-Odonto-Help-Version': '2026-10-24-clinic-routing-1',
+      'X-Odonto-Help-Version': '2026-10-24-meaning-1',
       'Cache-Control': 'no-store',
     };
     const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers });
@@ -248,7 +248,7 @@ export function createHelpHandler({ authenticate, reserve, resolveConfig, env, f
         const timer = setTimeout(abort, 40000);
         try {
           const reference = helpPrompt(guides[0], question, false, trustedScreenContext(body.screenContext), recentModelHistory(history)).split('\nREFERENCIA:\n').at(-1);
-          const result = await generateManagedHelp({ guide: guides[0], reference, question,
+          const result = await generateManagedHelp({ guide: guides[0], reference, question, history,
             screenContext: trustedScreenContext(body.screenContext), reserve, principal, env: providerEnv, fetchImpl, signal: controller.signal });
           if (result.success) trace('gemini_completed', { model: result.model });
           return result.success ? json(result) : fallback(result.reason, { diagnostic: result.diagnostic, model: result.model });

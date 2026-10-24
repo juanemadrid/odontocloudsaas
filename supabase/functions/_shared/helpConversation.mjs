@@ -56,6 +56,7 @@ export function resolveHelpGuides(question, previousIds = [], mode = 'app') {
     return direct;
   }
   if (followup && previousIds.length) return previousIds.map(id => candidates.find(g => g.id === id)).filter(Boolean).slice(0, 1);
+  if (active.length && /^(?:(?:y|pero|entonces) )?(?:que pasa|que sucede|por que|si no|si esta|y si|que significa)\b/.test(q)) return active;
   if (active.length && /\b(ese|esa|eso|ahi|alli|otro|otra|buscarlo|hacerlo|encontrarlo|sale|aparece|veo|encuentro)\b/.test(q)) return active;
   return searchGuides(question, previousIds, mode).slice(0, 1);
 }
