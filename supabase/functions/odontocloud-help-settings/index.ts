@@ -1,7 +1,12 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.110.8';
-import { encryptSecret, loadEncryptionKey } from '../tenant-secrets/crypto.ts';
+import { encryptSecret, decryptSecret, loadEncryptionKey } from '../tenant-secrets/crypto.ts';
+import { createHelpCrypto } from '../_shared/helpCrypto.mjs';
 import { createHelpSettingsHandler } from './handler.mjs';
 import { authenticateHelpSettings } from './auth.mjs';
+
+const helpCrypto = createHelpCrypto({ env: (name: string) => Deno.env.get(name),
+  readPrivateFile: (path: string) => Deno.readTextFile(path),
+  legacyEncrypt: encryptSecret, legacyDecrypt: decryptSecret, legacyCanEncrypt: loadEncryptionKey });
 
 function adminClient(signal?: AbortSignal) {
   const url = Deno.env.get('SUPABASE_URL');
@@ -13,8 +18,8 @@ function adminClient(signal?: AbortSignal) {
 
 Deno.serve(createHelpSettingsHandler({
   env: (name: string) => Deno.env.get(name),
-  encrypt: encryptSecret,
-  canEncrypt: loadEncryptionKey,
+  encrypt: helpCrypto.encrypt,
+  canEncrypt: helpCrypto.canEncrypt,
   authenticate: async (token: string, signal: AbortSignal) => {
     return authenticateHelpSettings(adminClient(signal), token);
   },

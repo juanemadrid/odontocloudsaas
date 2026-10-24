@@ -6,6 +6,7 @@ import { createHelpSettingsHandler, HELP_KEY_AAD } from '../supabase/functions/o
 import { authenticateHelpSettings } from '../supabase/functions/odontocloud-help-settings/auth.mjs';
 import { resolveStoredHelpConfig } from '../supabase/functions/odontocloud-help/credentialStore.mjs';
 import { createHelpHandler } from '../supabase/functions/odontocloud-help/handler.mjs';
+import { createHelpCrypto, HELP_MASTER_FILE } from '../supabase/functions/_shared/helpCrypto.mjs';
 
 // Compile the actual shared crypto module, preserving compatibility with Node 20 CI.
 const cryptoSource = await transformWithOxc(readFileSync('supabase/functions/tenant-secrets/crypto.ts', 'utf8'), 'crypto.ts');
@@ -121,7 +122,34 @@ try {
     } });
   const helpResponse = await help(request({ question: 'Dónde está el botón RIPS' }));
   assert.equal((await helpResponse.json()).provider, 'gemini'); assert.equal(usedKey, apiKey);
+  const dedicatedMaster = randomBytes(32).toString('base64');
+  const helpCrypto = createHelpCrypto({ env, readPrivateFile: async path => {
+    assert.equal(path, HELP_MASTER_FILE); return dedicatedMaster;
+  }, legacyEncrypt: encryptSecret, legacyDecrypt: decryptSecret, legacyCanEncrypt: loadEncryptionKey });
+  // Old credentials still decrypt with the original key; new ones use a separate key.
+  assert.equal(await helpCrypto.decrypt(stored.encrypted_key, HELP_KEY_AAD), apiKey);
+  await helpCrypto.canEncrypt();
+  const dedicated = await helpCrypto.encrypt(apiKey, HELP_KEY_AAD);
+  assert.equal(dedicated.kid, 'help-v1');
+  assert.equal(await helpCrypto.decrypt(dedicated, HELP_KEY_AAD), apiKey);
+  assert.notEqual((await helpCrypto.encrypt(apiKey, HELP_KEY_AAD)).iv, dedicated.iv);
+  await assert.rejects(() => helpCrypto.decrypt(dedicated, 'another-system'));
+  await assert.rejects(() => helpCrypto.decrypt({ ...dedicated, ciphertext: dedicated.ciphertext.slice(0, -8) }, HELP_KEY_AAD));
+  const missingFile = async () => { const e = new Error(); e.code = 'ENOENT'; throw e; };
+  const missingCrypto = createHelpCrypto({ env, readPrivateFile: missingFile,
+    legacyEncrypt: encryptSecret, legacyDecrypt: decryptSecret, legacyCanEncrypt: loadEncryptionKey });
+  await assert.rejects(() => missingCrypto.decrypt(dedicated, HELP_KEY_AAD));
+  const deniedCrypto = createHelpCrypto({ env, readPrivateFile: async () => { throw new Error('EACCES'); },
+    legacyCanEncrypt: async () => { throw new Error('Must not fall back'); } });
+  await assert.rejects(() => deniedCrypto.canEncrypt(), /unavailable/);
+  const invalidCrypto = createHelpCrypto({ env: () => 'invalid-key', readPrivateFile: missingFile });
+  await assert.rejects(() => invalidCrypto.canEncrypt(), /Invalid help encryption/);
+  const dedicatedHandler = makeHandler({ encrypt: helpCrypto.encrypt, canEncrypt: helpCrypto.canEncrypt });
+  assert.equal((await result(dedicatedHandler, { action: 'save', apiKey })).body.success, true);
+  const dedicatedConfig = await resolveStoredHelpConfig({ readCredential: async () => stored, decrypt: helpCrypto.decrypt, env });
+  assert.equal(dedicatedConfig.ODONTO_HELP_GEMINI_API_KEY, apiKey);
   console.log('Help settings: superadmin-only access, AES-GCM/AAD, minimal connection test, safe replacement, masked status, quotas, timeout, and immediate help integration verified.');
+  console.log('Dedicated help key: private file provisioning contract, legacy compatibility, random IVs, tamper detection and missing/corrupt key fail-closed verified.');
 } finally {
   if (oldMaster === undefined) delete process.env.TENANT_SECRETS_MASTER_KEY_V1; else process.env.TENANT_SECRETS_MASTER_KEY_V1 = oldMaster;
   if (oldKeyId === undefined) delete process.env.TENANT_SECRETS_ACTIVE_KEY_ID; else process.env.TENANT_SECRETS_ACTIVE_KEY_ID = oldKeyId;
