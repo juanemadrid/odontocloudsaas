@@ -1,5 +1,7 @@
 # Ayuda de OdontoCloud con Ollama
 
+> Documento histórico del proveedor local. Para la configuración vigente, interruptores, cuotas y despliegue autohospedado, consultar [help-ai-production.md](help-ai-production.md). Las pruebas y tiempos citados abajo corresponden a la implementación anterior.
+
 ## Qué incluye
 
 El botón existente de ayuda abre una biblioteca de procedimientos y un chat. Las guías se pueden consultar sin IA. Las preguntas libres pasan por `odontocloud-help`; no pasan por Gemini. El servidor selecciona las guías y llama al modelo local con esas referencias. Las respuestas muestran las guías consultadas, que se pueden abrir directamente.
@@ -28,7 +30,7 @@ ODONTO_HELP_OLLAMA_MODEL=qwen3:4b-instruct
 
 La URL y el modelo son ejemplos: confirmar la red interna y el modelo instalado. La URL debe ser la base de Ollama, sin `/api/chat` ni `/v1`. No usar variables `VITE_` para esta configuración. La función usa `/api/chat`, sin streaming y con 28 segundos de límite para Ollama y 8 segundos para validar la sesión. No hay sustitución por proveedores de pago.
 
-En un Supabase autohospedado, desplegar `odontocloud-help` junto con `_shared/helpKnowledge.mjs` en el volumen de funciones siguiendo el despliegue existente; conservar las demás funciones y configurar las variables en el contenedor de funciones. Si se usa Supabase administrado, desplegar la función y definir secretos con el flujo del proyecto. No se ha identificado ni modificado el despliegue remoto desde esta sesión.
+En OdontoCloud, desplegar `odontocloud-help` junto con sus módulos compartidos en el volumen de funciones del servicio 2 de Coolify, siguiendo el despliegue existente. Conservar las demás funciones. No usar Supabase Cloud. No se ha identificado ni modificado el despliegue remoto desde esta sesión.
 
 El contenedor de funciones debe alcanzar Ollama por la red privada. `localhost` dentro de ese contenedor no es el contenedor de Ollama. No publicar el puerto 11434 directamente a Internet. Si hay un proxy entre servidores, verificar TLS y autenticación, limitar tamaño/frecuencia de solicitudes y evitar registrar preguntas. El aislamiento de datos no evita que ambas aplicaciones compitan por CPU/RAM; verificar concurrencia y latencia con la carga real. El servicio no implementa un contador distribuido de cuotas.
 

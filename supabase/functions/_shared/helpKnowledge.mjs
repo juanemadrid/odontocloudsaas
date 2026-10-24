@@ -1,6 +1,6 @@
 // Manual público de uso: nunca incluir datos de pacientes, credenciales ni datos de otra app.
 // Revisar las fuentes de cada guía cuando cambie una pantalla.
-export const KNOWLEDGE_VERSION = '2026-09-29';
+export const KNOWLEDGE_VERSION = '2026-10-24';
 const guide = (id, category, title, keywords, source, steps, note = '', prereq = '') => ({
   id, category, title, keywords, source, steps, note, prereq,
 });export const HELP_GUIDES = [
@@ -245,7 +245,7 @@ const guide = (id, category, title, keywords, source, steps, note = '', prereq =
   guide('ayuda-ia', 'Ayuda', 'Qué puede hacer este asistente', 'ayuda asistente ollama inteligencia artificial gemini sistema', 'src/components/OdontoHelpAssistantModal.jsx', [
     'Pregunta cómo utilizar una función de OdontoCloud o busca una guía en la biblioteca.',
     'Consulta las guías de referencia que aparecen debajo de la respuesta.',
-    'Si la IA local no está disponible, puedes seguir consultando las guías del sistema.',
+    'Si la IA está apagada, alcanza su límite o no está disponible, puedes seguir consultando las guías del sistema.',
   ], 'Esta ayuda no ejecuta operaciones, no accede a expedientes y no utiliza documentación de Edunexus. Las otras funciones de IA clínica tienen su propia configuración.'),
   guide('planes-suscripcion', 'Suscripción', 'Planes y Precios Oficiales de OdontoCloud', 'planes precios suscripcion plan mensual anual tarifas software consultorio clinica enterprise valor cuanto cuesta suscripcion odontocloud que planes tienes que planes hay que planes manejan costo costos usuarios cuantos usuarios', 'src/pages/landing/PricingPage.jsx', [
     'Plan Consultorio ($79.900 COP/mes o $799.999 COP/año): Hasta 2 usuarios incluidos (1 a 2 doctores). Diseñado para dentistas independientes y consultorios particulares. Incluye agenda inteligente con recordatorios por WhatsApp, historia clínica digital completa, odontograma interactivo, consentimientos informados con firma, control de caja y pacientes ilimitados. No incluye facturación DIAN ni RIPS. Si se requieren más usuarios o facturación, se escala al Plan Clínica.',

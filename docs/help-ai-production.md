@@ -1,0 +1,83 @@
+# Asistente de ayuda de OdontoCloud
+
+Implementación aditiva para Supabase **autohospedado** en el servicio **2 de OdontoCloud en Coolify**, VPS `150.136.210.37`. No usa Supabase Cloud. No requiere modificar, reiniciar ni inspeccionar servicios de Edunexus.
+
+## Comportamiento
+
+- Superadministrador > Clínicas > **Asistente IA de ayuda · Control por clínica**: interruptor general y uno por clínica. Todo empieza apagado. Las guías públicas permanecen accesibles.
+- El servidor comprueba el interruptor general, la clínica, la pertenencia y el estado del usuario antes de reservar generación. RLS impide a administradores de clínica y usuarios normales leer o cambiar esta configuración. El cliente no puede elegir clínica, proveedor, modelo, URL ni instrucciones.
+- Gemini solo recibe documentación pública seleccionada, requisitos, una intención fija (ubicación, requisitos, comprobaciones o procedimiento) y la pantalla de una lista permitida. **No recibe la pregunta original, historial, nombres, documentos, tokens de sesión ni identificadores de clínica.** El historial se usa localmente para seleccionar referencias escritas en el código, no se incorpora al mensaje de Gemini.
+- La IA no tiene herramientas, acceso a datos clínicos ni capacidad de ejecutar acciones. Solicitudes detectadas sobre otras clínicas, ataques, credenciales o consejos clínicos se rechazan sin consumir IA. El filtrado por patrones no sustituye la separación de datos y permisos.
+- Hasta 80 palabras solicitadas y máximo 240 tokens de salida; razonamiento desactivado. No hay reintentos ni cambio automático de proveedor. Se rechazan respuestas truncadas, enlaces externos y botones entre corchetes ajenos a la referencia. Esto no garantiza exactitud semántica: contrastar siempre las guías con las pantallas.
+- Preguntas generales de crear cita o presupuesto, saludos y preguntas sin guía no llaman a Gemini. La biblioteca completa tampoco consume tokens.
+- Cuota por clínica: 15 intentos/día y 150/mes. Cuota global: 40/día y 500/mes. Además: 4 intentos/minuto entre todas las clínicas y 10 segundos entre intentos del mismo usuario. Los límites son conservadores propios, no una afirmación de la cuota disponible en Google.
+- Los contadores persisten en PostgreSQL; la reserva bloquea las filas global y de clínica para impedir exceder límites desde varias réplicas. Cuenta también intentos fallidos y no almacena mensajes. Períodos diarios/mensuales en America/Bogota. Los contadores históricos se depuran después de 65 días, conservando un marcador de espera por usuario.
+- Ante cuota, error, bloqueo del proveedor, cancelación o configuración ausente, se devuelve la guía verificada. Los interruptores bloquean nuevas reservas; una solicitud ya enviada puede terminar.
+
+## Variables del servicio de funciones de OdontoCloud
+
+### Configuración desde el panel (recomendada)
+
+En **Superadministrador > Clínicas > Asistente IA de ayuda · Control por clínica > Conexión de Gemini para ayuda**:
+
+1. Pegar la clave dedicada en el campo de contraseña y elegir Gemini 2.5 Flash-Lite.
+2. Opcionalmente pulsar **Probar conexión**. Envía únicamente «Responde OK.» a Google, con un máximo de 8 tokens de salida.
+3. Pulsar **Probar y guardar clave**. El servidor vuelve a probarla y solo entonces sustituye la anterior. Si falla la prueba, el cifrado o la escritura, no se sustituye intencionalmente la clave anterior. Ante un fallo de red durante la escritura, actualizar el estado antes de repetir porque la escritura puede haberse completado.
+4. Encender el interruptor general y las clínicas deseadas. Guardar la clave no enciende clínicas ni cambia el asistente de superadministrador.
+
+La clave se cifra con el módulo existente `tenant-secrets/crypto.ts` (AES-256-GCM), AAD exclusiva `odontocloud|help|gemini|v1` y la clave maestra de **OdontoCloud**. La tabla `odonto_help_credentials` no permite lectura/escritura directa a `anon` ni `authenticated`, ni siquiera al navegador del superadministrador. La función `odontocloud-help-settings` valida el usuario con GoTrue y su rol activo en `profiles`; nunca usa roles de `user_metadata`. Solo devuelve estado y fechas, nunca la clave ni el ciphertext.
+
+La configuración se lee en cada consulta autenticada; las sustituciones se aplican sin reiniciar. El panel tiene prioridad sobre la clave de entorno de ayuda. Un fallo de descifrado devuelve guías y no utiliza otra clave silenciosamente. Las pruebas tienen un límite persistente compartido de 6/minuto y 30/día; no consumen la cuota por clínica.
+
+**Requisito inicial de instalación:** el runtime debe disponer del cifrado existente (`TENANT_SECRETS_MASTER_KEY_V1`, o el alias legado `TENANT_SECRETS_MASTER_KEY`, 32 bytes aleatorios codificados en base64; admite el identificador activo existente). Conservar la clave maestra actual si ya está configurada; no rotarla ni sobrescribirla para esta función. Si falta, la pantalla lo informa y bloquea el guardado. Esta preparación se realiza una vez en Coolify; los cambios posteriores de API se hacen en el panel. No usa la clave maestra de Edunexus.
+
+Con una clave guardada desde el panel no es necesario configurar variables Gemini nuevas. `ODONTO_HELP_ENABLED=false` sigue siendo un bloqueo de emergencia del servidor; no lo anula el panel. Mantener el interruptor general apagado durante el despliegue.
+
+### Configuración alternativa por entorno
+
+Configurar exclusivamente en las Environment Variables correspondientes al runtime de funciones de **OdontoCloud** en Coolify, nunca en variables `VITE_`:
+
+```dotenv
+ODONTO_HELP_ENABLED=true
+ODONTO_HELP_PROVIDER=gemini
+ODONTO_HELP_GEMINI_MODEL=gemini-2.5-flash-lite
+ODONTO_HELP_GEMINI_API_KEY=<clave dedicada de ayuda>
+```
+
+`ODONTO_HELP_ENABLED=false` es un corte adicional desde el entorno. Con `true`, aún deben estar encendidos los dos interruptores en la base de datos. La clave debe ser dedicada, distinta de las funciones clínicas. Nunca se reutiliza `GEMINI_API_KEY` ni se persiste una clave en el navegador. La alternativa del panel guarda exclusivamente el sobre cifrado en una tabla accesible solo por el backend.
+
+El código no habilita facturación ni compra cuota. **Una clave de un proyecto con facturación puede generar cargos**: para usar exclusivamente la cuota gratuita, verificar que el proyecto dedicado esté sin facturación y comprobar sus cuotas. No existe un parámetro de la petición que fuerce el uso gratuito de una clave facturada. El servicio gratuito de Google puede usar entradas/salidas para mejorar sus productos; por eso se evita enviar texto libre, incluso si el usuario escribe datos personales.
+
+Para conservar el proveedor local: seleccionar explícitamente `ODONTO_HELP_PROVIDER=ollama`, mantener URL/modelo privados de Ollama, habilitar `ODONTO_HELP_ENABLED=true` y los mismos interruptores. Esta ruta conserva el comportamiento conversacional anterior dentro del VPS. Gemini no recibe solicitudes cuando se selecciona Ollama. La ayuda comercial pública usa guías, sin acceso anónimo a generación con ninguno de los proveedores.
+
+## Orden seguro de despliegue
+
+1. Hacer un respaldo de la base de **OdontoCloud** y guardar la versión actual de la función y el frontend, usando el procedimiento existente. Identificar exactamente el runtime y volumen de funciones del servicio 2. No ejecutar comandos masivos sobre Docker ni tocar otro servicio.
+2. Aplicar únicamente estas dos migraciones, en orden: `supabase/migrations/20261024142001_odontocloud_help_controls.sql` y `supabase/migrations/20261024145608_odontocloud_help_credentials.sql`, en PostgreSQL de OdontoCloud. Son transaccionales; crean tablas y funciones nuevas sin modificar tablas clínicas ni flags existentes. Si la primera ya está aplicada, aplicar solo la segunda. No ejecutar todas las migraciones antiguas ni repetir estas migraciones. Ambas incluyen recarga del esquema de PostgREST.
+3. Actualizar las carpetas `supabase/functions/odontocloud-help/` y `supabase/functions/odontocloud-help-settings/` completas, los archivos `_shared/helpKnowledge.mjs` y `_shared/helpConversation.mjs` y asegurar que `tenant-secrets/crypto.ts` esté disponible con su versión actual. Conservar las demás funciones y el runtime principal que enruta por nombre de función.
+4. Comprobar la clave maestra de cifrado de OdontoCloud en el runtime. Si ya existe, conservarla. Aplicar el procedimiento existente para recargar **solo** ese runtime si es necesario. Mantener el interruptor general de la base apagado. La API de Gemini se pegará en el panel tras publicar el frontend.
+5. Publicar el frontend construido desde este código. Verificar que las clínicas existentes accedan y que la biblioteca de ayuda funcione con la IA apagada.
+6. Desde superadministrador, pegar, probar y guardar la clave en **Conexión de Gemini para ayuda**. Confirmar que desaparece del campo y aparece la fecha de verificación. Encender únicamente una clínica de prueba y el interruptor general. Preguntar «¿Dónde está el botón de generar RIPS?»: comprobar respuesta corta y fuente. «Cómo apartar una cita» debe devolver directamente una guía, sin gastar IA.
+7. Probar apagado por clínica, apagado general y una segunda clínica apagada; deben responder con guías sin solicitudes a Google. Comprobar que un usuario de clínica no pueda modificar los interruptores desde REST. Revisar los contadores sin registrar mensajes.
+8. Solo tras estas comprobaciones habilitar las clínicas deseadas. Confirmar cuota/modelo con la clave real. Si falla, apagar el interruptor general o `ODONTO_HELP_ENABLED`; las guías siguen disponibles.
+
+Reversión inmediata: apagar el interruptor general. Si hace falta revertir código, restaurar función y frontend de la misma versión. Las tablas nuevas pueden permanecer; no es necesario borrar datos ni revertir otras migraciones.
+
+## Validación local
+
+- `npm run test:ci`: seguridad, ayuda anterior y Gemini, agenda, configuración, odontograma, controles de producción y build.
+- `npx --yes deno check supabase/functions/odontocloud-help/index.ts supabase/functions/odontocloud-help-settings/index.ts`: comprobación de tipos de las dos funciones. El módulo compartido de cifrado incluye únicamente ajustes de tipos `BufferSource`; conserva el algoritmo y el formato anteriores.
+- `scripts/test-help-gemini.mjs` usa un proveedor simulado: confirma aislamiento del texto privado, clave dedicada, ausencia de herramientas, límites de tokens, apagados, cuotas y respaldo ante errores.
+- `scripts/test-help-settings.mjs` usa el cifrado real y un proveedor simulado: valida el rol contra `profiles`, sobres AES-GCM/AAD, estado sin secretos, pruebas mínimas, conservación de la clave ante fallo y uso inmediato de la clave guardada por el handler de ayuda.
+- `node scripts/test-help-controls-ui.mjs`: prueba el componente real en Chromium con dos clínicas ficticias y todas las llamadas externas bloqueadas; valida interruptores independientes, pausa general y errores de guardado. Requiere Chromium de Playwright instalado.
+- La migración y las políticas pueden verificarse en PostgreSQL local en memoria con PGlite, sin conectar a ninguna base real:
+
+```powershell
+$validationRoot = Join-Path $env:TEMP 'odontocloud-help-validation'
+npm install --prefix "$validationRoot" --no-audit --no-fund --package-lock=false @electric-sql/pglite@0.5.11
+node scripts/test-help-db.mjs (Join-Path $validationRoot 'node_modules\@electric-sql\pglite')
+```
+
+Esta comprobación valida migración, RLS, permisos de ejecución, pertenencia, interruptores y contadores con usuarios ficticios. No certifica el runtime remoto, la cuota real de Google ni todos los procedimientos del manual. No se ha desplegado ni enviado una consulta real a Gemini como parte de estas pruebas locales.
+
+Referencias: [generateContent](https://ai.google.dev/api/generate-content), [precios](https://ai.google.dev/gemini-api/docs/pricing), [condiciones de datos](https://ai.google.dev/gemini-api/terms), [RLS](https://supabase.com/docs/guides/database/postgres/row-level-security).

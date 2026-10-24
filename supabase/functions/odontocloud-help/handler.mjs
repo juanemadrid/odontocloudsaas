@@ -39,6 +39,7 @@ export function getModuleLocationReference(guideId) {
 
 import { conversationalReply, resolveHelpGuides, clarificationReply, readHelpEvents, isContextualReply, isBriefFollowup, trustedScreenContext } from '../_shared/helpConversation.mjs';
 import { normalize, formatGuide, KNOWLEDGE_VERSION, HELP_GUIDES, PUBLIC_GUIDE_IDS } from '../_shared/helpKnowledge.mjs';
+import { generateManagedHelp, helpSafetyReason } from './managedHelp.mjs';
 
 export class HelpError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -137,7 +138,7 @@ export function helpPrompt(guide, question, isPublic = false, screenContext = ''
   return conversationRules + contextNote + '\nLas opciones dependen de los permisos.\nREFERENCIA:\n' + reference;
 }
 
-export function createHelpHandler({ authenticate, env, fetchImpl = fetch, log = () => {}, authTimeoutMs = 8000, ollamaTimeoutMs = 60000 }) {
+export function createHelpHandler({ authenticate, reserve, resolveConfig, env, fetchImpl = fetch, log = _event => {}, authTimeoutMs = 8000, ollamaTimeoutMs = 60000 }) {
   return async request => {
     const started = Date.now();
     const trace = (stage, details = {}) => log({ stage, elapsedMs: Date.now() - started, ...details });
@@ -178,6 +179,7 @@ export function createHelpHandler({ authenticate, env, fetchImpl = fetch, log = 
       const history = body.history ?? [];
       if (!Array.isArray(history) || history.length > 4 || history.some(m => !m || typeof m !== 'object' || Object.keys(m).some(k => !['role','content'].includes(k)) || !['user','assistant'].includes(m.role) || typeof m.content !== 'string' || m.content.length > 600) || history.reduce((n,m) => n + m.content.length, 0) > 1800) throw new HelpError(400, 'Historial inválido.');
       const isPublic = body.mode === 'public';
+      let principal;
       if (!isPublic) {
         const token = request.headers.get('Authorization')?.match(/^Bearer\s+(\S+)$/i)?.[1];
         if (!token) throw new HelpError(401, 'Debes iniciar sesión.');
@@ -185,7 +187,6 @@ export function createHelpHandler({ authenticate, env, fetchImpl = fetch, log = 
         trace('auth_started');
         const authController = new AbortController();
         let authTimer;
-        let principal;
         try {
           principal = await Promise.race([
             authenticate(token, authController.signal),
@@ -210,6 +211,8 @@ export function createHelpHandler({ authenticate, env, fetchImpl = fetch, log = 
         throw new HelpError(400, 'El contexto de ayuda no es válido.');
       }
       if (isPublic) previousIds = previousIds.filter(id => PUBLIC_GUIDE_IDS.has(id));
+      if (helpSafetyReason(question)) return json({ success: true, provider: 'assistant', reason: 'out_of_scope', sources: [],
+        answer: 'Solo puedo explicar el funcionamiento de OdontoCloud. No puedo consultar otras clínicas, dar consejos clínicos ni ayudar a saltarse permisos o dañar el sistema.' });
       const conversation = conversationalReply(question, previousIds, isPublic ? 'public' : 'app');
       if (conversation) return json(conversation);
       if (/\bedunexus\b/.test(normalize(question).replace(/(?: por favor)? explicame paso a paso(?: por favor)?$/, "").trim())) return json(clarificationReply(question));
@@ -222,6 +225,45 @@ export function createHelpHandler({ authenticate, env, fetchImpl = fetch, log = 
       };
 
       const sources = guides.map(({ id, title, category }) => ({ id, title, category }));
+      // Public product help remains available without providing anonymous access to generation.
+      if (isPublic) return fallback('manual');
+      if (env('ODONTO_HELP_ENABLED') === 'false') return fallback('disabled');
+      let providerEnv = env;
+      if (resolveConfig) {
+        const configController = new AbortController();
+        const timer = setTimeout(() => configController.abort(), 8000);
+        try {
+          const config = await resolveConfig(configController.signal);
+          providerEnv = name => config[name] ?? env(name);
+        } catch { return fallback('unavailable'); }
+        finally { clearTimeout(timer); }
+      }
+      if (providerEnv('ODONTO_HELP_ENABLED') !== 'true') return fallback('disabled');
+      if (providerEnv('ODONTO_HELP_PROVIDER') === 'gemini') {
+        // Common complete questions use the verified guide without spending tokens.
+        if (isGeneralAppointment(question) || isGeneralBudget(question)) return fallback('manual');
+        const controller = new AbortController();
+        const abort = () => controller.abort();
+        request.signal.addEventListener('abort', abort, { once: true });
+        if (request.signal.aborted) abort();
+        const timer = setTimeout(abort, 18000);
+        try {
+          const reference = helpPrompt(guides[0], question, false, trustedScreenContext(body.screenContext), recentModelHistory(history)).split('\nREFERENCIA:\n').at(-1);
+          const result = await generateManagedHelp({ guide: guides[0], reference, question,
+            screenContext: trustedScreenContext(body.screenContext), reserve, principal, env: providerEnv, fetchImpl, signal: controller.signal });
+          return result.success ? json(result) : fallback(result.reason);
+        } catch { return fallback('unavailable'); }
+        finally { clearTimeout(timer); request.signal.removeEventListener('abort', abort); }
+      }
+      if (providerEnv('ODONTO_HELP_PROVIDER') !== 'ollama') return fallback('not_configured');
+      // Both providers honor the same per-clinic switch and durable quotas.
+      const reserveController = new AbortController();
+      const reserveTimer = setTimeout(() => reserveController.abort(), 8000);
+      try {
+        const access = await reserve?.(principal, reserveController.signal);
+        if (!access?.allowed) return fallback(access?.reason === 'quota' ? 'quota' : 'disabled');
+      } catch { return fallback('unavailable'); }
+      finally { clearTimeout(reserveTimer); }
       const isStandalone = (guides[0].id === 'citas' && isGeneralAppointment(question)) ||
                            (guides[0].id === 'presupuestos' && isGeneralBudget(question));
       const modelHistory = isStandalone ? [] : recentModelHistory(history);

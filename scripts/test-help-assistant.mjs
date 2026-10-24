@@ -54,11 +54,12 @@ assert.equal(searchGuides('¿Y después?', ['citas'])[0]?.id, 'citas');
 
 let calls = [];
 const makeHandler = (overrides = {}) => createHelpHandler({
+  reserve: async () => ({ allowed: true }),
   authenticate: async token => {
     if (token !== 'valid') throw new HelpError(401, 'Sesión inválida');
     return { userId: 'user-a', tenantId: 'clinic-a', active: true };
   },
-  env: name => ({ ODONTO_HELP_OLLAMA_URL: 'http://ollama:11434', ODONTO_HELP_OLLAMA_MODEL: 'local-test' })[name],
+  env: name => ({ ODONTO_HELP_ENABLED: 'true', ODONTO_HELP_PROVIDER: 'ollama', ODONTO_HELP_OLLAMA_URL: 'http://ollama:11434', ODONTO_HELP_OLLAMA_MODEL: 'local-test' })[name],
   fetchImpl: async (url, options) => {
     calls.push({ url, ...options, body: JSON.parse(options.body) });
     return Response.json({ done: true, message: { content: 'Abre Agenda y revisa la guía.' } });
@@ -100,7 +101,7 @@ assert.ok(!JSON.stringify(calls[0]).includes('Bearer valid'));
 const count = calls.length;
 assert.equal((await (await handler(req({ question: 'Ver pacientes de Edunexus' }))).json()).provider, 'assistant');
 assert.equal(calls.length, count);
-assert.equal((await (await makeHandler({ env: () => undefined })(req())).json()).reason, 'not_configured');
+assert.equal((await (await makeHandler({ env: () => undefined })(req())).json()).reason, 'disabled');
 for (const fetchImpl of [
   async () => { throw new Error('private provider diagnostic'); },
   async () => new Response('private error', { status: 500 }),
@@ -181,7 +182,7 @@ assert.deepEqual(calls.at(-1).body.messages.slice(1,-1),history);
 const isolated = await (await handler(req({question:'Cómo apartar una cita'}))).json();
 assert.equal(isolated.provider,'ollama');
 assert.equal(calls.at(-1).body.messages.length,2,'No memory shared across requests');
-const aliasHandler=makeHandler({env:k=>({ODONTO_HELP_OLLAMA_URL:'http://ollama-help:11434',ODONTO_HELP_OLLAMA_MODEL:'selected-model'})[k]});
+const aliasHandler=makeHandler({env:k=>({ODONTO_HELP_ENABLED:'true', ODONTO_HELP_PROVIDER:'ollama', ODONTO_HELP_OLLAMA_URL:'http://ollama-help:11434',ODONTO_HELP_OLLAMA_MODEL:'selected-model'})[k]});
 await aliasHandler(req());
 assert.equal(calls.at(-1).url,'http://ollama-help:11434/api/chat');
 assert.equal(calls.at(-1).body.model,'selected-model');
@@ -254,7 +255,7 @@ assert.ok(HELP_GUIDES.find(g=>g.id==='citas').steps[0].includes('+ Nueva Cita'))
 for (const stream of [false, true]) {
  const urls = [];
  const clinicOnly = makeHandler({
-  env: key => ({ GEMINI_API_KEY: 'must-not-be-used', ODONTO_HELP_GEMINI_API_KEY: 'must-not-be-used', ODONTO_HELP_OLLAMA_URL: 'http://ollama-help:11434', ODONTO_HELP_OLLAMA_MODEL: 'local-test' })[key],
+  env: key => ({ ODONTO_HELP_ENABLED:'true', ODONTO_HELP_PROVIDER:'ollama', GEMINI_API_KEY: 'must-not-be-used', ODONTO_HELP_GEMINI_API_KEY: 'must-not-be-used', ODONTO_HELP_OLLAMA_URL: 'http://ollama-help:11434', ODONTO_HELP_OLLAMA_MODEL: 'local-test' })[key],
   fetchImpl: async (url, options) => {
    urls.push(url);
    const payload = JSON.parse(options.body);

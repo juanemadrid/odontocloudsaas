@@ -26,6 +26,10 @@ scripts/*.mjs
 !scripts/test-odontograma.mjs
 !scripts/test-production-readiness.mjs
 !scripts/test-help-assistant.mjs
+!scripts/test-help-gemini.mjs
+!scripts/test-help-settings.mjs
+!scripts/test-help-db.mjs
+!scripts/test-help-controls-ui.mjs
 !scripts/test-product-demo.mjs
 !scripts/test_rips_operational_export.mjs
 !scripts/test_rips_payment_source_normalization.mjs

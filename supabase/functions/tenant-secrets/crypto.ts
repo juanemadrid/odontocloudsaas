@@ -75,7 +75,7 @@ export async function loadEncryptionKey(kid = getActiveKeyId()): Promise<CryptoK
   const cryptoObj = globalThis.crypto;
   return await cryptoObj.subtle.importKey(
     "raw",
-    keyBytes,
+    keyBytes as BufferSource,
     { name: "AES-GCM" },
     false,
     ["encrypt", "decrypt"]
@@ -136,9 +136,9 @@ export async function decryptSecret(envelope: unknown, aadString: string): Promi
 
   try {
     const decryptedBuf = await cryptoObj.subtle.decrypt(
-      { name: "AES-GCM", iv, additionalData: aad },
+      { name: "AES-GCM", iv: iv as BufferSource, additionalData: aad },
       key,
-      ciphertext
+      ciphertext as BufferSource
     );
     return new TextDecoder().decode(decryptedBuf);
   } catch {

@@ -135,7 +135,7 @@ export default function OdontoHelpAssistantModal({ isOpen, onClose }) {
 function HelpPanel({ onClose }) {
     const welcome = { 
         sender: 'bot', 
-        text: '¡Hola! Soy OdontoIA. Cuéntame qué quieres hacer o dónde te quedaste y lo vemos paso a paso.',
+        text: 'Soy OdontoIA. ¿Qué necesitas hacer en OdontoCloud? No escribas nombres, documentos ni datos de pacientes.',
         sources: [] 
     };
     
@@ -400,6 +400,11 @@ function detectScreenContext() {
                                         {['unavailable', 'not_configured'].includes(message.reason) && (
                                             <p className="text-[11px] text-amber-800 bg-amber-50 rounded-lg p-2 mb-2 border border-amber-200">
                                                 La IA no completó la respuesta. Puedes continuar con esta guía:
+                                            </p>
+                                        )}
+                                        {['disabled', 'quota'].includes(message.reason) && (
+                                            <p className="text-[11px] text-slate-600 bg-slate-50 rounded-lg p-2 mb-2">
+                                                {message.reason === 'quota' ? 'La IA alcanzó su límite de consultas. Puedes continuar con esta guía.' : 'La IA está apagada. Puedes continuar con esta guía.'}
                                             </p>
                                         )}
                                         <FormattedMessage text={message.text || (message.pending ? "Revisando tu pregunta…" : "")} />

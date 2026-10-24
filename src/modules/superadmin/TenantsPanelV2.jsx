@@ -8,6 +8,7 @@ import {
 import supabase from "../../lib/supabaseClient";
 import { adminChangePassword } from "../../lib/supabaseAdmin";
 import ConfigIhce from "../config/ConfigIhce";
+import HelpAiControls from './HelpAiControls';
 
 import {
     FiPlus, FiRefreshCw, FiSearch, FiActivity, FiCheck, FiX,
@@ -800,6 +801,7 @@ export default function TenantsPanelV2() {
 
     return (
         <div className="space-y-4 sm:space-y-6">
+            <HelpAiControls tenants={tenants} />
             {/* KPIs */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
                 {[

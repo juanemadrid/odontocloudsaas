@@ -37,6 +37,9 @@ jobs:
       - name: Security check
         run: npm run security:check
 
+      - name: Help assistant and key settings tests
+        run: npm run test:help
+
       - name: Agenda availability tests
         run: npm run test:agenda
 
