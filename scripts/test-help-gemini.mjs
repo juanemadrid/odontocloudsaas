@@ -28,7 +28,7 @@ assert.equal(payload.generationConfig.thinkingConfig.thinkingBudget, 0);
 assert.equal(payload.contents.length, 1);
 assert.equal(calls[0].redirect, 'error');
 assert.equal(calls[0].headers['x-goog-api-key'], 'test-key');
-assert.ok(calls[0].url.endsWith('/gemini-2.5-flash-lite:generateContent'));
+assert.ok(calls[0].url.endsWith('/gemini-1.5-flash:generateContent'));
 assert.ok(!payload.tools);
 assert.ok(!calls[0].body.includes('clinic-private'));
 assert.ok(!calls[0].body.includes('user-private'));

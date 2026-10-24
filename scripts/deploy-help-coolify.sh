@@ -14,7 +14,7 @@ FILES=(
   odontocloud-help-settings/index.ts odontocloud-help-settings/auth.mjs odontocloud-help-settings/handler.mjs
   _shared/helpKnowledge.mjs _shared/helpConversation.mjs _shared/helpCrypto.mjs _shared/helpApiKey.mjs tenant-secrets/crypto.ts
 )
-MIGRATIONS=(20261024142001_odontocloud_help_controls.sql 20261024145608_odontocloud_help_credentials.sql)
+MIGRATIONS=(20261024142001_odontocloud_help_controls.sql 20261024145608_odontocloud_help_credentials.sql 20261024151000_expand_help_models.sql)
 for cmd in docker curl flock realpath openssl; do command -v "$cmd" >/dev/null || { echo "Missing command: $cmd"; exit 1; }; done
 exec 9>/tmp/odontocloud-help-deploy.lock
 flock -n 9 || { echo 'Another OdontoCloud help deployment is running.'; exit 1; }
@@ -61,6 +61,7 @@ install_migration() {
 }
 install_migration 0 "SELECT (to_regclass('public.odonto_help_global') IS NOT NULL)::int + (to_regclass('public.odonto_help_clinics') IS NOT NULL)::int + (to_regclass('public.odonto_help_usage') IS NOT NULL)::int + (to_regprocedure('public.reserve_odonto_help_request(uuid,uuid)') IS NOT NULL)::int" 4
 install_migration 1 "SELECT (to_regclass('public.odonto_help_credentials') IS NOT NULL)::int + (to_regclass('public.odonto_help_key_checks') IS NOT NULL)::int + (to_regprocedure('public.reserve_odonto_help_key_check(uuid)') IS NOT NULL)::int" 3
+sql < "$STAGE/${MIGRATIONS[2]}"
 # Provision a dedicated persistent key without modifying existing tenant encryption.
 # Never regenerate a missing key when it already protects a saved help credential.
 SECRET_DIR="$ROOT/.odonto-help-secrets"

@@ -20,7 +20,7 @@ export async function testHelpKey({ apiKey, model, fetchImpl = fetch, signal }) 
   // Never forward provider messages, which may contain credential fragments.
   if (response.status === 429) throw new SettingsError(429, 'Google indica que no hay cuota disponible. La clave anterior se conserva.');
   if ([400, 401, 403].includes(response.status)) throw new SettingsError(422, 'Google rechazó la clave o sus permisos. Revisa que permita usar la API de Gemini.');
-  if (response.status === 404) throw new SettingsError(422, 'El modelo seleccionado no está disponible para esta clave.');
+  if (response.status === 404) throw new SettingsError(422, `El modelo seleccionado (${model}) no está disponible para esta clave.`);
   if (!response.ok) throw new SettingsError(503, 'Google no está disponible. Intenta más tarde; la clave anterior se conserva.');
   const result = await response.json();
   if (!result.candidates?.some(c => c.finishReason === 'STOP' && c.content?.parts?.some(p => typeof p.text === 'string' && p.text.trim()))) {
@@ -81,7 +81,7 @@ export function createHelpSettingsHandler({ authenticate, readCredential, writeC
       const apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
       const model = body.model || HELP_DEFAULT_MODEL;
       if (!isHelpApiKey(apiKey)) throw new SettingsError(400, 'Pega la clave completa usando «Copiar clave de API» de Google AI Studio. No debe contener espacios ni saltos de línea.');
-      if (!HELP_MODELS.has(model)) throw new SettingsError(400, 'Selecciona Gemini 2.5 Flash-Lite o Gemini 2.5 Flash como modelo de ayuda.');
+      if (!HELP_MODELS.has(model)) throw new SettingsError(400, 'Selecciona un modelo de ayuda de Gemini compatible.');
       if (body.action === 'save' && !encryptionReady) throw new SettingsError(503, 'La instalación del cifrado de ayuda está pendiente. Ejecuta el instalador actualizado del servidor y pulsa «Actualizar conexión».');
       if (!await reserveCheck(caller.userId, controller.signal)) throw new SettingsError(429, 'Se alcanzó el límite de pruebas de conexión. Intenta más tarde.');
       // Encrypt before testing/writing so a missing master key can never replace the old key.

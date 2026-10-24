@@ -5,7 +5,7 @@ import { HELP_API_KEY_MAX_LENGTH, HELP_GEMINI_MODELS, HELP_GEMINI_DEFAULT_MODEL,
 export default function HelpAiKeySettings() {
   const [status, setStatus] = useState(null);
   const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState('gemini-2.5-flash-lite');
+  const [model, setModel] = useState('gemini-1.5-flash');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -53,8 +53,12 @@ export default function HelpAiKeySettings() {
     <label className="block text-xs font-semibold text-slate-700" htmlFor="help-gemini-model">Modelo de ayuda</label>
     <select id="help-gemini-model" value={model} disabled={busy} onChange={e => { setModel(e.target.value); setMessage(''); }}
       className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm mt-1 mb-3">
-      <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite · Menor costo</option>
+      <option value="gemini-1.5-flash">Gemini 1.5 Flash · Gratuito y recomendado</option>
+      <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+      <option value="gemini-3.7-flash">Gemini 3.7 Flash</option>
+      <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
       <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+      <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite</option>
     </select>
     <div className="flex flex-wrap gap-2">
       <button type="button" disabled={busy || !apiKey.trim() || !status} onClick={() => run('test')}

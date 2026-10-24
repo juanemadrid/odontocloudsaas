@@ -1,4 +1,5 @@
 import { normalize, KNOWLEDGE_VERSION } from '../_shared/helpKnowledge.mjs';
+import { HELP_GEMINI_MODELS, HELP_GEMINI_DEFAULT_MODEL } from '../_shared/helpApiKey.mjs';
 
 // No raw question, history, identifier or client supplied text crosses the provider boundary.
 export function helpSafetyReason(question) {
@@ -25,20 +26,21 @@ export async function generateManagedHelp({ guide, reference: selectedReference,
   const key = env('ODONTO_HELP_GEMINI_API_KEY');
   // A dedicated key is required; never borrow a clinical or superadmin key.
   if (!key) return { reason: 'not_configured' };
-  const model = env('ODONTO_HELP_GEMINI_MODEL') || 'gemini-2.5-flash-lite';
-  if (!['gemini-2.5-flash-lite', 'gemini-2.5-flash'].includes(model)) return { reason: 'not_configured' };
+  const model = env('ODONTO_HELP_GEMINI_MODEL') || HELP_GEMINI_DEFAULT_MODEL;
+  if (!HELP_GEMINI_MODELS.includes(model)) return { reason: 'not_configured' };
   if (!principal || typeof reserve !== 'function') return { reason: 'disabled' };
   const reservation = await reserve(principal, signal);
   if (!reservation?.allowed) return { reason: reservation?.reason === 'quota' ? 'quota' : 'disabled' };
   const reference = [guide.title, guide.prereq, selectedReference || guide.steps.map((s, i) => `${i + 1}. ${s}`).join('\n'), guide.note].filter(Boolean).join('\n');
   if (reference.length > 8000) return { reason: 'unavailable' };
+  const generationConfig = { temperature: 0.1, maxOutputTokens: 240, thinkingConfig: { thinkingBudget: 0 } };
   const response = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST', redirect: 'error', signal,
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: 'Eres la ayuda de uso de OdontoCloud. Usa exclusivamente la REFERENCIA. Sin consejos clínicos ni acciones ejecutadas. Responde en español, sin saludo ni introducción, con 3 a 5 pasos y hasta 80 palabras. Conserva nombres literales de botones entre corchetes y requisitos de seguridad. No inventes datos, botones, permisos ni pasos. Si la referencia no basta, indica consultar la guía completa. No incluyas enlaces externos.' }] },
       contents: [{ role: 'user', parts: [{ text: `${safeHelpIntent(question)}\n${screenContext ? `Pantalla: ${screenContext}\n` : ''}REFERENCIA:\n${reference}` }] }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 240, thinkingConfig: { thinkingBudget: 0 } },
+      generationConfig,
     }),
   });
   if (!response.ok) return { reason: response.status === 429 ? 'quota' : 'unavailable' };
