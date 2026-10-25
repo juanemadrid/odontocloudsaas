@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
-    FiMic, FiMicOff, FiCpu, FiSettings, FiCheck, 
-    FiRefreshCw, FiExternalLink, FiX, FiTrash2,
-    FiVolume2, FiVolumeX, FiLayers, FiEdit3, FiPlay,
-    FiCheckCircle, FiCopy, FiInfo
+    FiMic, FiMicOff, FiSettings, FiCheck, 
+    FiVolume2, FiVolumeX, FiLayers, FiPlay,
+    FiCheckCircle, FiInfo, FiRotateCcw, FiSave, FiAlertCircle
 } from 'react-icons/fi';
 import { HiSparkles } from 'react-icons/hi2';
 import useSpeechRecognition from '../../../hooks/useSpeechRecognition';
@@ -13,7 +12,12 @@ import { getGeminiApiKey, saveGeminiApiKey } from '../../../services/geminiKeySe
 import { 
     CLINICAL_SPECIALTIES, 
     POLITE_VOICE_SCRIPTS, 
-    parseClinicalDictationLocally 
+    parseClinicalDictationLocally,
+    isSaveOrConfirmCommand,
+    isCancelCommand,
+    extractToothFromText,
+    extractAnesthesiaFromText,
+    extractToleranceFromText
 } from '../../../services/clinicalTemplatesService';
 
 // ─── HELPER SÍNTESIS DE VOZ NATIVA EDUCADÍSIMA (0 COSTO) ──────────────────────
@@ -64,12 +68,33 @@ export default function ClinicalAIAssistant({
     const { userProfile } = useAuth();
 
     // ─── ESTADOS DEL ASISTENTE ────────────────────────────────────────────────
-    // Modos: 'constructor' (Plantillas programadas 100% gratis), 'voz_asistida' (Dictado inteligente), 'dictado_directo' (Transcripción pura)
-    const [assistantMode, setAssistantMode] = useState('constructor');
+    // Modos: 'manos_libres' (100% por voz y comandos sin tocar nada), 'plantillas' (Manual por clics)
+    const [assistantMode, setAssistantMode] = useState('manos_libres');
     const [voiceMuted, setVoiceMuted] = useState(false);
     const [isSpeaking, setIsSpeaking] = useState(false);
 
-    // Selección del constructor estructurado
+    // ─── ESTADO DE LA MÁQUINA DE CONVERSACIÓN PASO A PASO (MANOS LIBRES) ─────
+    // Pasos:
+    // 1: Preguntar Procedimiento y Diente
+    // 2: Preguntar Anestesia
+    // 3: Preguntar Tolerancia / Complicaciones
+    // 4: Confirmar y Guardar por Voz ("¿Desea que la guarde ahora?")
+    // 5: Guardado finalizado
+    const [voiceStep, setVoiceStep] = useState(1);
+    const [capturedData, setCapturedData] = useState({
+        procedureName: '',
+        specialtyId: 'operatoria',
+        procedureId: 'resina_simple',
+        tooth: '',
+        surfacesText: 'Oclusal',
+        anesthesia: '',
+        tolerance: ''
+    });
+    const [currentStatusMsg, setCurrentStatusMsg] = useState('Iniciando modo manos libres...');
+    const [lastSpokenText, setLastSpokenText] = useState('');
+    const [isProcessingStep, setIsProcessingStep] = useState(false);
+
+    // Selección manual para modo plantillas
     const [selectedSpecialtyId, setSelectedSpecialtyId] = useState('operatoria');
     const [selectedProcedureId, setSelectedProcedureId] = useState('resina_simple');
     const [selectedTooth, setSelectedTooth] = useState('16');
@@ -82,7 +107,7 @@ export default function ClinicalAIAssistant({
     const [showSettings, setShowSettings] = useState(false);
     const [apiKey, setApiKey] = useState('');
 
-    // Speech Recognition
+    // Speech Recognition con modo persistente para escuchar continuamente sin tocar el mouse
     const {
         isListening,
         transcript,
@@ -91,9 +116,24 @@ export default function ClinicalAIAssistant({
         isSupported,
         startListening,
         stopListening,
-        resetTranscript,
-        setTranscript
-    } = useSpeechRecognition(false);
+        resetTranscript
+    } = useSpeechRecognition(true);
+
+    // Refs para evitar problemas de dependencias en callbacks asíncronos
+    const voiceStepRef = useRef(voiceStep);
+    useEffect(() => { voiceStepRef.current = voiceStep; }, [voiceStep]);
+
+    const capturedDataRef = useRef(capturedData);
+    useEffect(() => { capturedDataRef.current = capturedData; }, [capturedData]);
+
+    const setValueRef = useRef(setValue);
+    useEffect(() => { setValueRef.current = setValue; }, [setValue]);
+
+    const watchRef = useRef(watch);
+    useEffect(() => { watchRef.current = watch; }, [watch]);
+
+    const onSubmitFormRef = useRef(onSubmitForm);
+    useEffect(() => { onSubmitFormRef.current = onSubmitForm; }, [onSubmitForm]);
 
     // Nombre de cortesía del doctor
     const doctorDisplayName = useMemo(() => {
@@ -101,21 +141,18 @@ export default function ClinicalAIAssistant({
         return raw.replace(/^(Dr\.|Dra\.|Dr|Dra)\s+/i, '');
     }, [userProfile]);
 
-    // Especialidad actual y procedimiento actual
-    const currentSpecialty = useMemo(() => {
-        return CLINICAL_SPECIALTIES.find(s => s.id === selectedSpecialtyId) || CLINICAL_SPECIALTIES[0];
-    }, [selectedSpecialtyId]);
-
-    const currentProcedure = useMemo(() => {
-        return currentSpecialty.procedures.find(p => p.id === selectedProcedureId) || currentSpecialty.procedures[0];
-    }, [currentSpecialty, selectedProcedureId]);
-
     // ─── MOTOR DE VOZ EDUCADÍSIMA (SINTETIZADOR) ──────────────────────────────
-    const speakPolite = (text) => {
-        if (voiceMuted || typeof window === 'undefined' || !window.speechSynthesis || !text) return;
+    const speakPolite = (text, onFinishCallback) => {
+        if (voiceMuted || typeof window === 'undefined' || !window.speechSynthesis || !text) {
+            if (onFinishCallback) onFinishCallback();
+            return;
+        }
 
         try {
             window.speechSynthesis.cancel();
+            // Pausar reconocimiento mientras Nova habla para que no se escuche a sí misma
+            stopListening();
+
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.lang = 'es-ES';
             utterance.rate = 0.98; // Cadencia pausada, calmada y profesional
@@ -124,175 +161,266 @@ export default function ClinicalAIAssistant({
             const voice = getSpanishVoice();
             if (voice) utterance.voice = voice;
 
-            utterance.onstart = () => setIsSpeaking(true);
-            utterance.onend = () => setIsSpeaking(false);
-            utterance.onerror = () => setIsSpeaking(false);
+            utterance.onstart = () => {
+                setIsSpeaking(true);
+            };
+
+            const handleSpeechEnd = () => {
+                setIsSpeaking(false);
+                // Reanudar la escucha del doctor inmediatamente después de que Nova termina de hablar
+                if (assistantMode === 'manos_libres' && voiceStepRef.current <= 4) {
+                    resetTranscript();
+                    startListening();
+                }
+                if (onFinishCallback) onFinishCallback();
+            };
+
+            utterance.onend = handleSpeechEnd;
+            utterance.onerror = (e) => {
+                console.warn("Speech error or cancelled:", e);
+                handleSpeechEnd();
+            };
 
             window.speechSynthesis.speak(utterance);
         } catch (err) {
             console.warn("Speech synthesis notice:", err);
             setIsSpeaking(false);
+            if (onFinishCallback) onFinishCallback();
         }
     };
 
-    // Saludo educado al abrir por primera vez
-    const hasGreetedRef = useRef(false);
+    // ─── BIENVENIDA INICIAL AL ABRIR EL MODAL ──────────────────────────────────
+    const hasInitializedRef = useRef(false);
     useEffect(() => {
-        if (!hasGreetedRef.current) {
-            hasGreetedRef.current = true;
-            const greeting = POLITE_VOICE_SCRIPTS.greeting(doctorDisplayName);
-            // Breve espera para que el modal termine de animarse
+        if (!hasInitializedRef.current) {
+            hasInitializedRef.current = true;
+            // Pre-cargar voces
+            if (typeof window !== 'undefined' && window.speechSynthesis) {
+                window.speechSynthesis.getVoices();
+            }
+
+            const welcomeMsg = `Buenos días, doctor ${doctorDisplayName}. Le asiste Nova en modo manos libres. No necesita tocar nada con las manos. Dígame: ¿qué procedimiento realizamos hoy y en qué diente?`;
+            setCurrentStatusMsg('Paso 1: Escuchando procedimiento y diente...');
+            
             const timer = setTimeout(() => {
-                speakPolite(greeting);
+                speakPolite(welcomeMsg);
             }, 600);
+
             return () => clearTimeout(timer);
         }
     }, [doctorDisplayName]);
 
-    // Cancelar voz al desmontar
+    // Cancelar voz y escucha al desmontar
     useEffect(() => {
         return () => {
             if (typeof window !== 'undefined' && window.speechSynthesis) {
                 window.speechSynthesis.cancel();
             }
+            stopListening();
         };
     }, []);
 
-    // Regenerar texto de vista previa cuando cambien las variables del constructor
+    // ─── CONSTRUCTOR DINÁMICO DE NOTA CLÍNICA ─────────────────────────────────
+    const buildFormattedNote = (data) => {
+        const spec = CLINICAL_SPECIALTIES.find(s => s.id === data.specialtyId) || CLINICAL_SPECIALTIES[0];
+        const proc = spec.procedures.find(p => p.id === data.procedureId) || spec.procedures[0];
+
+        return proc.template({
+            tooth: data.tooth || 'tratada',
+            surfacesText: data.surfacesText || '',
+            anesthesia: data.anesthesia || 'Infiltrativa con Lidocaína al 2%',
+            tolerance: data.tolerance || 'Paciente tolera el procedimiento de forma satisfactoria sin complicaciones',
+            materials: proc.materials,
+            postOp: proc.postOp
+        });
+    };
+
+    // ─── CONTROLADOR DE VOZ MANOS LIBRES (DEBOUNCED SPEECH PROCESSOR) ─────────
+    // Espera a que el doctor termine de hablar (1.6s de silencio) y procesa el paso
     useEffect(() => {
-        if (currentProcedure && currentProcedure.template) {
-            const surfacesText = selectedSurfaces.join('-');
-            const text = currentProcedure.template({
-                tooth: selectedTooth || '[Pieza]',
-                surfacesText,
-                anesthesia: selectedAnesthesia,
-                tolerance: selectedTolerance,
-                materials: currentProcedure.materials,
-                postOp: currentProcedure.postOp
+        if (assistantMode !== 'manos_libres' || isSpeaking || isProcessingStep) return;
+
+        const currentDictation = `${transcript} ${interimTranscript}`.trim();
+        if (!currentDictation || currentDictation.length < 2) return;
+
+        const timer = setTimeout(() => {
+            handleProcessDoctorSpeech(currentDictation);
+        }, 1700);
+
+        return () => clearTimeout(timer);
+    }, [transcript, interimTranscript, assistantMode, isSpeaking, isProcessingStep]);
+
+    // ─── PROCESADOR DEL HABLA DEL DOCTOR SEGÚN EL PASO ACTUAL ─────────────────
+    const handleProcessDoctorSpeech = (spokenText) => {
+        if (!spokenText || isSpeaking || isProcessingStep) return;
+        setIsProcessingStep(true);
+        setLastSpokenText(spokenText);
+        resetTranscript();
+
+        const clean = spokenText.toLowerCase().trim();
+        const currentStep = voiceStepRef.current;
+        console.log(`[Nova Manos Libres] Paso ${currentStep} procesando: "${spokenText}"`);
+
+        // Comprobación de comando de cancelación o reinicio por voz
+        if (isCancelCommand(clean)) {
+            setVoiceStep(1);
+            setCapturedData({
+                procedureName: '',
+                specialtyId: 'operatoria',
+                procedureId: 'resina_simple',
+                tooth: '',
+                surfacesText: 'Oclusal',
+                anesthesia: '',
+                tolerance: ''
             });
-            setPreviewText(text);
-        }
-    }, [currentProcedure, selectedTooth, selectedSurfaces, selectedAnesthesia, selectedTolerance]);
-
-    // Cargar clave si existe en el backend (opcional)
-    useEffect(() => {
-        const loadKey = async () => {
-            try {
-                const key = await getGeminiApiKey(userProfile?.inquilino);
-                if (key) setApiKey(key);
-            } catch (e) {
-                // silencioso
-            }
-        };
-        loadKey();
-    }, [userProfile?.inquilino]);
-
-    // Manejar errores de micrófono
-    useEffect(() => {
-        if (speechError) {
-            toast.error(`Micrófono: ${speechError}`);
-        }
-    }, [speechError]);
-
-    // ─── ACCIONES DEL CONSTRUCTOR ─────────────────────────────────────────────
-    const handleSelectSpecialty = (specId) => {
-        setSelectedSpecialtyId(specId);
-        const spec = CLINICAL_SPECIALTIES.find(s => s.id === specId);
-        if (spec && spec.procedures.length > 0) {
-            const firstProc = spec.procedures[0];
-            setSelectedProcedureId(firstProc.id);
-            if (firstProc.anesthesiaDefault) {
-                setSelectedAnesthesia(firstProc.anesthesiaDefault);
-            }
-            if (firstProc.defaultSurfaces) {
-                setSelectedSurfaces(firstProc.defaultSurfaces);
-            }
-            speakPolite(`Especialidad ${spec.name}. Procedimiento ${firstProc.name}.`);
-        }
-    };
-
-    const handleSelectProcedure = (proc) => {
-        setSelectedProcedureId(proc.id);
-        if (proc.anesthesiaDefault) setSelectedAnesthesia(proc.anesthesiaDefault);
-        if (proc.defaultSurfaces) setSelectedSurfaces(proc.defaultSurfaces);
-        speakPolite(POLITE_VOICE_SCRIPTS.procedureSelected(proc.name, selectedTooth));
-    };
-
-    const toggleSurface = (surf) => {
-        setSelectedSurfaces(prev => {
-            if (prev.includes(surf)) {
-                return prev.filter(s => s !== surf);
-            } else {
-                return [...prev, surf];
-            }
-        });
-    };
-
-    // Aplicar al formulario de evolución del paciente
-    const handleApplyEvolution = () => {
-        if (!previewText) return;
-
-        if (setValue) {
-            // Si ya hay un comentario previo, preguntar o anexar limpiamente
-            const currentComment = watch ? (watch("comentario") || "") : "";
-            if (currentComment.trim()) {
-                const updated = `${currentComment.trim()}\n\n---\n${previewText.trim()}`;
-                setValue("comentario", updated);
-            } else {
-                setValue("comentario", previewText.trim());
-            }
-        }
-
-        if (onApply) {
-            onApply({ comentario: previewText });
-        }
-
-        speakPolite(POLITE_VOICE_SCRIPTS.appliedToForm());
-        toast.success("Evolución clínica insertada en el formulario con éxito", {
-            description: "Texto médico formal listo para guardar."
-        });
-    };
-
-    // ─── MODO DICTADO INTELIGENTE (OFFLINE CON PARSER LOCAL) ───────────────────
-    const handleVoiceSmartProcess = () => {
-        const fullDictation = `${transcript} ${interimTranscript}`.trim();
-        if (!fullDictation) {
-            toast.info("Por favor, hable al micrófono antes de estructurar la evolución.");
+            setCurrentStatusMsg('Asistente reiniciado por comando de voz');
+            speakPolite(`Entendido doctor ${doctorDisplayName}. He reiniciado el proceso. Dígame nuevamente: ¿qué procedimiento realizamos hoy?`, () => {
+                setIsProcessingStep(false);
+            });
             return;
         }
 
-        stopListening();
-        const parsed = parseClinicalDictationLocally(fullDictation);
-        if (parsed) {
-            setSelectedSpecialtyId(parsed.specialty.id);
-            setSelectedProcedureId(parsed.procedure.id);
-            if (parsed.tooth) setSelectedTooth(parsed.tooth);
-            if (parsed.surfaces && parsed.surfaces.length > 0) setSelectedSurfaces(parsed.surfaces);
-            if (parsed.anesthesia) setSelectedAnesthesia(parsed.anesthesia);
-            if (parsed.tolerance) setSelectedTolerance(parsed.tolerance);
-
-            setPreviewText(parsed.generatedText);
-            setAssistantMode('constructor');
-            speakPolite(parsed.politeVoiceMsg);
-            toast.success("Dictado estructurado con éxito por el Asistente Nova");
-        } else {
-            toast.error("No se pudo interpretar el dictado.");
+        // Si el doctor dijo TODO en una sola frase (ej: "Hice resina en el 16 con lidocaína sin dolor y guarda")
+        if (isSaveOrConfirmCommand(clean) && (clean.includes('resina') || clean.includes('exodoncia') || clean.includes('cordal') || clean.includes('endodoncia') || clean.includes('control') || clean.includes('limpieza'))) {
+            const parsed = parseClinicalDictationLocally(spokenText);
+            if (parsed) {
+                const note = parsed.generatedText;
+                if (setValueRef.current) {
+                    setValueRef.current('comentario', note);
+                }
+                setPreviewText(note);
+                setVoiceStep(5);
+                setCurrentStatusMsg('✅ Guardando evolución automáticamente...');
+                speakPolite(`Con el mayor de los gustos, doctor. He registrado el procedimiento y guardado la evolución en el expediente. Que tenga un excelente día.`, () => {
+                    if (onSubmitFormRef.current) {
+                        onSubmitFormRef.current();
+                    }
+                    setIsProcessingStep(false);
+                });
+                return;
+            }
         }
+
+        // ─── PASO 1: PROCEDIMIENTO Y DIENTE ───────────────────────────────────
+        if (currentStep === 1) {
+            const parsed = parseClinicalDictationLocally(spokenText);
+            const detectedTooth = extractToothFromText(spokenText) || parsed?.tooth || 'tratada';
+            const procName = parsed?.procedure?.name || 'Procedimiento odontológico';
+
+            const updatedData = {
+                ...capturedDataRef.current,
+                procedureName: procName,
+                specialtyId: parsed?.specialty?.id || 'operatoria',
+                procedureId: parsed?.procedure?.id || 'resina_simple',
+                tooth: detectedTooth,
+                surfacesText: parsed?.surfaces?.length > 0 ? parsed.surfaces.join('-') : 'Oclusal',
+                anesthesia: parsed?.anesthesia || '',
+                tolerance: parsed?.tolerance || ''
+            };
+
+            setCapturedData(updatedData);
+
+            // Si ya mencionó el anestésico en la misma frase, saltar directamente a tolerancia
+            if (updatedData.anesthesia && (clean.includes('lidocaina') || clean.includes('troncular') || clean.includes('sin anestesia') || clean.includes('mepivacaina'))) {
+                setVoiceStep(3);
+                setCurrentStatusMsg('Paso 3: Verificando tolerancia del paciente...');
+                speakPolite(`Entendido doctor, ${procName} en pieza dental ${detectedTooth} con ${updatedData.anesthesia}. ¿Hubo alguna complicación o el paciente toleró bien?`, () => {
+                    setIsProcessingStep(false);
+                });
+            } else {
+                setVoiceStep(2);
+                setCurrentStatusMsg('Paso 2: Esperando técnica y anestésico...');
+                speakPolite(`Entendido doctor, ${procName} en pieza dental ${detectedTooth}. ¿Qué anestésico utilizó o fue sin anestesia?`, () => {
+                    setIsProcessingStep(false);
+                });
+            }
+            return;
+        }
+
+        // ─── PASO 2: ANESTÉSICO ───────────────────────────────────────────────
+        if (currentStep === 2) {
+            const detectedAnesthesia = extractAnesthesiaFromText(spokenText) || 'Infiltrativa con Lidocaína 2% con epinefrina (1 carpule)';
+            const updatedData = {
+                ...capturedDataRef.current,
+                anesthesia: detectedAnesthesia
+            };
+            setCapturedData(updatedData);
+
+            setVoiceStep(3);
+            setCurrentStatusMsg('Paso 3: Esperando tolerancia o complicaciones...');
+            speakPolite(`Anotado doctor: ${detectedAnesthesia}. ¿Hubo alguna complicación o el paciente toleró bien el procedimiento?`, () => {
+                setIsProcessingStep(false);
+            });
+            return;
+        }
+
+        // ─── PASO 3: TOLERANCIA / COMPLICACIONES ──────────────────────────────
+        if (currentStep === 3) {
+            const detectedTolerance = extractToleranceFromText(spokenText) || 'Paciente tolera el procedimiento de forma satisfactoria sin complicaciones';
+            const updatedData = {
+                ...capturedDataRef.current,
+                tolerance: detectedTolerance
+            };
+            setCapturedData(updatedData);
+
+            // Construir la nota final y escribirla directamente en el formulario
+            const note = buildFormattedNote(updatedData);
+            setPreviewText(note);
+            if (setValueRef.current) {
+                setValueRef.current('comentario', note);
+            }
+
+            setVoiceStep(4);
+            setCurrentStatusMsg('Paso 4: Esperando confirmación para guardar...');
+            speakPolite(`He redactado la evolución formal en el expediente doctor. ¿Desea que la guarde de una vez? Solo diga: Sí, Guardar.`, () => {
+                setIsProcessingStep(false);
+            });
+            return;
+        }
+
+        // ─── PASO 4: CONFIRMACIÓN Y GUARDADO POR VOZ (100% MANOS LIBRES) ───────
+        if (currentStep === 4) {
+            if (isSaveOrConfirmCommand(clean)) {
+                setVoiceStep(5);
+                setCurrentStatusMsg('✅ Guardando evolución en la base de datos...');
+                speakPolite(`Con el mayor de los gustos, doctor. Guardando evolución en el expediente. Que tenga un excelente día.`, () => {
+                    // Ejecutar el guardado del formulario en React Hook Form
+                    if (onSubmitFormRef.current) {
+                        onSubmitFormRef.current();
+                    }
+                    setIsProcessingStep(false);
+                });
+            } else {
+                // Si el doctor quiso agregar alguna otra indicación (ej: "agrega que se citó en 8 días")
+                const currentComment = watchRef.current ? (watchRef.current("comentario") || "") : previewText;
+                const updatedComment = `${currentComment}\n\nObservación adicional: ${spokenText}.`;
+                if (setValueRef.current) {
+                    setValueRef.current('comentario', updatedComment);
+                }
+                setPreviewText(updatedComment);
+                speakPolite(`Entendido doctor, agregué la observación a la nota. ¿Desea que la guarde ahora? Diga: Sí o Guardar.`, () => {
+                    setIsProcessingStep(false);
+                });
+            }
+            return;
+        }
+
+        setIsProcessingStep(false);
     };
 
-    // Dictar directamente al cuadro de comentario
-    const handleAppendDictationDirectly = () => {
-        const full = `${transcript} ${interimTranscript}`.trim();
-        if (!full) return;
-
-        if (setValue) {
-            const current = watch ? (watch("comentario") || "") : "";
-            const newComment = current.trim() ? `${current.trim()} ${full}` : full;
-            setValue("comentario", newComment);
+    // ─── GUARDADO MANUAL SI EL DOCTOR DECIDE HACER CLIC ───────────────────────
+    const handleManualSaveNow = () => {
+        if (!previewText) {
+            toast.error("Aún no hay una evolución redactada.");
+            return;
         }
-        resetTranscript();
-        speakPolite("He añadido el dictado directamente a la evolución.");
-        toast.success("Texto dictado añadido a la evolución");
+        if (setValueRef.current) {
+            setValueRef.current('comentario', previewText);
+        }
+        if (onSubmitFormRef.current) {
+            onSubmitFormRef.current();
+        }
+        speakPolite("Evolución guardada con éxito, doctor.");
     };
 
     // Guardar clave API opcional
@@ -313,22 +441,23 @@ export default function ClinicalAIAssistant({
             <div className="flex items-center justify-between bg-white px-3.5 py-2.5 rounded-xl border border-slate-200/60 shadow-xs">
                 <div className="flex items-center gap-2.5">
                     <div className="relative">
-                        <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-[#8dc63f] flex items-center justify-center text-white font-black text-xs shadow-sm">
+                        <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-[#8dc63f] flex items-center justify-center text-white font-black text-sm shadow-sm">
                             <HiSparkles className="animate-pulse" />
                         </div>
                         {isSpeaking && (
-                            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-500 rounded-full animate-ping" />
+                            <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full animate-ping" />
                         )}
                     </div>
                     <div>
                         <div className="flex items-center gap-1.5">
                             <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Asistente Nova</h4>
-                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-                                100% Gratis
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200/60 flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                Manos Libres
                             </span>
                         </div>
                         <p className="text-[10px] text-slate-500 font-bold leading-tight">
-                            {isSpeaking ? "🗣️ Nova hablando educadamente..." : `A su servicio, Dr. ${doctorDisplayName}`}
+                            {isSpeaking ? "🗣️ Nova hablando..." : isListening ? "🎙️ Escuchando al doctor..." : `Dr. ${doctorDisplayName}`}
                         </p>
                     </div>
                 </div>
@@ -344,16 +473,16 @@ export default function ClinicalAIAssistant({
                                 window.speechSynthesis.cancel();
                                 setIsSpeaking(false);
                             } else if (!next) {
-                                speakPolite(`Voz educada activada, doctor ${doctorDisplayName}.`);
+                                speakPolite(`Voz educada de Nova activada, doctor.`);
                             }
-                            toast.info(next ? "Voz de Nova silenciada" : "Voz educada de Nova activada");
+                            toast.info(next ? "Voz de Nova silenciada" : "Voz educada activada");
                         }}
                         className={`p-1.5 rounded-lg border transition-all ${
                             voiceMuted 
                                 ? 'bg-slate-100 text-slate-400 border-slate-200 hover:text-slate-600' 
                                 : 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100'
                         }`}
-                        title={voiceMuted ? "Activar voz de cortesía de Nova" : "Silenciar voz de Nova"}
+                        title={voiceMuted ? "Activar voz de Nova" : "Silenciar voz de Nova"}
                     >
                         {voiceMuted ? <FiVolumeX size={14} /> : <FiVolume2 size={14} />}
                     </button>
@@ -367,7 +496,7 @@ export default function ClinicalAIAssistant({
                                 ? 'bg-indigo-50 border-indigo-200 text-indigo-600' 
                                 : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-500'
                         }`}
-                        title="Opciones de conexión"
+                        title="Opciones"
                     >
                         <FiSettings size={14} />
                     </button>
@@ -379,77 +508,60 @@ export default function ClinicalAIAssistant({
                             className="p-1.5 rounded-lg bg-white hover:bg-rose-50 border border-slate-200 text-slate-400 hover:text-rose-500 transition-colors"
                             title="Ocultar asistente"
                         >
-                            <FiX size={14} />
+                            <FiCheck size={14} />
                         </button>
                     )}
                 </div>
             </div>
 
-            {/* Selector de Modo del Asistente */}
-            <div className="grid grid-cols-3 bg-slate-200/60 p-1 rounded-xl gap-1 text-[10px] font-black uppercase tracking-wider">
+            {/* Selector de Modo */}
+            <div className="grid grid-cols-2 bg-slate-200/60 p-1 rounded-xl gap-1 text-[10px] font-black uppercase tracking-wider">
+                <button
+                    type="button"
+                    onClick={() => {
+                        setAssistantMode('manos_libres');
+                        resetTranscript();
+                        startListening();
+                        speakPolite("Modo manos libres activo, doctor. Dígame qué procedimiento realizamos.");
+                    }}
+                    className={`py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                        assistantMode === 'manos_libres' 
+                            ? 'bg-indigo-600 text-white shadow-xs' 
+                            : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                >
+                    <FiMic size={12} />
+                    <span>Modo Manos Libres (Por Voz)</span>
+                </button>
+
                 <button
                     type="button"
                     onClick={() => {
                         stopListening();
-                        setAssistantMode('constructor');
+                        setAssistantMode('plantillas');
                     }}
-                    className={`py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1 ${
-                        assistantMode === 'constructor' 
+                    className={`py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+                        assistantMode === 'plantillas' 
                             ? 'bg-white text-indigo-700 shadow-xs' 
                             : 'text-slate-600 hover:text-slate-900'
                     }`}
                 >
-                    <FiLayers size={11} />
-                    <span>Plantillas</span>
-                </button>
-
-                <button
-                    type="button"
-                    onClick={() => {
-                        setAssistantMode('voz_asistida');
-                        speakPolite(POLITE_VOICE_SCRIPTS.voiceListeningStarted());
-                    }}
-                    className={`py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1 ${
-                        assistantMode === 'voz_asistida' 
-                            ? 'bg-white text-emerald-700 shadow-xs' 
-                            : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                >
-                    <FiMic size={11} />
-                    <span>Dictado IA</span>
-                </button>
-
-                <button
-                    type="button"
-                    onClick={() => {
-                        setAssistantMode('dictado_directo');
-                    }}
-                    className={`py-1.5 px-2 rounded-lg transition-all flex items-center justify-center gap-1 ${
-                        assistantMode === 'dictado_directo' 
-                            ? 'bg-white text-blue-700 shadow-xs' 
-                            : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                >
-                    <FiEdit3 size={11} />
-                    <span>Voz Directa</span>
+                    <FiLayers size={12} />
+                    <span>Selector Manual</span>
                 </button>
             </div>
 
-            {/* Panel de Ajustes Opcionales (Gemini API) */}
+            {/* Ajustes Opcionales */}
             {showSettings && (
                 <div className="bg-white border border-indigo-100 rounded-xl p-3 flex flex-col gap-2.5 animate-fadeIn shadow-xs">
-                    <div className="flex justify-between items-start">
-                        <div>
-                            <h5 className="text-[11px] font-black text-indigo-700 uppercase tracking-wider">Conexión Opcional a Gemini</h5>
-                            <p className="text-[10px] text-slate-500 font-bold leading-relaxed">
-                                Este asistente ya funciona <strong className="text-emerald-600">100% gratis</strong> sin necesidad de claves externas. Si deseas conectar tu propia API de Google AI Studio, puedes ingresarla aquí:
-                            </p>
-                        </div>
-                    </div>
+                    <h5 className="text-[11px] font-black text-indigo-700 uppercase tracking-wider">Conexión Opcional a Gemini</h5>
+                    <p className="text-[10px] text-slate-500 font-bold leading-relaxed">
+                        Este asistente ya es <strong className="text-emerald-600">100% gratuito y manos libres</strong>. Si deseas ingresar una clave API propia de Google AI Studio, puedes colocarla aquí:
+                    </p>
                     <form onSubmit={handleSaveApiKey} className="flex gap-1.5">
                         <input
                             type="password"
-                            placeholder="Clave API opcional (AI Studio)..."
+                            placeholder="Clave API opcional..."
                             value={apiKey}
                             onChange={(e) => setApiKey(e.target.value)}
                             className="flex-1 h-8 px-2.5 rounded-lg border border-slate-200 text-xs font-bold text-slate-700 bg-white outline-none focus:border-indigo-500"
@@ -464,287 +576,241 @@ export default function ClinicalAIAssistant({
                 </div>
             )}
 
-            {/* ─── VISTA 1: CONSTRUCTOR PROGRAMADO POR PLANTILLAS CLÍNICAS ─── */}
-            {assistantMode === 'constructor' && (
+            {/* ─── VISTA PRINCIPAL: MODO MANOS LIBRES (100% POR VOZ) ─────────── */}
+            {assistantMode === 'manos_libres' && (
                 <div className="space-y-3 animate-fadeIn">
-                    {/* Carrusel / Grid de Especialidades */}
-                    <div>
-                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1.5">
-                            1. Especialidad Odontológica
-                        </label>
+                    {/* Barra de Pasos Visual (Progreso de la Conversación) */}
+                    <div className="bg-white p-3 rounded-xl border border-slate-200/80 space-y-2 shadow-xs">
+                        <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider">
+                            <span className="text-slate-400">Progreso Manos Libres</span>
+                            <span className="text-indigo-600 font-black">
+                                Paso {Math.min(voiceStep, 4)} de 4
+                            </span>
+                        </div>
+
                         <div className="grid grid-cols-4 gap-1.5">
-                            {CLINICAL_SPECIALTIES.map(spec => {
-                                const isSelected = spec.id === selectedSpecialtyId;
+                            {[
+                                { step: 1, label: '1. Procedim.' },
+                                { step: 2, label: '2. Anestesia' },
+                                { step: 3, label: '3. Tolerancia' },
+                                { step: 4, label: '4. Guardar' }
+                            ].map((s) => {
+                                const isDone = voiceStep > s.step;
+                                const isCurrent = voiceStep === s.step;
                                 return (
-                                    <button
-                                        key={spec.id}
-                                        type="button"
-                                        onClick={() => handleSelectSpecialty(spec.id)}
-                                        className={`p-2 rounded-xl border flex flex-col items-center justify-center text-center transition-all ${
-                                            isSelected 
-                                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm scale-102 font-black' 
-                                                : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200/80 font-bold'
+                                    <div 
+                                        key={s.step}
+                                        className={`py-1.5 px-1 rounded-lg text-center text-[9px] font-black uppercase tracking-wider transition-all border ${
+                                            isDone 
+                                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                : isCurrent 
+                                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm animate-pulse'
+                                                : 'bg-slate-50 text-slate-400 border-slate-200/60'
                                         }`}
                                     >
-                                        <span className="text-base mb-0.5">{spec.icon}</span>
-                                        <span className="text-[9px] leading-tight line-clamp-1">{spec.name.split(' ')[0]}</span>
-                                    </button>
+                                        {isDone ? `✓ ${s.label}` : s.label}
+                                    </div>
                                 );
                             })}
                         </div>
                     </div>
 
-                    {/* Selector de Procedimientos de la Especialidad */}
-                    <div>
-                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1.5">
-                            2. Procedimiento Realizado ({currentSpecialty.procedures.length})
-                        </label>
-                        <div className="flex flex-col gap-1 max-h-36 overflow-y-auto custom-scrollbar bg-white p-1 rounded-xl border border-slate-200/80">
-                            {currentSpecialty.procedures.map(proc => {
-                                const isSelected = proc.id === selectedProcedureId;
-                                return (
-                                    <button
-                                        key={proc.id}
-                                        type="button"
-                                        onClick={() => handleSelectProcedure(proc)}
-                                        className={`px-2.5 py-1.5 rounded-lg text-left text-xs transition-all flex items-center justify-between ${
-                                            isSelected 
-                                                ? 'bg-indigo-50 border border-indigo-200 text-indigo-950 font-black' 
-                                                : 'hover:bg-slate-50 text-slate-700 font-bold'
-                                        }`}
-                                    >
-                                        <span className="truncate">{proc.name}</span>
-                                        {isSelected && <FiCheck className="text-indigo-600 shrink-0 ml-1.5" size={13} />}
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    </div>
-
-                    {/* Parámetros Rápidos: Pieza, Superficies y Anestesia */}
-                    <div className="bg-white p-3 rounded-xl border border-slate-200/80 space-y-2.5">
+                    {/* Estado del Asistente y Ondas de Audio */}
+                    <div className="bg-gradient-to-r from-indigo-900 to-slate-900 p-4 rounded-2xl text-white shadow-md space-y-3">
                         <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                                3. Parámetros del Paciente
-                            </span>
-                        </div>
-
-                        {/* Pieza Dental y Superficies */}
-                        <div className="grid grid-cols-2 gap-2">
-                            <div>
-                                <label className="text-[9px] font-black text-slate-500 uppercase block mb-1">
-                                    Diente / Pieza (FDI)
-                                </label>
-                                <input
-                                    type="text"
-                                    value={selectedTooth}
-                                    onChange={(e) => setSelectedTooth(e.target.value)}
-                                    placeholder="Ej: 16, 24, 38..."
-                                    className="w-full h-8 px-2.5 text-xs font-black text-indigo-700 bg-indigo-50/50 rounded-lg border border-indigo-200 outline-none focus:border-indigo-500"
-                                />
+                            <div className="flex items-center gap-2">
+                                <div className={`w-3 h-3 rounded-full ${
+                                    isSpeaking 
+                                        ? 'bg-cyan-400 animate-ping' 
+                                        : isListening 
+                                        ? 'bg-emerald-400 animate-pulse' 
+                                        : 'bg-slate-500'
+                                }`} />
+                                <span className="text-[11px] font-black uppercase tracking-wider text-slate-200">
+                                    {isSpeaking 
+                                        ? 'Nova hablando con el doctor...' 
+                                        : isListening 
+                                        ? 'Micrófono activo (hable libremente)' 
+                                        : 'Micrófono en pausa'}
+                                </span>
                             </div>
 
-                            <div>
-                                <label className="text-[9px] font-black text-slate-500 uppercase block mb-1">
-                                    Superficies tratadas
-                                </label>
-                                <div className="flex gap-1">
-                                    {['O', 'M', 'D', 'V', 'L'].map(surfCode => {
-                                        const surfNameMap = { O: 'Oclusal', M: 'Mesial', D: 'Distal', V: 'Vestibular', L: 'Lingual/Palatina' };
-                                        const fullName = surfNameMap[surfCode];
-                                        const isChecked = selectedSurfaces.some(s => s.toLowerCase().startsWith(fullName.toLowerCase().slice(0, 3)));
-                                        return (
-                                            <button
-                                                key={surfCode}
-                                                type="button"
-                                                onClick={() => toggleSurface(fullName)}
-                                                className={`w-6 h-8 rounded-md font-black text-[10px] transition-all border ${
-                                                    isChecked 
-                                                        ? 'bg-[#8dc63f] text-white border-[#8dc63f] shadow-xs' 
-                                                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                                                }`}
-                                                title={fullName}
-                                            >
-                                                {surfCode}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Anestesia Empleada */}
-                        <div>
-                            <label className="text-[9px] font-black text-slate-500 uppercase block mb-1">
-                                Técnica & Anestésico
-                            </label>
-                            <select
-                                value={selectedAnesthesia}
-                                onChange={(e) => setSelectedAnesthesia(e.target.value)}
-                                className="w-full h-8 px-2 text-xs font-bold text-slate-700 bg-slate-50 rounded-lg border border-slate-200 outline-none focus:border-indigo-400"
-                            >
-                                <option value="Infiltrativa con Lidocaína 2% con epinefrina (1 carpule)">Infiltrativa: Lidocaína 2% con epi (1 carpule)</option>
-                                <option value="Troncular con Lidocaína 2% con epinefrina (1.5 carpules)">Troncular: Lidocaína 2% con epi (1.5 carpules)</option>
-                                <option value="Infiltrativa con Mepivacaína al 3% sin vasoconstrictor (1 carpule)">Infiltrativa: Mepivacaína al 3% sin vaso</option>
-                                <option value="Tópica en spray / gel benzocaína 20%">Tópica: Gel benzocaína 20%</option>
-                                <option value="Sin anestesia por tratarse de procedimiento no invasivo">Sin anestesia</option>
-                            </select>
-                        </div>
-                    </div>
-
-                    {/* Vista Previa de la Evolución Estructurada */}
-                    <div className="bg-white p-3 rounded-xl border border-indigo-100 space-y-2 shadow-xs">
-                        <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest flex items-center gap-1">
-                                <HiSparkles className="text-[#8dc63f]" />
-                                Nota de Evolución Estructurada
-                            </span>
                             <button
                                 type="button"
-                                onClick={() => speakPolite(previewText)}
-                                className="text-[9px] font-black text-slate-400 hover:text-indigo-600 uppercase tracking-wider flex items-center gap-1 transition-colors"
-                                title="Escuchar nota con voz educada"
+                                onClick={() => {
+                                    setVoiceStep(1);
+                                    resetTranscript();
+                                    speakPolite(`Reiniciado doctor. Dígame: ¿qué procedimiento realizamos hoy?`);
+                                }}
+                                className="p-1 rounded-md bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white transition-colors"
+                                title="Reiniciar conversación"
                             >
-                                <FiPlay size={10} /> Escuchar
+                                <FiRotateCcw size={12} />
                             </button>
                         </div>
 
-                        <div className="p-2.5 bg-slate-50/80 rounded-lg border border-slate-200/80 text-xs font-bold text-slate-700 leading-relaxed max-h-36 overflow-y-auto custom-scrollbar whitespace-pre-line">
-                            {previewText || "Seleccione un procedimiento para generar la nota..."}
+                        {/* Visualizador de audio animado */}
+                        <div className="flex items-center justify-center gap-1.5 h-7 bg-black/20 rounded-xl px-3">
+                            <span className="w-1 bg-emerald-400 rounded-full animate-pulse h-4" />
+                            <span className="w-1 bg-cyan-400 rounded-full animate-pulse h-6 delay-75" />
+                            <span className="w-1 bg-emerald-300 rounded-full animate-pulse h-3 delay-150" />
+                            <span className="w-1 bg-indigo-400 rounded-full animate-pulse h-5 delay-100" />
+                            <span className="w-1 bg-cyan-300 rounded-full animate-pulse h-2 delay-200" />
+                            <span className="text-[10px] font-mono text-emerald-200 font-bold ml-2 truncate">
+                                {transcript || interimTranscript || currentStatusMsg}
+                            </span>
                         </div>
 
-                        <button
-                            type="button"
-                            onClick={handleApplyEvolution}
-                            className="w-full py-2.5 px-4 bg-[#8dc63f] hover:bg-[#7cb035] active:scale-98 text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 transition-all shadow-md shadow-lime-500/20"
-                        >
-                            <FiCheckCircle size={15} />
-                            Aplicar al Formulario de Evolución
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {/* ─── VISTA 2: DICTADO INTELIGENTE POR VOZ (OFFLINE) ─────────── */}
-            {assistantMode === 'voz_asistida' && (
-                <div className="bg-white p-4 rounded-xl border border-slate-200/80 space-y-3.5 animate-fadeIn">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">Dictado Clínico Inteligente</h5>
-                            <p className="text-[10px] text-slate-500 font-bold mt-0.5">
-                                Hable en lenguaje natural (ej: <em>"Hice resina en el 26 por oclusal con lidocaína y no tuvo dolor"</em>).
-                            </p>
-                        </div>
-                    </div>
-
-                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 min-h-[90px] flex flex-col justify-between">
-                        <div className="text-xs font-bold text-slate-700 italic">
-                            {transcript || interimTranscript ? (
-                                `"${transcript} ${interimTranscript}"`
-                            ) : (
-                                <span className="text-slate-400 font-normal">Presione "Iniciar Dictado" y comience a hablar...</span>
-                            )}
-                        </div>
-
-                        {isListening && (
-                            <div className="flex items-center gap-1.5 mt-2 text-[10px] font-black text-emerald-600 uppercase tracking-wider">
-                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-                                Escuchando al doctor...
+                        {/* Datos capturados en vivo por la voz */}
+                        <div className="bg-white/10 rounded-xl p-2.5 space-y-1 text-[10px] text-slate-200 font-bold">
+                            <div className="flex justify-between">
+                                <span className="text-slate-400">Procedimiento / Diente:</span>
+                                <span className="text-white font-black">{capturedData.procedureName || 'Pendiente'} {capturedData.tooth ? `(Pza ${capturedData.tooth})` : ''}</span>
                             </div>
-                        )}
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                        <button
-                            type="button"
-                            onClick={() => {
-                                if (isListening) {
-                                    stopListening();
-                                } else {
-                                    resetTranscript();
-                                    startListening();
-                                }
-                            }}
-                            className={`py-2.5 px-3 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all ${
-                                isListening 
-                                    ? 'bg-rose-500 hover:bg-rose-600 text-white shadow-md shadow-rose-500/20 animate-pulse' 
-                                    : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-500/20'
-                            }`}
-                        >
-                            {isListening ? <FiMicOff /> : <FiMic />}
-                            <span>{isListening ? "Detener" : "Iniciar Dictado"}</span>
-                        </button>
-
-                        <button
-                            type="button"
-                            onClick={handleVoiceSmartProcess}
-                            disabled={!transcript && !interimTranscript}
-                            className="py-2.5 px-3 rounded-xl bg-[#8dc63f] hover:bg-[#7cb035] disabled:bg-slate-100 disabled:text-slate-400 text-white font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all shadow-md shadow-lime-500/20 disabled:shadow-none"
-                        >
-                            <HiSparkles />
-                            <span>Estructurar Nota</span>
-                        </button>
-                    </div>
-
-                    <div className="p-2.5 bg-indigo-50/60 rounded-xl border border-indigo-100 text-[10px] font-bold text-indigo-900 leading-relaxed flex items-start gap-2">
-                        <FiInfo className="text-indigo-600 shrink-0 mt-0.5" />
-                        <span>El motor en JavaScript de OdontoCloud detecta automáticamente el diente, superficie, anestésico y tolerancia sin costo alguno.</span>
-                    </div>
-                </div>
-            )}
-
-            {/* ─── VISTA 3: DICTADO DIRECTO (VOZ A TEXTO TEXTUAL) ─────────── */}
-            {assistantMode === 'dictado_directo' && (
-                <div className="bg-white p-4 rounded-xl border border-slate-200/80 space-y-3 animate-fadeIn">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <h5 className="text-xs font-black text-slate-800 uppercase tracking-wider">Dictado Directo al Expediente</h5>
-                            <p className="text-[10px] text-slate-500 font-bold">
-                                Transcribe su voz directamente al campo de comentario.
-                            </p>
+                            <div className="flex justify-between">
+                                <span className="text-slate-400">Anestésico:</span>
+                                <span className="text-emerald-300 font-black">{capturedData.anesthesia || 'Pendiente'}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-slate-400">Tolerancia:</span>
+                                <span className="text-cyan-300 font-black truncate max-w-[180px]">{capturedData.tolerance || 'Pendiente'}</span>
+                            </div>
                         </div>
                     </div>
 
-                    <textarea
-                        value={transcript}
-                        onChange={(e) => setTranscript(e.target.value)}
-                        placeholder="Haga clic en el micrófono y dicte sus observaciones..."
-                        className="w-full h-28 p-3 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 bg-slate-50/50 outline-none focus:border-indigo-400 resize-none custom-scrollbar"
-                    />
+                    {/* Nota clínica en tiempo real */}
+                    {previewText && (
+                        <div className="bg-white p-3 rounded-xl border border-indigo-100 space-y-2 shadow-xs animate-fadeIn">
+                            <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-black text-indigo-700 uppercase tracking-widest flex items-center gap-1">
+                                    <HiSparkles className="text-[#8dc63f]" />
+                                    Evolución Clínica Redactada
+                                </span>
+                                <span className="text-[9px] font-black uppercase text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                                    Lista en el expediente
+                                </span>
+                            </div>
 
-                    {isListening && interimTranscript && (
-                        <div className="text-[10px] text-slate-400 font-bold italic animate-pulse">
-                            Escuchando: "{interimTranscript}"
+                            <p className="p-2.5 bg-slate-50 rounded-lg border border-slate-200/80 text-xs font-bold text-slate-700 leading-relaxed max-h-32 overflow-y-auto custom-scrollbar whitespace-pre-line">
+                                {previewText}
+                            </p>
+
+                            {/* Indicador de confirmación por voz */}
+                            {voiceStep === 4 && (
+                                <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between text-emerald-800">
+                                    <div className="flex items-center gap-1.5 text-xs font-black">
+                                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                                        <span>Diga "Guardar" o "Sí" para finalizar</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={handleManualSaveNow}
+                                        className="py-1 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black uppercase tracking-wider rounded-md flex items-center gap-1 shadow-xs"
+                                    >
+                                        <FiSave /> Guardar
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     )}
 
-                    <div className="flex gap-2">
-                        <button
-                            type="button"
-                            onClick={() => {
-                                if (isListening) stopListening();
-                                else startListening();
-                            }}
-                            className={`flex-1 py-2.5 px-3 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-center gap-1.5 transition-all ${
-                                isListening 
-                                    ? 'bg-rose-500 text-white shadow-md animate-pulse' 
-                                    : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-md'
-                            }`}
-                        >
-                            {isListening ? <FiMicOff /> : <FiMic />}
-                            <span>{isListening ? "Detener" : "Dictar"}</span>
-                        </button>
-
-                        <button
-                            type="button"
-                            onClick={handleAppendDictationDirectly}
-                            disabled={!transcript.trim()}
-                            className="flex-1 py-2.5 px-3 bg-[#8dc63f] hover:bg-[#7cb035] disabled:bg-slate-100 disabled:text-slate-400 text-white font-black text-xs uppercase tracking-wider rounded-xl flex items-center justify-center gap-1.5 transition-all disabled:shadow-none shadow-md shadow-lime-500/20"
-                        >
-                            <FiCheck />
-                            <span>Insertar</span>
-                        </button>
+                    {/* Guía de Comandos Rápidos de Voz */}
+                    <div className="bg-white p-2.5 rounded-xl border border-slate-200/80 text-[10px] text-slate-500 font-bold space-y-1">
+                        <span className="font-black text-slate-700 uppercase tracking-wider block">
+                            🎙️ Comandos de voz que puedes decir:
+                        </span>
+                        <p>• <em>"Resina en el 16 con lidocaína sin dolor y guarda"</em></p>
+                        <p>• <em>"Exodoncia cordal 38 con troncular sin complicaciones"</em></p>
+                        <p>• <em>"Sí" / "Guardar" / "Listo"</em> (para guardar y cerrar)</p>
+                        <p>• <em>"Reiniciar" / "Cancelar"</em> (para empezar de nuevo)</p>
                     </div>
+                </div>
+            )}
+
+            {/* ─── VISTA SECUNDARIA: SELECTOR MANUAL POR PLANTILLAS ──────────── */}
+            {assistantMode === 'plantillas' && (
+                <div className="space-y-3 animate-fadeIn">
+                    {/* Especialidades */}
+                    <div>
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">
+                            Especialidad Odontológica
+                        </label>
+                        <div className="grid grid-cols-4 gap-1.5">
+                            {CLINICAL_SPECIALTIES.map(spec => (
+                                <button
+                                    key={spec.id}
+                                    type="button"
+                                    onClick={() => {
+                                        setSelectedSpecialtyId(spec.id);
+                                        const first = spec.procedures[0];
+                                        setSelectedProcedureId(first.id);
+                                        if (first.anesthesiaDefault) setSelectedAnesthesia(first.anesthesiaDefault);
+                                    }}
+                                    className={`p-2 rounded-xl border text-center transition-all ${
+                                        selectedSpecialtyId === spec.id 
+                                            ? 'bg-indigo-600 text-white font-black shadow-xs' 
+                                            : 'bg-white hover:bg-slate-50 text-slate-700 font-bold border-slate-200'
+                                    }`}
+                                >
+                                    <span className="text-base block">{spec.icon}</span>
+                                    <span className="text-[9px] line-clamp-1">{spec.name.split(' ')[0]}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Procedimientos */}
+                    <div>
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">
+                            Procedimiento
+                        </label>
+                        <div className="flex flex-col gap-1 max-h-32 overflow-y-auto custom-scrollbar bg-white p-1 rounded-xl border border-slate-200">
+                            {(CLINICAL_SPECIALTIES.find(s => s.id === selectedSpecialtyId) || CLINICAL_SPECIALTIES[0]).procedures.map(proc => (
+                                <button
+                                    key={proc.id}
+                                    type="button"
+                                    onClick={() => {
+                                        setSelectedProcedureId(proc.id);
+                                        if (proc.anesthesiaDefault) setSelectedAnesthesia(proc.anesthesiaDefault);
+                                    }}
+                                    className={`px-2.5 py-1.5 rounded-lg text-left text-xs transition-all flex items-center justify-between ${
+                                        selectedProcedureId === proc.id 
+                                            ? 'bg-indigo-50 text-indigo-950 font-black border border-indigo-200' 
+                                            : 'text-slate-700 font-bold hover:bg-slate-50'
+                                    }`}
+                                >
+                                    <span className="truncate">{proc.name}</span>
+                                    {selectedProcedureId === proc.id && <FiCheck className="text-indigo-600" size={13} />}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Botón Aplicar y Guardar */}
+                    <button
+                        type="button"
+                        onClick={() => {
+                            const spec = CLINICAL_SPECIALTIES.find(s => s.id === selectedSpecialtyId);
+                            const proc = spec?.procedures.find(p => p.id === selectedProcedureId);
+                            if (proc) {
+                                const note = proc.template({
+                                    tooth: selectedTooth || '16',
+                                    surfacesText: selectedSurfaces.join('-'),
+                                    anesthesia: selectedAnesthesia,
+                                    tolerance: selectedTolerance,
+                                    materials: proc.materials,
+                                    postOp: proc.postOp
+                                });
+                                if (setValueRef.current) setValueRef.current('comentario', note);
+                                toast.success("Evolución aplicada");
+                                speakPolite("Evolución aplicada al formulario.");
+                            }
+                        }}
+                        className="w-full py-2.5 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-xl text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 shadow-md shadow-lime-500/20"
+                    >
+                        <FiCheckCircle size={14} />
+                        Aplicar al Formulario
+                    </button>
                 </div>
             )}
         </div>

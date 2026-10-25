@@ -433,3 +433,72 @@ export function parseClinicalDictationLocally(text) {
         politeVoiceMsg: POLITE_VOICE_SCRIPTS.evolutionGenerated(tooth || '')
     };
 }
+
+// ─── 4. DETECCIÓN DE COMANDOS DE VOZ Y MODO MANOS LIBRES ──────────────────────
+export function isSaveOrConfirmCommand(text) {
+    if (!text || typeof text !== 'string') return false;
+    const clean = text.toLowerCase().trim();
+    const savePatterns = [
+        /\b(guardar|guarda|guárdala|guardala|guardalo|guárdalo)\b/,
+        /\b(finalizar|finaliza|terminar|termina|cerrar)\b/,
+        /\b(confirmo|confirmar|confirmado)\b/,
+        /\b(s[ií]|correcto|dale|listo|de acuerdo|ok|okay|perfecto|por favor)\b/
+    ];
+    return savePatterns.some(pattern => pattern.test(clean));
+}
+
+export function isCancelCommand(text) {
+    if (!text || typeof text !== 'string') return false;
+    const clean = text.toLowerCase().trim();
+    return /\b(cancelar|cancela|no|no guardes|reiniciar|borrar|detener)\b/.test(clean);
+}
+
+export function extractToothFromText(text) {
+    if (!text || typeof text !== 'string') return '';
+    const clean = text.toLowerCase().trim();
+    const toothMatches = clean.match(/\b([1-4][1-8])\b/g);
+    if (toothMatches && toothMatches.length > 0) return toothMatches[0];
+    if (clean.includes('cordal') || clean.includes('tercer molar') || clean.includes('muela del juicio')) return 'Tercer Molar';
+    if (clean.includes('canino')) return 'Canino';
+    if (clean.includes('premolar')) return 'Premolar';
+    if (clean.includes('molar')) return 'Molar';
+    if (clean.includes('incisivo')) return 'Incisivo';
+    return '';
+}
+
+export function extractAnesthesiaFromText(text) {
+    if (!text || typeof text !== 'string') return '';
+    const clean = text.toLowerCase().trim();
+    if (clean.includes('troncular')) return 'Troncular con Lidocaína 2% con epinefrina (1.5 carpules)';
+    if (clean.includes('mepivacaina') || clean.includes('mepivacaína') || clean.includes('sin vaso')) {
+        return 'Infiltrativa con Mepivacaína al 3% sin vasoconstrictor';
+    }
+    if (clean.includes('sin anestesia') || clean.includes('no aplique') || clean.includes('no se aplico') || clean.includes('no se aplicó')) {
+        return 'Sin anestesia por tratarse de procedimiento no invasivo';
+    }
+    if (clean.includes('topica') || clean.includes('tópica')) {
+        return 'Tópica en spray / gel benzocaína 20%';
+    }
+    if (clean.includes('infiltrativa') || clean.includes('lidocaina') || clean.includes('lidocaína') || clean.includes('carpule') || clean.includes('anestesia')) {
+        return 'Infiltrativa con Lidocaína 2% con epinefrina (1 carpule)';
+    }
+    return '';
+}
+
+export function extractToleranceFromText(text) {
+    if (!text || typeof text !== 'string') return '';
+    const clean = text.toLowerCase().trim();
+    if (clean.includes('dolió') || clean.includes('dolor') || clean.includes('molestia')) {
+        return 'Paciente refiere leve molestia transitoria durante el procedimiento, cede satisfactoriamente';
+    }
+    if (clean.includes('sangro') || clean.includes('sangrado') || clean.includes('hemorragia')) {
+        return 'Procedimiento con hemostasia controlada mediante presión con gasa estéril';
+    }
+    if (clean.includes('ansioso') || clean.includes('nervioso') || clean.includes('miedo')) {
+        return 'Paciente ansioso pero cooperador durante la atención';
+    }
+    if (clean.includes('bien') || clean.includes('normal') || clean.includes('tranquilo') || clean.includes('sin dolor') || clean.includes('ninguna') || clean.includes('satisfactorio')) {
+        return 'Paciente tolera el procedimiento de forma satisfactoria sin complicaciones';
+    }
+    return '';
+}
