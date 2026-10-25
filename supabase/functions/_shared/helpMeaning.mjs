@@ -1,4 +1,4 @@
-import { HELP_GUIDES, normalize } from './helpKnowledge.mjs';
+import { HELP_GUIDES, normalize, canonicalHelpWord } from './helpKnowledge.mjs';
 
 // Project into a fixed public operational vocabulary, never forward the original
 // text or arbitrary names/values. Preserve conditions, negation, order and tense.
@@ -18,6 +18,11 @@ const verbFamilies = [
 ];
 // Public UI labels extend vocabulary with canonical words, never runtime values.
 for (const guide of HELP_GUIDES) {
+  // Only static, reviewed public documentation extends the vocabulary. Runtime
+  // names and values never extend it; explanatory questions need more than labels.
+  for (const word of normalize([guide.title, guide.category, guide.keywords, guide.prereq, ...guide.steps, guide.note].join(' ')).split(' ')) {
+    if (/^[a-z]{3,}$/.test(word)) dictionary.set(word, word);
+  }
   for (const word of normalize(guide.title + ' ' + guide.category + ' ' + guide.keywords).split(' ')) if (/^[a-z]+$/.test(word)) dictionary.set(word, word);
   for (const [, label] of [guide.prereq, ...guide.steps, guide.note].join('\n').matchAll(/\[([^\]\n]+)\]/g)) {
     for (const word of normalize(label).split(' ')) if (/^[a-z]+$/.test(word)) dictionary.set(word, word);
@@ -32,7 +37,7 @@ export function projectHelpMeaning(value) {
   const words = normalize(text).split(' ').filter(Boolean);
   const projected = [];
   for (const word of words) {
-    const canonical = dictionary.get(word) || verbFamilies.find(([pattern]) => pattern.test(word))?.[1];
+    const canonical = dictionary.get(canonicalHelpWord(word)) || dictionary.get(word) || verbFamilies.find(([pattern]) => pattern.test(word))?.[1];
     if (canonical) projected.push(canonical);
     else if (projected.at(-1) !== '(detalle omitido)') projected.push('(detalle omitido)');
   }

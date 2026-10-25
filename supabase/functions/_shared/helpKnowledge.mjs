@@ -1,6 +1,6 @@
 // Manual público de uso: nunca incluir datos de pacientes, credenciales ni datos de otra app.
 // Revisar las fuentes de cada guía cuando cambie una pantalla.
-export const KNOWLEDGE_VERSION = '2026-10-24.4';
+export const KNOWLEDGE_VERSION = '2026-10-24.5';
 const guide = (id, category, title, keywords, source, steps, note = '', prereq = '') => ({
   id, category, title, keywords, source, steps, note, prereq,
 });export const HELP_GUIDES = [
@@ -291,7 +291,7 @@ const guide = (id, category, title, keywords, source, steps, note = '', prereq =
     'La existencia de la integración no confirma que una clínica concreta tenga la conexión activa, sus credenciales válidas o una factura emitida. Esos estados deben comprobarse en su configuración y en el resultado de la operación.',
     'Las operaciones implementadas del servicio incluyen consultar el estado de conexión, configurar la integración y probar las credenciales. OdontoIA solo explica estas capacidades: no ejecuta esas operaciones ni necesita que pegues credenciales en el chat.',
   ], 'No inventar números de autorización, certificaciones, contratos, costos del proveedor ni estado de conexión de la clínica.'),
-  guide('seguridad-ayuda', 'Seguridad', 'Seguridad, privacidad y límites del asistente', 'seguridad politicas privacidad estandares certificaciones cumplimiento cumple confidencialidad aislamiento proteccion', 'supabase/functions/odontocloud-help/auth.mjs', [
+  guide('seguridad-ayuda', 'Seguridad', 'Seguridad, privacidad y límites del asistente', 'seguridad politica politicas privacidad legal legalidad legalmente normativa normatividad regulacion estandares certificaciones cumplimiento cumple confidencialidad aislamiento proteccion', 'supabase/functions/odontocloud-help/auth.mjs', [
     'Para usar la ayuda de una clínica, el servidor valida la sesión y comprueba el perfil, su pertenencia a la clínica y el estado de acceso. El navegador no puede seleccionar otra clínica para esa conversación.',
     'OdontoIA explica documentación del sistema. No consulta expedientes, pagos ni registros reales de pacientes, no obtiene información de otras clínicas y no ejecuta cambios. Una explicación no acredita que una operación haya quedado realizada.',
     'Las claves de conexión de la ayuda se guardan cifradas y su configuración requiere superadministrador. No compartas claves, contraseñas ni datos personales en el chat.',
@@ -316,8 +316,10 @@ export const PUBLIC_GUIDE_IDS = new Set([
 ]);
 
 export const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-const stop = new Set('como hago para una uno unos unas los las del que con por puedo quiero necesito donde este esta esto eso cual cuando sistema paso pasos consultar utilizar usar revisar hola buenas puedes podria podrias ayudar ayudame ayuda favor gracias me el un de a en es al no si ya lo'.split(' '));
+const stop = new Set('como hago para una uno unos unas los las del que con por puedo quiero necesito donde este esta esto eso cual cuando sistema paso pasos consultar utilizar usar revisar hola buenas puedes podria podrias tiene tienen tienes hay informacion programa plataforma acerca sobre quisiera saber explicar explicame ayudar ayudame ayuda favor gracias me el un de a en es al no si ya lo'.split(' '));
 const aliases = {
+  legales: 'legal', legalmente: 'legal', legalidad: 'legal', normatividad: 'legal', normativa: 'legal', normativas: 'legal', regulacion: 'legal', regulaciones: 'legal',
+  seguro: 'seguridad', segura: 'seguridad', seguros: 'seguridad', seguras: 'seguridad', confidencial: 'privacidad', confidenciales: 'privacidad',
   hacer: 'crear', hace: 'crear', configurar: 'configuracion', configurarlo: 'configuracion', configura: 'configuracion', configuracion: 'configuracion', configuraasr: 'configuracion',
   cancelo: 'cancelar', reprogramo: 'reprogramar', agendo: 'agendar', reservo: 'reservar', aparto: 'apartar',
   registro: 'registrar', guardo: 'guardar', cobro: 'cobrar', abro: 'abrir', cierro: 'cerrar',
@@ -332,6 +334,7 @@ const aliases = {
   cita: 'cita', citas: 'cita', turno: 'cita', turnos: 'cita',
   evolucion: 'evolucion', evoluciones: 'evolucion',
 };
+export const canonicalHelpWord = word => aliases[word] || word;
 const tokens = text => [...new Set(normalize(text).split(' ').filter(t => t.length > 2 && !stop.has(t)).map(t => aliases[t] || (t.startsWith('configur') ? 'configuracion' : (t.length > 4 && t.endsWith('s') ? t.slice(0, -1) : t))))];
 
 export function searchGuides(question, previousIds = [], mode = 'app') {

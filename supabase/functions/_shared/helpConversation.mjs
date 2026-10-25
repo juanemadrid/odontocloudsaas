@@ -1,4 +1,4 @@
-import { HELP_GUIDES, PUBLIC_GUIDE_IDS, KNOWLEDGE_VERSION, normalize, searchGuides } from './helpKnowledge.mjs';
+import { HELP_GUIDES, PUBLIC_GUIDE_IDS, KNOWLEDGE_VERSION, normalize, searchGuides, canonicalHelpWord } from './helpKnowledge.mjs';
 
 export function conversationalReply(question, previousIds = [], mode = 'app') {
   const q = normalize(question);
@@ -30,8 +30,9 @@ export function isContextualReply(question) {
 }
 
 const ACRO = new Set(['rip', 'rips', 'dian', 'cufe', 'cuv', 'eps', 'nit', 'ips', 'fev', 'muv']);
-const STOP_TOPIC = new Set(['crear','nuevo','nueva','modificar','hacer','como','boton','opcion','sistema','ayuda','guia','paso','puedo','puede','pueden','quiero','quisiera','necesito','deseo','tener','saber','estar','estoy','donde']);
+const STOP_TOPIC = new Set(['crear','nuevo','nueva','modificar','hacer','como','boton','opcion','sistema','ayuda','guia','paso','puedo','puede','pueden','quiero','quisiera','necesito','deseo','tener','saber','estar','estoy','donde','tiene','tienen','tienes','hay','informacion','programa','plataforma','acerca','sobre']);
 const topicWords = text => normalize(text).split(' ')
+  .map(canonicalHelpWord)
   .map(w => w.startsWith('configur') ? 'configuracion' : (ACRO.has(w) ? (w === 'rip' ? 'rips' : w) : (w.endsWith('s') ? w.slice(0, -1) : w)))
   .filter(w => (w.length > 3 || ACRO.has(w)) && !STOP_TOPIC.has(w));
 export function resolveHelpGuides(question, previousIds = [], mode = 'app') {

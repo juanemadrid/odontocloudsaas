@@ -3,7 +3,7 @@ import { HELP_GEMINI_DEFAULT_MODEL, HELP_GEMINI_MODELS, isHelpApiKey } from '../
 export const HELP_KEY_AAD = 'odontocloud|help|gemini|v1';
 export const HELP_DEFAULT_MODEL = HELP_GEMINI_DEFAULT_MODEL;
 export const HELP_MODELS = new Set(HELP_GEMINI_MODELS);
-export const HELP_SETTINGS_VERSION = '2026-10-24-support-1';
+export const HELP_SETTINGS_VERSION = '2026-10-24-intent-1';
 class SettingsError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
