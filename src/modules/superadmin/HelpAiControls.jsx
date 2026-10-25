@@ -59,7 +59,7 @@ export default function HelpAiControls({ tenants }) {
     <summary className="cursor-pointer font-bold text-sm text-slate-800">Asistente IA de ayuda · Control por clínica</summary>
     <HelpAiKeySettings />
     <p className="text-xs text-slate-500 my-3">Las guías siguen disponibles con la IA apagada. Solo explica el uso del sistema y no ejecuta operaciones.</p>
-    <p className="text-xs text-slate-500 mb-3">«Probar IA» comprueba una pregunta de uso con la configuración de esa clínica. Respeta sus interruptores y consume una consulta si se envía a Gemini.</p>
+    <p className="text-xs text-slate-500 mb-3">«Probar IA» comprueba una conversación sobre generar RIPS y luego cómo enviarlos y adónde. Revisa que la respuesta resuelva esa duda. Respeta los interruptores y consume una consulta si se envía a Gemini.</p>
     {error && <p role="alert" className="text-sm text-amber-800 mb-3">{error}</p>}
     {!loaded && <button type="button" onClick={load} className="text-xs text-blue-700">Actualizar estado</button>}
     {global && <>

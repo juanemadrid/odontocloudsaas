@@ -148,7 +148,7 @@ export function createHelpHandler({ authenticate, reserve, resolveConfig, env, f
       'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
       'Content-Type': 'application/json',
-      'X-Odonto-Help-Version': '2026-10-24-dialogue-1',
+      'X-Odonto-Help-Version': '2026-10-24-library-1',
       'Cache-Control': 'no-store',
     };
     const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers });
@@ -251,7 +251,9 @@ export function createHelpHandler({ authenticate, reserve, resolveConfig, env, f
         if (request.signal.aborted) abort();
         const timer = setTimeout(abort, 40000);
         try {
-          const reference = guides[0].id === HELP_TRIAGE_ID ? guides[0].steps.join('\n') : helpPrompt(guides[0], question, false, trustedScreenContext(body.screenContext), recentModelHistory(history)).split('\nREFERENCIA:\n').at(-1);
+          const reference = guides[0].id === HELP_TRIAGE_ID ? guides[0].steps.join('\n') :
+            'MANUAL DEL PROCEDIMIENTO:\n' + guides[0].steps.map((step, i) => `${i + 1}. ${step}`).join('\n') +
+            '\nORIENTACIÓN DE LA ETAPA:\n' + helpPrompt(guides[0], question, false, trustedScreenContext(body.screenContext), recentModelHistory(history)).split('\nREFERENCIA:\n').at(-1);
           const result = await generateManagedHelp({ guide: guides[0], reference, question, history,
             screenContext: trustedScreenContext(body.screenContext), reserve, principal, env: providerEnv, fetchImpl, signal: controller.signal });
           if (result.success) trace('gemini_completed', { model: result.model });

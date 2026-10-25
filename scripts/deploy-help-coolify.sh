@@ -12,7 +12,7 @@ FILES=(
   odontocloud-help/index.ts odontocloud-help/auth.mjs odontocloud-help/handler.mjs
   odontocloud-help/managedHelp.mjs odontocloud-help/credentialStore.mjs
   odontocloud-help-settings/index.ts odontocloud-help-settings/auth.mjs odontocloud-help-settings/handler.mjs
-  _shared/helpKnowledge.mjs _shared/helpConversation.mjs _shared/helpCrypto.mjs _shared/helpApiKey.mjs _shared/helpRuntime.ts _shared/helpFeedback.mjs _shared/helpMeaning.mjs _shared/helpTriage.mjs tenant-secrets/crypto.ts
+  _shared/helpKnowledge.mjs _shared/helpConversation.mjs _shared/helpCrypto.mjs _shared/helpApiKey.mjs _shared/helpRuntime.ts _shared/helpFeedback.mjs _shared/helpMeaning.mjs _shared/helpTriage.mjs _shared/helpLibrary.mjs tenant-secrets/crypto.ts
 )
 MIGRATIONS=(20261024142001_odontocloud_help_controls.sql 20261024145608_odontocloud_help_credentials.sql 20261024151000_expand_help_models.sql)
 for cmd in docker curl flock realpath openssl; do command -v "$cmd" >/dev/null || { echo "Missing command: $cmd"; exit 1; }; done
@@ -101,7 +101,7 @@ verified=false
 for attempt in 1 2 3; do
   if curl --silent --show-error --max-time 12 -D "$STAGE/endpoint-headers" -o /dev/null \
     'https://supabasekong-ueh7xuehxl9thmhre7fpk4xx.150.136.210.37.sslip.io/functions/v1/odontocloud-help-settings' && \
-    grep -qi '^x-odonto-help-version: 2026-10-24-dialogue-1' "$STAGE/endpoint-headers"; then
+    grep -qi '^x-odonto-help-version: 2026-10-24-library-1' "$STAGE/endpoint-headers"; then
     verified=true; break
   fi
   sleep 2
@@ -111,5 +111,5 @@ if [[ "$verified" != true ]]; then
   exit 1
 fi
 echo "OdontoCloud help backend installed from $REVISION. Backup: $BACKUP"
-echo 'Settings endpoint version verified: 2026-10-24-dialogue-1.'
+echo 'Settings endpoint version verified: 2026-10-24-library-1.'
 echo 'Now test Help AI settings in the superadmin panel, save the dedicated API key, then enable the desired clinic.'

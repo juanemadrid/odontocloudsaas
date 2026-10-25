@@ -8,12 +8,22 @@ sistema programa pantalla formulario ventana boton pestaña menu lateral superio
 rips rip json muv cuv fev dian cups reps nit evolucion evoluciones procedimiento procedimientos consulta consultas historia documento documentos clinicos facturacion factura facturas recibo recibos caja presupuesto presupuestos plan planes tratamiento tratamientos cotizacion cotizaciones tarifario precio precios producto productos servicio servicios fecha fechas periodo rango inicial final pago pagos efectivo transferencia parcial total cuenta cuentas lista listas habilitacion filtro sucursal especialidad especialidades importe cantidad descuento vigencia modalidad profesionalmente`;
 const dictionary = new Map((terms + ' obligado obligada obligacion obligaciones legal legales habilitado independiente institucional institucionales desmarcada desmarcado resultados resultado vacio vacia duda dudas pregunta preguntas ayuda ayudame necesito necesitar perdido perdida empezar empiezo empiezo explicarlo explicarme contar cuentame sucede intentar intento intentaba pegado pegada congelado congelada rojo roja').split(/\s+/).filter(Boolean).map(word => [word, word]));
 dictionary.set('rip', 'rips');
+const verbFamilies = [
+  [/^gener(?:an|en|amos|aron|aban|arian)(?:lo|los|la|las)?$/, 'generar'],
+  [/^envi(?:an|en|amos|aron|aban|arian)(?:lo|los|la|las)?$/, 'enviar'],
+  [/^export(?:an|en|amos|aron|aban|arian)(?:lo|los|la|las)?$/, 'exportar'],
+  [/^guard(?:an|en|amos|aron|aban|arian)(?:lo|los|la|las)?$/, 'guardar'],
+  [/^registr(?:an|en|amos|aron|aban|arian)(?:lo|los|la|las)?$/, 'registrar'],
+  [/^seleccion(?:an|en|amos|aron|aban|arian)(?:lo|los|la|las)?$/, 'seleccionar'],
+];
 // Public UI labels extend vocabulary with canonical words, never runtime values.
 for (const guide of HELP_GUIDES) {
+  for (const word of normalize(guide.title + ' ' + guide.category + ' ' + guide.keywords).split(' ')) if (/^[a-z]+$/.test(word)) dictionary.set(word, word);
   for (const [, label] of [guide.prereq, ...guide.steps, guide.note].join('\n').matchAll(/\[([^\]\n]+)\]/g)) {
     for (const word of normalize(label).split(' ')) if (/^[a-z]+$/.test(word)) dictionary.set(word, word);
   }
 }
+dictionary.set('rip', 'rips');
 
 export function projectHelpMeaning(value) {
   const text = String(value || '').slice(0, 1800)
@@ -22,7 +32,7 @@ export function projectHelpMeaning(value) {
   const words = normalize(text).split(' ').filter(Boolean);
   const projected = [];
   for (const word of words) {
-    const canonical = dictionary.get(word);
+    const canonical = dictionary.get(word) || verbFamilies.find(([pattern]) => pattern.test(word))?.[1];
     if (canonical) projected.push(canonical);
     else if (projected.at(-1) !== '(detalle omitido)') projected.push('(detalle omitido)');
   }
@@ -30,6 +40,6 @@ export function projectHelpMeaning(value) {
 }
 
 export function projectHelpHistory(history = []) {
-  return history.slice(-2).filter(m => ['user', 'assistant'].includes(m.role))
+  return history.slice(-4).filter(m => ['user', 'assistant'].includes(m.role))
     .map(m => ({ role: m.role, meaning: projectHelpMeaning(m.content).slice(0, 400) }));
 }

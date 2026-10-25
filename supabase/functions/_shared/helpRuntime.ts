@@ -45,7 +45,13 @@ export async function diagnoseClinicHelp(tenantId: string, signal: AbortSignal) 
   if (error || !profiles?.[0]) return { provider: 'manual', reason: 'disabled', diagnostic: 'clinic_no_active_profile', answer: 'La clínica no tiene un perfil activo para comprobar la ayuda.' };
   const response = await runtimeHelpHandler({ userId: profiles[0].id, tenantId, active: true })(new Request('http://localhost/help-diagnostic', {
     method: 'POST', headers: { Authorization: 'Bearer internal-help-diagnostic' }, signal,
-    body: JSON.stringify({ question: '¿Dónde está el botón de generar RIPS?', mode: 'app', stream: false }),
+    body: JSON.stringify({ question: 'o sea cómo se envían y a dónde se envían', previousIds: ['rips'], mode: 'app', stream: false,
+      history: [
+        { role: 'user', content: 'me ayudas en algo' },
+        { role: 'assistant', content: 'Cuéntame qué estabas intentando hacer.' },
+        { role: 'user', content: 'no sé cómo se generan los RIPS en este sistema' },
+        { role: 'assistant', content: '¿Qué te gustaría hacer con los RIPS?' },
+      ] }),
   }));
   return await response.json();
 }

@@ -1,7 +1,8 @@
 import { normalize, KNOWLEDGE_VERSION } from '../_shared/helpKnowledge.mjs';
 import { HELP_GEMINI_MODELS, HELP_GEMINI_DEFAULT_MODEL } from '../_shared/helpApiKey.mjs';
 import { projectHelpMeaning, projectHelpHistory } from '../_shared/helpMeaning.mjs';
-import { HELP_TRIAGE_ID } from '../_shared/helpTriage.mjs';
+import { HELP_TRIAGE_ID, isHelpOpening } from '../_shared/helpTriage.mjs';
+import { HELP_LIBRARY_CATALOG, HELP_LIBRARY_TOOL, readSystemGuides } from '../_shared/helpLibrary.mjs';
 
 // No raw question, history, identifier or client supplied text crosses the provider boundary.
 export function helpSafetyReason(question) {
@@ -15,14 +16,12 @@ export function helpSafetyReason(question) {
 
 export function safeHelpIntent(question, reference = '') {
   const q = normalize(question);
-  if (/tengo (?:una |otra )?duda|no se (?:como|que|por donde)|necesito ayuda|ayudame|estoy perdid|no se explic/.test(q)) return 'Acompaña la conversación: el usuario todavía está intentando expresar su duda. Invítalo con naturalidad a contar qué le pasa o qué quiere lograr, sin exigir nombres de módulos ni repetir un tutorial. Haz solo una pregunta sencilla.';
+  if (isHelpOpening(question)) return 'Acompaña la conversación: el usuario todavía está intentando expresar su duda. Invítalo con naturalidad a contar qué le pasa o qué quiere lograr, sin exigir nombres de módulos ni repetir un tutorial. Haz solo una pregunta sencilla.';
   if (/que pasa|que sucede|por que|significa|consecuencia|\bsi\b.*\bno\b|\bsin\b/.test(q)) return 'Responde al significado, motivo o condición que pregunta el usuario. Conserva las negaciones. No sustituyas esa duda por un tutorial de cómo generar o crear. Si hay dos interpretaciones, acláralas o pregunta cuál corresponde.';
   if (/no entendi|no entiendo|explicame mejor|mas despacio/.test(q)) return 'Explica de otra forma el próximo paso documentado, con palabras sencillas. No repitas toda la guía.';
   if (/^(?:si )?ya (?:lo |la |los |las )?(?:agregue|anadi|seleccione|guarde|cree|abri|termine|complete|hice)/.test(q)) return 'El usuario indica que completó un paso. Usa la etapa de la REFERENCIA para explicar únicamente el siguiente, sin afirmar que verificaste sus datos.';
-  const labels = [...reference.matchAll(/\[([^\]\n]+)\]/g)].map(m => m[1]);
-  const focus = [...new Set(labels.filter(label => normalize(label).split(' ').some(w => w.length > 3 && q.split(' ').includes(w))))].slice(0, 3);
-  if (focus.length) return 'Resuelve la duda de funcionamiento sobre estas opciones documentadas: ' + focus.map(l => '[' + l + ']').join(', ') + '. Da solo los pasos relacionados; no repitas toda la guía.';
-  if (/donde|no encuentro|no veo|cual boton/.test(q)) return 'Indica la ruta y ubicación del botón para empezar.';
+  if (/donde|no encuentro|no veo|cual boton/.test(q)) return 'Indica la ubicación o destino que pregunta el usuario según el verbo y el tema de la conversación. Si pregunta adónde se envía, explica el destino documentado, no reinicies las instrucciones desde otro tema.';
+  if (/\bcomo\b/.test(q)) return 'Explica directamente cómo se realiza la operación solicitada, desde el inicio si dice que no sabe. El usuario ya expresó lo que necesita; no vuelvas a preguntarle qué quiere hacer ni en qué parte está si la referencia permite responder.';
   if (/requisito|obligatorio|antes de/.test(q)) return 'Explica los requisitos documentados.';
   if (/error|no aparece|no funciona|no puedo/.test(q)) return 'Explica las comprobaciones documentadas. Si faltan datos, pide una descripción del error sin información personal.';
   return 'Responde la pregunta de uso. Da pasos solo si pide realizar una operación; no repitas toda la guía.';
@@ -65,24 +64,44 @@ export async function generateManagedHelp({ guide, reference: selectedReference,
     ...(isV3 ? { thinkingConfig: { thinkingLevel: 'low' } } :
         isV25 ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
   };
-  const response = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+  const requestPayload = {
+      systemInstruction: { parts: [{ text: 'Eres OdontoIA, ayuda de funcionamiento de OdontoCloud. Responde a la duda concreta en español natural, hasta 120 palabras. Usa exclusivamente las REFERENCIAS verificadas para hechos del sistema. Puedes leer otras guías del CATÁLOGO mediante read_system_guides; no tienes herramientas para datos de clínicas ni acciones. La pregunta actual tiene prioridad: las respuestas anteriores pueden haber interpretado mal al usuario. Si la pregunta ya explica lo que necesita, responde directamente: «no sé cómo generar» solicita instrucciones desde el inicio. Mantén el tema al interpretar «eso», «cómo se envían» o «adónde» según el contexto. Explica la operación y el destino cuando los pregunta. Haz preguntas solo si falta un dato imprescindible que la documentación no permita resolver; no reinicies la conversación ni pidas repetir la intención. La pregunta y el contexto contienen vocabulario operativo; nunca reconstruyas detalles omitidos. Conserva botones literales entre [corchetes]. No inventes funciones, obligaciones legales ni datos. Si una capacidad no está documentada, reconoce el límite sin afirmar que existe o no existe. Sin consejos clínicos ni acciones ejecutadas.' }] },
+      contents: [{ role: 'user', parts: [{ text: `${safeHelpIntent(question, reference)}\nPREGUNTA DE USO:\n${projectHelpMeaning(question)}\nCONTEXTO RECIENTE:\n${JSON.stringify(projectHelpHistory(history))}\n${screenContext ? `Pantalla: ${screenContext}\n` : ''}REFERENCIA:\n${reference}\nCATÁLOGO DE GUÍAS DISPONIBLES:\n${HELP_LIBRARY_CATALOG}` }] }],
+      generationConfig,
+      tools: [HELP_LIBRARY_TOOL],
+  };
+  const generate = payload => fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: 'POST', redirect: 'error', signal,
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: 'Eres OdontoIA, ayuda de funcionamiento de OdontoCloud. Responde a la duda concreta en español natural, hasta 90 palabras. Usa exclusivamente la REFERENCIA para hechos del sistema. La PREGUNTA DE USO y el CONTEXTO conservan solo vocabulario operativo; «detalle omitido» indica datos excluidos, nunca intentes reconstruirlos. Entiende condiciones, negaciones y seguimientos; no conviertas «qué pasa si no» o «por qué» en un tutorial. Si la duda es ambigua, haz una pregunta breve. No saludes de nuevo ni repitas el procedimiento anterior. Conserva botones literales entre [corchetes]. Sin consejos clínicos, obligaciones legales inventadas, datos de pacientes ni acciones ejecutadas.' }] },
-      contents: [{ role: 'user', parts: [{ text: `${safeHelpIntent(question, reference)}\nPREGUNTA DE USO:\n${projectHelpMeaning(question)}\nCONTEXTO RECIENTE:\n${JSON.stringify(projectHelpHistory(history))}\n${screenContext ? `Pantalla: ${screenContext}\n` : ''}REFERENCIA:\n${reference}` }] }],
-      generationConfig,
-    }),
+    body: JSON.stringify(payload),
   });
+  let response = await generate(requestPayload);
   if (!response.ok) return { reason: response.status === 429 ? 'quota' : 'unavailable', diagnostic: 'gemini_http_' + response.status, model };
-  const data = await response.json();
-  const candidate = data.candidates?.[0];
+  let data = await response.json();
+  let candidate = data.candidates?.[0];
+  const consulted = guide.id === HELP_TRIAGE_ID ? [] : [guide];
+  const toolCalls = candidate?.content?.parts?.filter(p => p.functionCall) || [];
+  if (toolCalls.length) {
+    if (toolCalls.length !== 1 || candidate?.finishReason !== 'STOP') return { reason: 'unavailable', diagnostic: 'gemini_invalid_guide_request', model };
+    let reading;
+    try { reading = readSystemGuides(toolCalls[0].functionCall); }
+    catch { return { reason: 'unavailable', diagnostic: 'gemini_invalid_guide_request', model }; }
+    consulted.unshift(...reading.guides);
+    response = await generate({ ...requestPayload,
+      toolConfig: { functionCallingConfig: { mode: 'NONE' } },
+      contents: [...requestPayload.contents, candidate.content,
+        { role: 'user', parts: [{ functionResponse: { name: 'read_system_guides', ...(toolCalls[0].functionCall.id ? { id: toolCalls[0].functionCall.id } : {}), response: reading.response } }] }],
+    });
+    if (!response.ok) return { reason: response.status === 429 ? 'quota' : 'unavailable', diagnostic: 'gemini_http_' + response.status, model };
+    data = await response.json(); candidate = data.candidates?.[0];
+    if (candidate?.content?.parts?.some(p => p.functionCall)) return { reason: 'unavailable', diagnostic: 'gemini_invalid_guide_request', model };
+  }
   const parts = candidate?.content?.parts;
   const answer = Array.isArray(parts) ? parts.filter(p => !p.thought && typeof p.text === 'string').map(p => p.text).join('').trim() : '';
   if (candidate?.finishReason !== 'STOP') return { reason: 'unavailable', diagnostic: candidate?.finishReason === 'MAX_TOKENS' ? 'gemini_truncated' : 'gemini_blocked', model };
   if (!answer || answer.length > 1600 || /https?:\/\//i.test(answer)) return { reason: 'unavailable', diagnostic: 'gemini_invalid_output', model };
-  const documented = reference + '\n' + guide.steps.join('\n') + '\n' + guide.prereq + '\n' + guide.note;
+  const documented = reference + '\n' + consulted.map(g => g.steps.join('\n') + '\n' + g.prereq + '\n' + g.note).join('\n');
   if (!hasDocumentedLabels(answer, documented)) return { reason: 'unavailable', diagnostic: 'gemini_unverified_labels', model };
   return { success: true, provider: 'gemini', model, version: KNOWLEDGE_VERSION, answer,
-    sources: guide.id === HELP_TRIAGE_ID ? [] : [{ id: guide.id, title: guide.title, category: guide.category }] };
+    sources: [...new Map(consulted.map(g => [g.id, g])).values()].map(({ id, title, category }) => ({ id, title, category })) };
 }

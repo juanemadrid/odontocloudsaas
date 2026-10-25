@@ -38,7 +38,7 @@ export function resolveHelpGuides(question, previousIds = [], mode = 'app') {
   const q = normalize(question);
   if (/\bedunexus\b/.test(q)) return [];
   const followup = isBriefFollowup(question) || /^(no entendi|no entiendo|explicame( mejor| de nuevo)?|mas despacio|mas detalle|paso a paso|y ahora|y despues|siguiente|continua|listo|ya esta|ya lo hice|si|ok|no aparece|no lo veo|no encuentro|donde esta|cual boton)(\b|$)/.test(q);
-  const candidates = HELP_GUIDES.filter(g => mode !== 'public' || PUBLIC_GUIDE_IDS.has(g.id));
+  const candidates = HELP_GUIDES.filter(g => mode === 'public' ? PUBLIC_GUIDE_IDS.has(g.id) : !['facturacion-dian-rips', 'historia-odontograma-public', 'agenda-whatsapp-public', 'seguridad-migracion'].includes(g.id));
   const active = previousIds.map(id => candidates.find(g => g.id === id)).filter(Boolean).slice(0, 1);
   if (active.length && isContextualReply(question)) return active;
   if (/\b(planes|suscripcion|mensualidad)\b/.test(q) && !/\b(tratamientos?|pacientes?|presupuestos?)\b/.test(q)) {
@@ -59,6 +59,9 @@ export function resolveHelpGuides(question, previousIds = [], mode = 'app') {
   if (followup && previousIds.length) return previousIds.map(id => candidates.find(g => g.id === id)).filter(Boolean).slice(0, 1);
   if (active.length && /^(?:(?:y|pero|entonces) )?(?:que pasa|que sucede|por que|si no|si esta|y si|que significa)\b/.test(q)) return active;
   if (active.length && /\b(ese|esa|eso|ahi|alli|otro|otra|buscarlo|hacerlo|encontrarlo|sale|aparece|veo|encuentro)\b/.test(q)) return active;
+  // Keep the established subject until a new identifiable subject replaces it.
+  // Elliptical questions ("cómo se envían y adónde") need the previous topic.
+  if (active.length) return active;
   return searchGuides(question, previousIds, mode).slice(0, 1);
 }
 
