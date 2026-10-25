@@ -228,3 +228,15 @@ delete globalThis.__helpGeminiClient;
 const controller = new AbortController(); controller.abort();
 await handler({ fetchImpl: async (_url, options) => { assert.equal(options.signal.aborted, true); throw new Error('aborted'); } })(new Request(request(), { signal: controller.signal }));
 console.log('Gemini help: client-to-provider clinic flow, general questions/follow-ups, model identity, composed routes, isolation, switches and specific failure diagnostics verified.');
+
+// Exact production failure: quota fallback must retain the requested operation.
+for (const question of ['como se hace una liquidacion a doctores', 'como liquido al doctor', 'liquidar a un profesional', 'pagar comisiones']) {
+  assert.equal(resolveHelpGuides(question, ['usuarios'])[0].id, 'liquidaciones');
+  const result = await handler({ reserve: async () => ({ allowed: false, reason: 'quota' }) })(request({ question, previousIds: ['usuarios'] }));
+  const body = await result.json();
+  assert.equal(body.provider, 'manual');
+  assert.equal(body.sources[0].id, 'liquidaciones');
+  assert.match(JSON.stringify(body), /Liquidar Profesional/);
+  assert.doesNotMatch(JSON.stringify(body), /Nuevo Usuario/);
+}
+assert.equal(resolveHelpGuides('crear un doctor', ['liquidaciones'])[0].id, 'usuarios');

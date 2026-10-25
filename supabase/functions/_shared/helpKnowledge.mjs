@@ -1,6 +1,6 @@
 // Manual público de uso: nunca incluir datos de pacientes, credenciales ni datos de otra app.
 // Revisar las fuentes de cada guía cuando cambie una pantalla.
-export const KNOWLEDGE_VERSION = '2026-10-24.2';
+export const KNOWLEDGE_VERSION = '2026-10-24.3';
 const guide = (id, category, title, keywords, source, steps, note = '', prereq = '') => ({
   id, category, title, keywords, source, steps, note, prereq,
 });export const HELP_GUIDES = [
@@ -136,11 +136,14 @@ const guide = (id, category, title, keywords, source, steps, note = '', prereq =
     'Selecciona Recibo de caja para los comprobantes de ingreso o Saldo a favor para revisar los abonos correspondientes.',
     'Abre el registro o el formulario de creación y verifica tercero, valor y referencias antes de confirmar.',
   ], '', 'Para emitir recibos de caja, debes tener una caja abierta o cuenta de banco configurada en [Configuración] > [Catálogos] > [Bancos].'),
-  guide('liquidaciones', 'Facturación', 'Liquidación de comisiones y tratamientos', 'liquidacion comisiones tratamiento honorarios doctor pago', 'src/modules/administracion/views/FacturacionHub.jsx', [
-    'Entra a Administración > Facturación y selecciona Liquidaciones.',
-    'Identifica el profesional o tratamiento a liquidar y revisa las comisiones o importes correspondientes.',
-    'Genera y valida la liquidación para cerrar el ciclo administrativo.',
-  ], '', 'Los tratamientos deben estar marcados como realizados y cobrados, y los porcentajes de comisión deben estar parametrizados.'),
+  guide('liquidaciones', 'Facturación', 'Liquidación a doctores y pago de comisiones', 'liquidacion liquidaciones liquidar comisiones tratamiento honorarios doctor doctores profesional pago', 'src/modules/facturacion/liquidacion/Liquidaciones.jsx', [
+    'Entra a [Administración] > [Facturación] > [Liquidaciones] y abre [Pendientes].',
+    'Define el rango de fechas, selecciona el doctor en [Filtrar por profesional] y pulsa [Generar] para buscar los ítems pendientes. Esto todavía no guarda ni paga una liquidación.',
+    'Revisa los ítems y sus importes. En los ítems por porcentaje puedes ajustar la comisión individual. Pulsa [Liquidar Profesional] para abrir el detalle.',
+    'En el detalle revisa los conceptos y el neto a liquidar; pulsa [Generar Liquidación]. La liquidación guardada aparece en [Generadas]; aún no está pagada.',
+    'Para registrar el pago, abre la acción de pagar de esa liquidación en [Generadas]. En [Pagar Liquidación] selecciona la cuenta o caja y el [Medio de Pago], revisa el total y pulsa [Confirmar y Pagar].',
+    'Al confirmar el pago se genera el comprobante de egreso en [Administración] > [Facturación] > [Pagos] y la liquidación pasa a [Pagadas].',
+  ], 'Si no aparecen ítems, revisa profesional y fechas. Con forma de liquidación Realizado se requieren procedimientos realizados con evolución clínica en el período; con Realizado y Pagado también deben estar pagados por el paciente. Generar la búsqueda, generar la liquidación y confirmar su pago son tres acciones diferentes.', 'El profesional debe tener configurados sus parámetros de comisión y forma de liquidación. No todos los profesionales exigen cobro previo: depende de su forma de liquidación.'),
   guide('proveedores', 'Facturación', 'Pagos a proveedores y facturas de compra', 'proveedor egreso compra factura compra pagar proveedor', 'src/modules/administracion/views/FacturacionHub.jsx', [
     'Revisa el proveedor en Administración > Terceros.',
     'En Administración > Facturación, usa Facturas de compra para registrar las compras y documentos recibidos.',
@@ -312,6 +315,7 @@ const aliases = {
   diente: 'odontograma', dientes: 'odontograma', muela: 'odontograma', muelas: 'odontograma', carie: 'odontograma', caries: 'odontograma',
   especialidad: 'especialidad', especialidades: 'especialidad', especializaciones: 'especialidad', especializacion: 'especialidad',
   ortodoncia: 'especialidad', endodoncia: 'especialidad', periodoncia: 'especialidad', odontopediatria: 'especialidad',
+  liquidar: 'liquidacion', liquido: 'liquidacion', liquidaciones: 'liquidacion',
   rip: 'rips', rips: 'rips',
   pago: 'pago', pagos: 'pago', abono: 'pago', recaudo: 'pago',
   cita: 'cita', citas: 'cita', turno: 'cita', turnos: 'cita',

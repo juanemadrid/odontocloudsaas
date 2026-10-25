@@ -26,7 +26,7 @@ La IA puede leer las guías completas; no recibe código fuente, secretos, regis
 | cerrar-caja | Cerrar y cuadrar la caja (Arqueo diario) | [fuente](../src/modules/caja/components/CerrarCajaModal.jsx) | 7 |
 | facturas | Factura de venta y facturación electrónica | [fuente](../src/modules/administracion/views/FacturacionHub.jsx) | 4 |
 | recibos | Recibos de caja y saldos a favor | [fuente](../src/modules/administracion/views/FacturacionHub.jsx) | 3 |
-| liquidaciones | Liquidación de comisiones y tratamientos | [fuente](../src/modules/administracion/views/FacturacionHub.jsx) | 3 |
+| liquidaciones | Liquidación a doctores y pago de comisiones | [fuente](../src/modules/facturacion/liquidacion/Liquidaciones.jsx) | 6 |
 | proveedores | Pagos a proveedores y facturas de compra | [fuente](../src/modules/administracion/views/FacturacionHub.jsx) | 4 |
 | reportes | Encontrar reportes e indicadores | [fuente](../src/modules/reportes/Reportes.jsx) | 3 |
 | rips | Generación y validación de RIPS JSON (Resolución 2275) | [fuente](../src/modules/rips/RipsGenerator.jsx) | 5 |
