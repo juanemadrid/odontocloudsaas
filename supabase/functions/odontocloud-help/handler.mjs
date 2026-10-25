@@ -148,7 +148,7 @@ export function createHelpHandler({ authenticate, reserve, resolveConfig, env, f
       'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
       'Content-Type': 'application/json',
-      'X-Odonto-Help-Version': '2026-10-24-quota-1',
+      'X-Odonto-Help-Version': '2026-10-24-support-1',
       'Cache-Control': 'no-store',
     };
     const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers });
@@ -227,7 +227,9 @@ export function createHelpHandler({ authenticate, reserve, resolveConfig, env, f
       const fallback = (reason, details = {}) => {
         trace('manual_fallback', { reason, ...details });
         const publicReason = ['timeout', 'provider_error', 'incomplete_response'].includes(reason) ? 'unavailable' : reason;
-        if (guides[0].id === HELP_TRIAGE_ID) return json({ ...clarificationReply(question), reason: publicReason, ...details });
+        if (guides[0].id === HELP_TRIAGE_ID) return json({ ...clarificationReply(question),
+          ...(!isHelpOpening(question) ? { answer: 'No encontré una referencia verificada para responder esa pregunta con precisión. No voy a inventar funciones o pasos. Puedes consultar la biblioteca o solicitar revisión al soporte de OdontoCloud.' } : {}),
+          reason: publicReason, ...details });
         return json({ success: true, provider: 'manual', reason: publicReason, ...details, version: KNOWLEDGE_VERSION, answer: formatGuide(guides[0], isPublic), sources });
       };
       // Public product help remains available without providing anonymous access to generation.

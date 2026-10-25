@@ -6,7 +6,7 @@ import { helpFallbackMessage } from '../supabase/functions/_shared/helpFeedback.
 import { readFileSync } from 'node:fs';
 import { projectHelpMeaning, projectHelpHistory } from '../supabase/functions/_shared/helpMeaning.mjs';
 import { resolveHelpGuides } from '../supabase/functions/_shared/helpConversation.mjs';
-import { HELP_LIBRARY_TOOL, readSystemGuides } from '../supabase/functions/_shared/helpLibrary.mjs';
+import { HELP_LIBRARY_GUIDES, HELP_LIBRARY_TOOL, readSystemGuides } from '../supabase/functions/_shared/helpLibrary.mjs';
 
 const defaults = { ODONTO_HELP_ENABLED: 'true', ODONTO_HELP_PROVIDER: 'gemini', ODONTO_HELP_GEMINI_API_KEY: 'test-key' };
 const request = (body = {}) => new Request('https://test.invalid/help', { method: 'POST',
@@ -247,3 +247,15 @@ for (const diagnostic of ['user_cooldown','global_minute','global_day','global_m
   assert.equal(result.diagnostic, 'reservation_' + diagnostic);
   assert.notEqual(helpFallbackMessage(result), helpFallbackMessage({reason:'quota'}));
 }
+
+for (const previousIds of [[],['pacientes'],['usuarios'],['liquidaciones']]) {
+  assert.equal(resolveHelpGuides('y las politicas de seguridad si cumple con los estandares requeridos', previousIds)[0].id, 'seguridad-ayuda');
+  const response = await handler({reserve: async () => ({allowed:false,reason:'quota',diagnostic:'clinic_day'})})(request({question:'y las politicas de seguridad si cumple con los estandares requeridos',previousIds}));
+  const result = await response.json();
+  assert.equal(result.sources[0].id,'seguridad-ayuda');
+  assert.doesNotMatch(result.answer,/Crear o buscar un paciente|Nuevo Usuario/);
+  assert.match(result.answer,/no acredita certificaciones/);
+}
+assert.equal(resolveHelpGuides('quien es el proveedor de facturacion electronica',['pacientes'])[0].id,'proveedor-electronico');
+
+for (const guide of HELP_LIBRARY_GUIDES) assert.equal(resolveHelpGuides(guide.title)[0]?.id, guide.id, guide.title);

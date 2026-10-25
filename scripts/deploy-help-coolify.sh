@@ -102,7 +102,7 @@ verified=false
 for attempt in 1 2 3; do
   if curl --silent --show-error --max-time 12 -D "$STAGE/endpoint-headers" -o /dev/null \
     'https://supabasekong-ueh7xuehxl9thmhre7fpk4xx.150.136.210.37.sslip.io/functions/v1/odontocloud-help-settings' && \
-    grep -qi '^x-odonto-help-version: 2026-10-24-quota-1' "$STAGE/endpoint-headers"; then
+    grep -qi '^x-odonto-help-version: 2026-10-24-support-1' "$STAGE/endpoint-headers"; then
     verified=true; break
   fi
   sleep 2
@@ -112,5 +112,5 @@ if [[ "$verified" != true ]]; then
   exit 1
 fi
 echo "OdontoCloud help backend installed from $REVISION. Backup: $BACKUP"
-echo 'Settings endpoint version verified: 2026-10-24-quota-1.'
+echo 'Settings endpoint version verified: 2026-10-24-support-1.'
 echo 'Now test Help AI settings in the superadmin panel, save the dedicated API key, then enable the desired clinic.'

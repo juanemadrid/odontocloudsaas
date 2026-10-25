@@ -1,6 +1,6 @@
 // Manual público de uso: nunca incluir datos de pacientes, credenciales ni datos de otra app.
 // Revisar las fuentes de cada guía cuando cambie una pantalla.
-export const KNOWLEDGE_VERSION = '2026-10-24.3';
+export const KNOWLEDGE_VERSION = '2026-10-24.4';
 const guide = (id, category, title, keywords, source, steps, note = '', prereq = '') => ({
   id, category, title, keywords, source, steps, note, prereq,
 });export const HELP_GUIDES = [
@@ -286,6 +286,17 @@ const guide = (id, category, title, keywords, source, steps, note = '', prereq =
     'Correo Oficial de Contacto: bienvenido@odontocloudcolombia.com.',
     'Atención Inmediata: Lunes a Sábado con soporte permanente para clínicas activas.',
   ]),
+  guide('proveedor-electronico', 'Facturación', 'Proveedor de facturación electrónica: Factus', 'proveedor facturacion electronica factus integracion dian quien proveedor tecnologico', 'src/services/factusProxyService.js', [
+    'La integración de facturación electrónica implementada en OdontoCloud utiliza Factus mediante el servicio del servidor factus-proxy. Factus es la integración del proveedor; OdontoCloud es el sistema de gestión de la clínica.',
+    'La existencia de la integración no confirma que una clínica concreta tenga la conexión activa, sus credenciales válidas o una factura emitida. Esos estados deben comprobarse en su configuración y en el resultado de la operación.',
+    'Las operaciones implementadas del servicio incluyen consultar el estado de conexión, configurar la integración y probar las credenciales. OdontoIA solo explica estas capacidades: no ejecuta esas operaciones ni necesita que pegues credenciales en el chat.',
+  ], 'No inventar números de autorización, certificaciones, contratos, costos del proveedor ni estado de conexión de la clínica.'),
+  guide('seguridad-ayuda', 'Seguridad', 'Seguridad, privacidad y límites del asistente', 'seguridad politicas privacidad estandares certificaciones cumplimiento cumple confidencialidad aislamiento proteccion', 'supabase/functions/odontocloud-help/auth.mjs', [
+    'Para usar la ayuda de una clínica, el servidor valida la sesión y comprueba el perfil, su pertenencia a la clínica y el estado de acceso. El navegador no puede seleccionar otra clínica para esa conversación.',
+    'OdontoIA explica documentación del sistema. No consulta expedientes, pagos ni registros reales de pacientes, no obtiene información de otras clínicas y no ejecuta cambios. Una explicación no acredita que una operación haya quedado realizada.',
+    'Las claves de conexión de la ayuda se guardan cifradas y su configuración requiere superadministrador. No compartas claves, contraseñas ni datos personales en el chat.',
+    'El código de la ayuda permite comprobar estos controles, pero no acredita certificaciones, cumplimiento integral de una norma ni auditorías de toda la plataforma. Si preguntas por un estándar, indica su nombre y solicita al responsable la política o evidencia vigente. No podemos confirmar cumplimiento sin esa evidencia.',
+  ], 'No afirmar certificaciones ISO, cumplimiento legal integral, seguridad absoluta, frecuencia de respaldos ni garantías de disponibilidad basándose solo en este manual. Estas afirmaciones requieren evidencia operativa o auditorías verificadas.'),
   guide('seguridad-migracion', 'Tecnología', 'Seguridad en la Nube y Migración de Datos', 'seguridad nube copias backup privacidad datos migrar migracion pasar datos excel importar instalar requisitos servidor mac windows', 'src/constants/MasterConfig.js', [
     'Plataforma 100% en la Nube: No requiere instalar programas ni comprar servidores locales. Funciona en Windows, Mac, iPads, tablets y smartphones con conexión a Internet.',
     'Seguridad y Privacidad: Copias de seguridad automáticas diarias, cifrado de datos y aislamiento absoluto entre clínicas bajo ley de Habeas Data.',
@@ -334,7 +345,7 @@ export function searchGuides(question, previousIds = [], mode = 'app') {
     : HELP_GUIDES.filter(g => !['historia-odontograma-public', 'agenda-whatsapp-public', 'facturacion-dian-rips', 'seguridad-migracion'].includes(g.id));
 
   const GENERIC_ACTIONS = new Set(['crear', 'modificar', 'consultar', 'revisar', 'ver', 'buscar', 'abrir', 'cerrar']);
-  const ranked = candidateGuides.map(item => {
+  const ranked = candidateGuides.filter(item => item.id !== 'proveedor-electronico' || /\b(proveedor|factus|integracion)\b/.test(normalize(question))).map(item => {
     const titleWords = tokens(item.title);
     const keyWords = tokens(item.keywords);
     const score = words.reduce((n, word) => {

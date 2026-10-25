@@ -14,12 +14,12 @@ export function helpFallbackMessage(result = {}) {
   }
   if (code === 'help_session_rejected') return 'La sesión no permitió consultar la IA. Vuelve a iniciar sesión; esta respuesta procede del manual.';
   if (code === 'help_endpoint_unavailable') return 'No se pudo conectar con el servicio de IA de ayuda. Esta respuesta procede del manual local.';
-  if (code === 'gemini_truncated') return 'Gemini alcanzó el límite de respuesta antes de terminar. Se muestra la guía de respaldo.';
-  if (code === 'gemini_unverified_labels') return 'La respuesta de Gemini incluyó una opción que no pudimos verificar en el manual. Se muestra la guía segura.';
+  if (code === 'gemini_truncated') return 'La respuesta alcanzó el límite de respuesta antes de terminar. Se muestra la guía de respaldo.';
+  if (code === 'gemini_unverified_labels') return 'No pudimos verificar una opción de la respuesta. Consulta la referencia documentada que aparece abajo.';
   if (code === 'gemini_http_400') return 'Google rechazó la configuración del modelo. El superadministrador debe probar la conexión.';
   if (code === 'gemini_http_401' || code === 'gemini_http_403') return 'Google rechazó la clave o sus permisos. El superadministrador debe revisar la conexión.';
   if (code === 'gemini_http_404') return 'El modelo configurado no está disponible en Google. El superadministrador debe seleccionar otro modelo compatible.';
-  if (code === 'gemini_timeout') return 'Gemini tardó demasiado. Se muestra la guía de respaldo.';
+  if (code === 'gemini_timeout') return 'La respuesta tardó demasiado. Se muestra la guía de respaldo.';
   if (code === 'help_configuration_unavailable') return 'No se pudo cargar la conexión cifrada de la ayuda. El superadministrador debe revisar su estado.';
   if (code === 'clinic_inactive') return 'La clínica está inactiva.';
   if (code === 'clinic_no_active_profile') return 'No hay un perfil activo de esta clínica para ejecutar la prueba.';

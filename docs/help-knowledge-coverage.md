@@ -2,7 +2,7 @@
 
 Fecha: 24 de octubre de 2026.
 
-El catálogo consultable contiene 41 guías con una fuente existente en el repositorio. Esto verifica procedencia, no certifica que todos sus pasos hayan sido probados en producción ni que cubra cada pantalla y variante del sistema. No presentar esta lista como aprendizaje completo o conocimiento infalible.
+El catálogo consultable contiene 43 guías con una fuente existente en el repositorio. Esto verifica procedencia, no certifica que todos sus pasos hayan sido probados en producción ni que cubra cada pantalla y variante del sistema. No presentar esta lista como aprendizaje completo o conocimiento infalible.
 
 La IA puede leer las guías completas; no recibe código fuente, secretos, registros de pacientes ni datos de otras clínicas. Las páginas comerciales generales de seguridad y características no se usan como prueba de comportamiento operativo. Una capacidad no documentada debe reconocerse como no verificada, sin afirmar que está implementada o que no existe.
 
@@ -50,9 +50,13 @@ La IA puede leer las guías completas; no recibe código fuente, secretos, regis
 | prueba-gratis | Iniciar Prueba Gratuita de 30 Días | [fuente](../src/components/landing/TrialModal.jsx) | 4 |
 | contacto-soporte | Contacto Comercial y Asesoría Humana por WhatsApp | [fuente](../src/pages/landing/FAQPage.jsx) | 4 |
 
+| seguridad-ayuda | Seguridad, privacidad y límites del asistente | [fuente](../supabase/functions/odontocloud-help/auth.mjs) | 4 |
+| proveedor-electronico | Integración Factus | [fuente](../src/services/factusProxyService.js) | 3 |
+
 ## Límites que deben mantenerse visibles en el desarrollo
 
 - Las pruebas simuladas validan selección, contexto, privacidad y transporte; no prueban la calidad de una respuesta real de Gemini.
 - Probar IA reproduce una conversación realista sobre RIPS con el proveedor configurado; la respuesta debe revisarse por contenido, no solo por su etiqueta de proveedor.
 - La existencia de un componente o un texto comercial no demuestra que esa función esté expuesta en el producto. Por ejemplo, CrmTab.jsx no tiene referencias activas encontradas en src; no es fundamento suficiente para prometer generación automática de leads.
 - Revisar esta documentación cuando cambien rutas, permisos, estados, botones o flujos; conservar trazabilidad de fuentes y casos de conversación completos.
+

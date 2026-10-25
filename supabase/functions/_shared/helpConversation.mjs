@@ -41,6 +41,8 @@ export function resolveHelpGuides(question, previousIds = [], mode = 'app') {
   const candidates = HELP_GUIDES.filter(g => mode === 'public' ? PUBLIC_GUIDE_IDS.has(g.id) : !['facturacion-dian-rips', 'historia-odontograma-public', 'agenda-whatsapp-public', 'seguridad-migracion'].includes(g.id));
   const active = previousIds.map(id => candidates.find(g => g.id === id)).filter(Boolean).slice(0, 1);
   if (active.length && isContextualReply(question)) return active;
+  if (mode !== 'public' && /\b(listas? de precios|copago|tarifario)\b/.test(q)) return candidates.filter(g => g.id === 'precios');
+  if (mode !== 'public' && /\b(consultar (?:la |mi )?suscripcion|mi suscripcion|plan contratado)\b/.test(q)) return candidates.filter(g => g.id === 'suscripcion');
   if (/\b(planes|suscripcion|mensualidad)\b/.test(q) && !/\b(tratamientos?|pacientes?|presupuestos?)\b/.test(q)) {
     return candidates.filter(g => g.id === 'planes-suscripcion');
   }
@@ -61,7 +63,7 @@ export function resolveHelpGuides(question, previousIds = [], mode = 'app') {
   if (active.length && /\b(ese|esa|eso|ahi|alli|otro|otra|buscarlo|hacerlo|encontrarlo|sale|aparece|veo|encuentro)\b/.test(q)) return active;
   // Keep the established subject until a new identifiable subject replaces it.
   // Elliptical questions ("cómo se envían y adónde") need the previous topic.
-  if (active.length) return active;
+  if (active.length && /^(?:(?:o sea|osea|y|entonces) )?(?:como|donde|a donde|adonde) (?:se |lo |la |los |las )/.test(q)) return active;
   return searchGuides(question, previousIds, mode).slice(0, 1);
 }
 
