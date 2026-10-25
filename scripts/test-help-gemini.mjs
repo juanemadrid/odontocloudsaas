@@ -254,7 +254,9 @@ for (const previousIds of [[],['pacientes'],['usuarios'],['liquidaciones']]) {
   const result = await response.json();
   assert.equal(result.sources[0].id,'seguridad-ayuda');
   assert.doesNotMatch(result.answer,/Crear o buscar un paciente|Nuevo Usuario/);
-  assert.match(result.answer,/no acredita certificaciones/);
+  assert.match(result.answer,/Términos y Condiciones/);
+  assert.match(result.answer,/Política de Privacidad/);
+  assert.doesNotMatch(result.answer,/no acredita certificaciones|No podemos confirmar cumplimiento/);
 }
 assert.equal(resolveHelpGuides('quien es el proveedor de facturacion electronica',['pacientes'])[0].id,'proveedor-electronico');
 

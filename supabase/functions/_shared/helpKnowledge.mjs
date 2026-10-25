@@ -1,6 +1,6 @@
 // Manual público de uso: nunca incluir datos de pacientes, credenciales ni datos de otra app.
 // Revisar las fuentes de cada guía cuando cambie una pantalla.
-export const KNOWLEDGE_VERSION = '2026-10-24.5';
+export const KNOWLEDGE_VERSION = '2026-10-24.6';
 const guide = (id, category, title, keywords, source, steps, note = '', prereq = '') => ({
   id, category, title, keywords, source, steps, note, prereq,
 });export const HELP_GUIDES = [
@@ -291,12 +291,12 @@ const guide = (id, category, title, keywords, source, steps, note = '', prereq =
     'La existencia de la integración no confirma que una clínica concreta tenga la conexión activa, sus credenciales válidas o una factura emitida. Esos estados deben comprobarse en su configuración y en el resultado de la operación.',
     'Las operaciones implementadas del servicio incluyen consultar el estado de conexión, configurar la integración y probar las credenciales. OdontoIA solo explica estas capacidades: no ejecuta esas operaciones ni necesita que pegues credenciales en el chat.',
   ], 'No inventar números de autorización, certificaciones, contratos, costos del proveedor ni estado de conexión de la clínica.'),
-  guide('seguridad-ayuda', 'Seguridad', 'Seguridad, privacidad y límites del asistente', 'seguridad politica politicas privacidad legal legalidad legalmente normativa normatividad regulacion estandares certificaciones cumplimiento cumple confidencialidad aislamiento proteccion', 'supabase/functions/odontocloud-help/auth.mjs', [
-    'Para usar la ayuda de una clínica, el servidor valida la sesión y comprueba el perfil, su pertenencia a la clínica y el estado de acceso. El navegador no puede seleccionar otra clínica para esa conversación.',
-    'OdontoIA explica documentación del sistema. No consulta expedientes, pagos ni registros reales de pacientes, no obtiene información de otras clínicas y no ejecuta cambios. Una explicación no acredita que una operación haya quedado realizada.',
-    'Las claves de conexión de la ayuda se guardan cifradas y su configuración requiere superadministrador. No compartas claves, contraseñas ni datos personales en el chat.',
-    'El código de la ayuda permite comprobar estos controles, pero no acredita certificaciones, cumplimiento integral de una norma ni auditorías de toda la plataforma. Si preguntas por un estándar, indica su nombre y solicita al responsable la política o evidencia vigente. No podemos confirmar cumplimiento sin esa evidencia.',
-  ], 'No afirmar certificaciones ISO, cumplimiento legal integral, seguridad absoluta, frecuencia de respaldos ni garantías de disponibilidad basándose solo en este manual. Estas afirmaciones requieren evidencia operativa o auditorías verificadas.'),
+  guide('seguridad-ayuda', 'Seguridad', 'Respaldo documental, privacidad y controles de acceso', 'seguridad politica politicas privacidad legal legalidad legalmente normativa normatividad regulacion estandares certificaciones cumplimiento cumple confidencialidad aislamiento proteccion terminos condiciones habeas respaldo documental', 'src/pages/landing/LegalPage.jsx', [
+    'OdontoCloud cuenta con Términos y Condiciones del Servicio y una Política de Privacidad y Tratamiento de Datos. En el sitio oficial se consultan en las rutas /terminos y /privacidad. Estos documentos explican las condiciones del servicio y el tratamiento de información personal.',
+    'La política publicada describe a la clínica como responsable del tratamiento de los datos de sus pacientes y a OdontoCloud como encargado tecnológico. Expone las finalidades de tratamiento y los derechos y canales para consultas o reclamos de los titulares.',
+    'El sistema implementa controles de autenticación, perfiles y permisos, y reglas de acceso por clínica. En la ayuda, el servidor valida la sesión y la pertenencia del usuario; la configuración de la conexión está reservada al superadministrador y su clave se guarda cifrada.',
+    'Puedes consultar la política y los términos desde el sitio oficial. Para documentos de contratación, una copia formal o una acreditación específica, solicita al equipo de soporte el documento correspondiente. OdontoIA puede orientarte sobre la sección que necesitas consultar.',
+  ], 'Consulta los documentos publicados en /privacidad y /terminos. No compartas claves ni información personal de pacientes en el chat.'),
   guide('seguridad-migracion', 'Tecnología', 'Seguridad en la Nube y Migración de Datos', 'seguridad nube copias backup privacidad datos migrar migracion pasar datos excel importar instalar requisitos servidor mac windows', 'src/constants/MasterConfig.js', [
     'Plataforma 100% en la Nube: No requiere instalar programas ni comprar servidores locales. Funciona en Windows, Mac, iPads, tablets y smartphones con conexión a Internet.',
     'Seguridad y Privacidad: Copias de seguridad automáticas diarias, cifrado de datos y aislamiento absoluto entre clínicas bajo ley de Habeas Data.',

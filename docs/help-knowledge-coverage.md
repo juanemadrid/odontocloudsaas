@@ -50,7 +50,7 @@ La IA puede leer las guías completas; no recibe código fuente, secretos, regis
 | prueba-gratis | Iniciar Prueba Gratuita de 30 Días | [fuente](../src/components/landing/TrialModal.jsx) | 4 |
 | contacto-soporte | Contacto Comercial y Asesoría Humana por WhatsApp | [fuente](../src/pages/landing/FAQPage.jsx) | 4 |
 
-| seguridad-ayuda | Seguridad, privacidad y límites del asistente | [fuente](../supabase/functions/odontocloud-help/auth.mjs) | 4 |
+| seguridad-ayuda | Respaldo documental, privacidad y controles de acceso | [fuente](../src/pages/landing/LegalPage.jsx) | 4 |
 | proveedor-electronico | Integración Factus | [fuente](../src/services/factusProxyService.js) | 3 |
 
 ## Límites que deben mantenerse visibles en el desarrollo
