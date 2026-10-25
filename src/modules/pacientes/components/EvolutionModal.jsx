@@ -1545,13 +1545,13 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                         <button
                                             type="button"
                                             onClick={() => setShowAIAssistant(!showAIAssistant)}
-                                            className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-all duration-300 shadow-sm border ${
+                                            className={`px-3 py-1.5 rounded-xl text-[11px] font-bold tracking-wide flex items-center gap-1.5 transition-all border ${
                                                 showAIAssistant 
-                                                    ? 'bg-rose-500 text-white border-rose-500 hover:bg-rose-600 active:scale-95 shadow-rose-100' 
-                                                    : 'bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600 hover:shadow-md hover:shadow-indigo-100 active:scale-95'
+                                                    ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300' 
+                                                    : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200 shadow-xs'
                                             }`}
                                         >
-                                            🎙️ {showAIAssistant ? "Ocultar Asistente" : "Asistente Nova"}
+                                            ✨ {showAIAssistant ? "Cerrar Asistente" : "Asistente de Evolución"}
                                         </button>
                                     </div>
                                     
@@ -1809,13 +1809,13 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                         <button
                                             type="button"
                                             onClick={() => setShowAIAssistant(!showAIAssistant)}
-                                            className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-xs border ${
+                                            className={`px-3 py-1.5 rounded-xl text-[11px] font-bold tracking-wide flex items-center gap-1.5 transition-all border ${
                                                 showAIAssistant 
-                                                    ? 'bg-rose-500 text-white border-rose-500 hover:bg-rose-600' 
-                                                    : 'bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600'
+                                                    ? 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300' 
+                                                    : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-200 shadow-xs'
                                             }`}
                                         >
-                                            🎙️ {showAIAssistant ? "Ocultar Asistente" : "Asistente Nova"}
+                                            ✨ {showAIAssistant ? "Cerrar Asistente" : "Asistente de Evolución"}
                                         </button>
                                     </div>
                                     <textarea 
