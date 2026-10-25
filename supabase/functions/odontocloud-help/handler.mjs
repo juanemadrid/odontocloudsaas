@@ -148,7 +148,7 @@ export function createHelpHandler({ authenticate, reserve, resolveConfig, env, f
       'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
       'Content-Type': 'application/json',
-      'X-Odonto-Help-Version': '2026-10-24-library-1',
+      'X-Odonto-Help-Version': '2026-10-24-quota-1',
       'Cache-Control': 'no-store',
     };
     const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers });

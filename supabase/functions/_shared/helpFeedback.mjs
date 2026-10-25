@@ -1,5 +1,14 @@
 export function helpFallbackMessage(result = {}) {
   const code = result.diagnostic;
+  const quotaMessages = {
+    reservation_user_cooldown: 'Todavía no han pasado 10 segundos desde tu consulta anterior. Espera unos segundos; se muestra el manual.',
+    reservation_global_minute: 'Se alcanzaron las 4 consultas por minuto compartidas entre todas las clínicas y las pruebas. Espera un minuto; se muestra el manual.',
+    reservation_global_day: 'Se alcanzó el límite diario interno de OdontoCloud entre todas las clínicas y pruebas. Se renueva a medianoche de Colombia; esperar un minuto no lo restablece. Se muestra el manual.',
+    reservation_global_month: 'Se alcanzó el límite mensual interno de OdontoCloud entre todas las clínicas y pruebas. Se muestra el manual.',
+    reservation_clinic_day: 'Esta clínica alcanzó su límite diario interno de ayuda, incluyendo las pruebas. Se renueva a medianoche de Colombia; esperar un minuto no lo restablece. Se muestra el manual.',
+    reservation_clinic_month: 'Esta clínica alcanzó su límite mensual interno de ayuda, incluyendo las pruebas. Se muestra el manual.',
+  };
+  if (Object.hasOwn(quotaMessages, code)) return quotaMessages[code];
   if (result.provider === 'assistant' && ['disabled', 'quota', 'not_configured', 'unavailable'].includes(result.reason)) {
     return result.reason === 'quota' ? 'La IA alcanzó una cuota o una espera temporal. Este es un mensaje automático; espera al menos 10 segundos antes de volver a intentar.' : 'La IA no está disponible para esta conversación en este momento. Este es un mensaje automático de apoyo.';
   }

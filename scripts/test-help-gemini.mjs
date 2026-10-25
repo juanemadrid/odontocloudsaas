@@ -240,3 +240,10 @@ for (const question of ['como se hace una liquidacion a doctores', 'como liquido
   assert.doesNotMatch(JSON.stringify(body), /Nuevo Usuario/);
 }
 assert.equal(resolveHelpGuides('crear un doctor', ['liquidaciones'])[0].id, 'usuarios');
+
+for (const diagnostic of ['user_cooldown','global_minute','global_day','global_month','clinic_day','clinic_month']) {
+  const response = await handler({reserve: async () => ({allowed:false,reason:'quota',diagnostic})})(request());
+  const result = await response.json();
+  assert.equal(result.diagnostic, 'reservation_' + diagnostic);
+  assert.notEqual(helpFallbackMessage(result), helpFallbackMessage({reason:'quota'}));
+}

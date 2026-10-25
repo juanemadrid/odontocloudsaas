@@ -54,7 +54,7 @@ export async function generateManagedHelp({ guide, reference: selectedReference,
   if (!HELP_GEMINI_MODELS.includes(model)) return { reason: 'not_configured' };
   if (!principal || typeof reserve !== 'function') return { reason: 'disabled' };
   const reservation = await reserve(principal, signal);
-  if (!reservation?.allowed) return { reason: reservation?.reason === 'quota' ? 'quota' : 'disabled', diagnostic: 'reservation_' + (reservation?.reason === 'quota' ? 'quota' : 'disabled') };
+  if (!reservation?.allowed) return { reason: reservation?.reason === 'quota' ? 'quota' : 'disabled', diagnostic: 'reservation_' + (reservation?.reason === 'quota' ? (['user_cooldown', 'global_minute', 'global_day', 'global_month', 'clinic_day', 'clinic_month'].includes(reservation.diagnostic) ? reservation.diagnostic : 'quota') : 'disabled') };
   const reference = [guide.title, guide.prereq, selectedReference || guide.steps.map((s, i) => `${i + 1}. ${s}`).join('\n'), guide.note].filter(Boolean).join('\n');
   const isV3 = typeof model === 'string' && (model.startsWith('gemini-3') || model.includes('-3.'));
   const isV25 = typeof model === 'string' && model.includes('2.5');

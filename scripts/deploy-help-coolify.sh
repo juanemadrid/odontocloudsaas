@@ -14,7 +14,7 @@ FILES=(
   odontocloud-help-settings/index.ts odontocloud-help-settings/auth.mjs odontocloud-help-settings/handler.mjs
   _shared/helpKnowledge.mjs _shared/helpConversation.mjs _shared/helpCrypto.mjs _shared/helpApiKey.mjs _shared/helpRuntime.ts _shared/helpFeedback.mjs _shared/helpMeaning.mjs _shared/helpTriage.mjs _shared/helpLibrary.mjs tenant-secrets/crypto.ts
 )
-MIGRATIONS=(20261024142001_odontocloud_help_controls.sql 20261024145608_odontocloud_help_credentials.sql 20261024151000_expand_help_models.sql)
+MIGRATIONS=(20261024142001_odontocloud_help_controls.sql 20261024145608_odontocloud_help_credentials.sql 20261024151000_expand_help_models.sql 20261025010000_help_quota_diagnostics.sql)
 for cmd in docker curl flock realpath openssl; do command -v "$cmd" >/dev/null || { echo "Missing command: $cmd"; exit 1; }; done
 exec 9>/tmp/odontocloud-help-deploy.lock
 flock -n 9 || { echo 'Another OdontoCloud help deployment is running.'; exit 1; }
@@ -62,6 +62,7 @@ install_migration() {
 install_migration 0 "SELECT (to_regclass('public.odonto_help_global') IS NOT NULL)::int + (to_regclass('public.odonto_help_clinics') IS NOT NULL)::int + (to_regclass('public.odonto_help_usage') IS NOT NULL)::int + (to_regprocedure('public.reserve_odonto_help_request(uuid,uuid)') IS NOT NULL)::int" 4
 install_migration 1 "SELECT (to_regclass('public.odonto_help_credentials') IS NOT NULL)::int + (to_regclass('public.odonto_help_key_checks') IS NOT NULL)::int + (to_regprocedure('public.reserve_odonto_help_key_check(uuid)') IS NOT NULL)::int" 3
 sql < "$STAGE/${MIGRATIONS[2]}"
+sql < "$STAGE/${MIGRATIONS[3]}"
 sql -c "UPDATE public.odonto_help_key_checks SET day_count = 0, minute_count = 0 WHERE id = true;"
 # Provision a dedicated persistent key without modifying existing tenant encryption.
 # Never regenerate a missing key when it already protects a saved help credential.
@@ -101,7 +102,7 @@ verified=false
 for attempt in 1 2 3; do
   if curl --silent --show-error --max-time 12 -D "$STAGE/endpoint-headers" -o /dev/null \
     'https://supabasekong-ueh7xuehxl9thmhre7fpk4xx.150.136.210.37.sslip.io/functions/v1/odontocloud-help-settings' && \
-    grep -qi '^x-odonto-help-version: 2026-10-24-library-1' "$STAGE/endpoint-headers"; then
+    grep -qi '^x-odonto-help-version: 2026-10-24-quota-1' "$STAGE/endpoint-headers"; then
     verified=true; break
   fi
   sleep 2
@@ -111,5 +112,5 @@ if [[ "$verified" != true ]]; then
   exit 1
 fi
 echo "OdontoCloud help backend installed from $REVISION. Backup: $BACKUP"
-echo 'Settings endpoint version verified: 2026-10-24-library-1.'
+echo 'Settings endpoint version verified: 2026-10-24-quota-1.'
 echo 'Now test Help AI settings in the superadmin panel, save the dedicated API key, then enable the desired clinic.'

@@ -24,6 +24,8 @@ try {
     INSERT INTO public.profiles VALUES ('${userA}','${clinicA}',true,'admin'),('${userB}','${clinicB}',true,'admin'),('${admin}',null,true,'superadmin');`);
   await db.exec(readFileSync('supabase/migrations/20261024142001_odontocloud_help_controls.sql', 'utf8'));
   await db.exec(readFileSync('supabase/migrations/20261024145608_odontocloud_help_credentials.sql', 'utf8'));
+  await db.exec(readFileSync('supabase/migrations/20261025010000_help_quota_diagnostics.sql', 'utf8'));
+  await db.exec(readFileSync('supabase/migrations/20261025010000_help_quota_diagnostics.sql', 'utf8'));
   const reserve = async (u = userA, t = clinicA) => (await db.query('select public.reserve_odonto_help_request($1,$2) as result', [u,t])).rows[0].result;
   await db.exec('SET ROLE service_role');
   assert.equal((await reserve()).reason, 'disabled');
@@ -44,11 +46,11 @@ try {
   await db.exec('RESET ROLE; SET ROLE service_role');
   assert.equal((await reserve(userA,clinicB)).reason, 'disabled');
   assert.equal((await reserve()).allowed, true);
-  assert.equal((await reserve()).reason, 'quota'); // cooldown
+  assert.equal((await reserve()).diagnostic, 'user_cooldown'); // cooldown
   await db.exec("DELETE FROM public.odonto_help_usage WHERE period = 'cooldown'");
   assert.equal((await reserve()).allowed, true);
   await db.exec("DELETE FROM public.odonto_help_usage WHERE period = 'cooldown'");
-  assert.equal((await reserve()).reason, 'quota'); // clinic daily limit
+  assert.equal((await reserve()).diagnostic, 'clinic_day'); // clinic daily limit
   await db.exec(`UPDATE public.odonto_help_clinics SET enabled = true WHERE tenant_id = '${clinicB}'`);
   assert.equal((await reserve(userA,clinicB)).reason, 'disabled'); // authoritative membership
   assert.equal((await reserve(userB,clinicB)).allowed, true); // isolation
@@ -60,7 +62,7 @@ try {
   await db.exec(`UPDATE public.odonto_help_clinics SET enabled = true WHERE tenant_id = '${clinicA}';
     UPDATE public.odonto_help_global SET monthly_limit = 1;`);
   assert.equal((await reserve()).allowed, true);
-  assert.equal((await reserve(userB,clinicB)).reason, 'quota'); // global monthly cap
+  assert.equal((await reserve(userB,clinicB)).diagnostic, 'global_month'); // global monthly cap
   await db.exec(`RESET ROLE; UPDATE public.profiles SET activo = false WHERE id = '${userA}';
     DELETE FROM public.odonto_help_usage; SET ROLE service_role;`);
   assert.equal((await reserve()).reason, 'disabled');
