@@ -295,7 +295,7 @@ function detectScreenContext() {
         <aside
             ref={dialogRef}
             role="complementary"
-            aria-label="Asistente de ayuda y guías de OdontoCloud"
+            aria-label="Chat con OdontoIA"
             onKeyDown={handleKeys}
             className="fixed bottom-4 right-4 z-[999] w-[450px] max-w-[calc(100vw-1.5rem)] h-[620px] max-h-[calc(100dvh-4.5rem)] bg-white rounded-2xl shadow-2xl border border-slate-200/90 flex flex-col overflow-hidden animate-in slide-in-from-bottom-5 duration-200 font-sans"
             style={{ boxShadow: '0 20px 45px -10px rgba(15, 23, 42, 0.3), 0 0 0 1px rgba(15, 23, 42, 0.08)' }}
@@ -309,10 +309,10 @@ function detectScreenContext() {
                     <div className="min-w-0">
                         <div className="text-emerald-300 text-[10px] uppercase tracking-wider font-extrabold flex items-center gap-1.5">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                            Guía en vivo
+                            Asistente virtual
                         </div>
                         <h2 id="help-title" className="text-xs sm:text-sm font-bold truncate text-white leading-tight">
-                            Ayuda de OdontoCloud
+                            OdontoIA
                         </h2>
                     </div>
                 </div>
@@ -380,36 +380,22 @@ function detectScreenContext() {
             {activeTab === 'chat' && (
                 <div className="flex flex-col flex-1 min-h-0 bg-white">
                     {/* Mensajes del chat */}
-                    <div role="log" aria-live="polite" className="flex-1 overflow-y-auto p-4 space-y-4 bg-white">
+                    <div role="log" aria-live="polite" className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-100/70">
                         {messages.map((message, index) => (
                             <div 
                                 key={message.id || index}
                                 id={message.id}
                                 className={message.sender === 'user' 
                                     ? 'ml-auto max-w-[88%] bg-blue-600 text-white rounded-2xl rounded-br-xs p-3 text-xs shadow-xs' 
-                                    : 'max-w-full bg-slate-50 border border-slate-200/80 rounded-2xl p-3.5 shadow-2xs text-slate-700'
+                                    : 'mr-auto max-w-[94%] bg-white border border-slate-200/80 rounded-2xl rounded-tl-xs p-3.5 shadow-2xs text-slate-700'
                                 }
                             >
                                 {message.sender === 'user' ? (
                                     <div className="font-medium whitespace-pre-wrap break-words">{message.text}</div>
                                 ) : (
                                     <>
-                                        <div className="flex items-center gap-1.5 mb-2 text-[10px] font-bold uppercase tracking-wider">
-                                            {message.pending ? (
-                                                <span className="text-slate-400">OdontoIA está escribiendo…</span>
-                                            ) : message.provider === 'gemini' ? (
-                                                <span className="text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-bold text-[10px] flex items-center gap-1 shadow-2xs">
-                                                    ✨ Respuesta generada con Gemini AI {message.model ? `· ${message.model}` : ''}
-                                                </span>
-                                            ) : message.provider === 'manual' ? (
-                                                <span className="text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full font-semibold text-[10px] flex items-center gap-1">
-                                                    📖 Guía de la biblioteca
-                                                </span>
-                                            ) : (
-                                                <span className="text-slate-500 flex items-center gap-1">
-                                                    <FiMessageSquare size={11} /> Mensaje automático de ayuda
-                                                </span>
-                                            )}
+                                        <div className="mb-1.5 text-[11px] font-semibold text-teal-700">
+                                            {message.pending ? 'OdontoIA está escribiendo…' : 'OdontoIA'}
                                         </div>
                                         {helpFallbackMessage(message) && (
                                             <p className="text-[11px] text-amber-800 bg-amber-50 rounded-lg p-2 mb-2 border border-amber-200">
