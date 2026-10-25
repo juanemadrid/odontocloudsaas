@@ -1,7 +1,7 @@
 import { normalize, KNOWLEDGE_VERSION } from '../_shared/helpKnowledge.mjs';
 import { HELP_GEMINI_MODELS, HELP_GEMINI_DEFAULT_MODEL } from '../_shared/helpApiKey.mjs';
 import { projectHelpMeaning, projectHelpHistory } from '../_shared/helpMeaning.mjs';
-import { HELP_TRIAGE_ID, isHelpOpening } from '../_shared/helpTriage.mjs';
+import { HELP_TRIAGE_ID, isHelpOpening, isHelpFeedback } from '../_shared/helpTriage.mjs';
 import { HELP_LIBRARY_CATALOG, HELP_LIBRARY_TOOL, readSystemGuides } from '../_shared/helpLibrary.mjs';
 
 // No raw question, history, identifier or client supplied text crosses the provider boundary.
@@ -16,6 +16,7 @@ export function helpSafetyReason(question) {
 
 export function safeHelpIntent(question, reference = '') {
   const q = normalize(question);
+  if (isHelpFeedback(question)) return 'El mensaje actual es una crítica o inconformidad, no una solicitud de repetir el manual anterior. Reconoce el problema en una frase, sin defender el producto ni recitar políticas. Si explica qué respuesta fue incorrecta, corrígela con documentación; si no, pregunta brevemente qué ocurrió o qué necesitaba resolver. No repitas la respuesta previa. Máximo 60 palabras.';
   if (isHelpOpening(question)) return 'Acompaña la conversación: el usuario todavía está intentando expresar su duda. Invítalo con naturalidad a contar qué le pasa o qué quiere lograr, sin exigir nombres de módulos ni repetir un tutorial. Haz solo una pregunta sencilla.';
   if (/que pasa|que sucede|por que|significa|consecuencia|\bsi\b.*\bno\b|\bsin\b/.test(q)) return 'Responde al significado, motivo o condición que pregunta el usuario. Conserva las negaciones. No sustituyas esa duda por un tutorial de cómo generar o crear. Si hay dos interpretaciones, acláralas o pregunta cuál corresponde.';
   if (/no entendi|no entiendo|explicame mejor|mas despacio/.test(q)) return 'Explica de otra forma el próximo paso documentado, con palabras sencillas. No repitas toda la guía.';
