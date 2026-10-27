@@ -1184,19 +1184,39 @@ function SignatureModal({ isOpen, onClose, evolution, patient, clinicInfo, onSav
         }
     }, [isOpen, evolution]);
 
-    // Lógica de Dibujo del Canvas
+    // Lógica de Dibujo del Canvas con calibración de escala exacta
     const getCoordinates = (e) => {
         const canvas = canvasRef.current;
+        if (!canvas) return { x: 0, y: 0 };
         const rect = canvas.getBoundingClientRect();
-        const clientX = e.clientX || (e.touches && e.touches[0].clientX);
-        const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+        let clientX = 0;
+        let clientY = 0;
+
+        if (e.touches && e.touches.length > 0) {
+            clientX = e.touches[0].clientX;
+            clientY = e.touches[0].clientY;
+        } else if (e.changedTouches && e.changedTouches.length > 0) {
+            clientX = e.changedTouches[0].clientX;
+            clientY = e.changedTouches[0].clientY;
+        } else {
+            clientX = e.clientX;
+            clientY = e.clientY;
+        }
+
+        const scaleX = rect.width > 0 ? (canvas.width / rect.width) : 1;
+        const scaleY = rect.height > 0 ? (canvas.height / rect.height) : 1;
+
         return {
-            x: clientX - rect.left,
-            y: clientY - rect.top
+            x: (clientX - rect.left) * scaleX,
+            y: (clientY - rect.top) * scaleY
         };
     };
 
     const startDrawing = (e) => {
+        if (!canvasRef.current) return;
+        if (e.cancelable && e.type.startsWith('touch')) {
+            e.preventDefault();
+        }
         const { x, y } = getCoordinates(e);
         const ctx = canvasRef.current.getContext('2d');
         
@@ -1211,6 +1231,9 @@ function SignatureModal({ isOpen, onClose, evolution, patient, clinicInfo, onSav
 
     const draw = (e) => {
         if (!isDrawing) return;
+        if (e.cancelable && e.type.startsWith('touch')) {
+            e.preventDefault();
+        }
         const { x, y } = getCoordinates(e);
         const ctx = canvasRef.current.getContext('2d');
         ctx.lineTo(x, y);

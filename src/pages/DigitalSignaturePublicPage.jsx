@@ -59,11 +59,24 @@ export default function DigitalSignaturePublicPage() {
     useEffect(() => {
         if (!canvasRef.current || signatureSaved || !authVerified) return;
         const canvas = canvasRef.current;
-        const ctx = canvas.getContext("2d");
-        ctx.strokeStyle = "#0f172a";
-        ctx.lineWidth = 2.5;
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
+        const setupCanvas = () => {
+            const rect = canvas.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+                // Ajustar resolución interna al tamaño real del contenedor multiplicado por devicePixelRatio
+                const dpr = window.devicePixelRatio || 1;
+                canvas.width = Math.round(rect.width * dpr);
+                canvas.height = Math.round(rect.height * dpr);
+                const ctx = canvas.getContext("2d");
+                ctx.scale(dpr, dpr);
+                ctx.strokeStyle = "#0f172a";
+                ctx.lineWidth = 2.5;
+                ctx.lineCap = "round";
+                ctx.lineJoin = "round";
+            }
+        };
+        setupCanvas();
+        window.addEventListener("resize", setupCanvas);
+        return () => window.removeEventListener("resize", setupCanvas);
     }, [authVerified, signatureSaved]);
 
     // 2. Verificar identidad del paciente (4 últimos dígitos) contra el token
@@ -126,12 +139,27 @@ export default function DigitalSignaturePublicPage() {
         }
     };
 
-    // Funciones del Canvas
+    // Funciones del Canvas con escala milimétrica exacta
     const getCoordinates = (e) => {
         const canvas = canvasRef.current;
+        if (!canvas) return { x: 0, y: 0 };
         const rect = canvas.getBoundingClientRect();
-        const clientX = e.clientX || (e.touches && e.touches[0].clientX);
-        const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+        
+        let clientX = 0;
+        let clientY = 0;
+
+        if (e.touches && e.touches.length > 0) {
+            clientX = e.touches[0].clientX;
+            clientY = e.touches[0].clientY;
+        } else if (e.changedTouches && e.changedTouches.length > 0) {
+            clientX = e.changedTouches[0].clientX;
+            clientY = e.changedTouches[0].clientY;
+        } else {
+            clientX = e.clientX;
+            clientY = e.clientY;
+        }
+
+        // Medidas lógicas en CSS (coinciden exactamente con ctx.scale(dpr, dpr))
         return {
             x: clientX - rect.left,
             y: clientY - rect.top
@@ -140,6 +168,9 @@ export default function DigitalSignaturePublicPage() {
 
     const startDrawing = (e) => {
         if (!canvasRef.current) return;
+        if (e.cancelable && e.type.startsWith("touch")) {
+            e.preventDefault();
+        }
         const { x, y } = getCoordinates(e);
         const ctx = canvasRef.current.getContext("2d");
         ctx.beginPath();
@@ -150,6 +181,9 @@ export default function DigitalSignaturePublicPage() {
 
     const draw = (e) => {
         if (!isDrawing || !canvasRef.current) return;
+        if (e.cancelable && e.type.startsWith("touch")) {
+            e.preventDefault();
+        }
         const { x, y } = getCoordinates(e);
         const ctx = canvasRef.current.getContext("2d");
         ctx.lineTo(x, y);
@@ -164,7 +198,10 @@ export default function DigitalSignaturePublicPage() {
         if (!canvasRef.current) return;
         const canvas = canvasRef.current;
         const ctx = canvas.getContext("2d");
+        ctx.save();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.restore();
         setHasDrawn(false);
     };
 
@@ -458,8 +495,6 @@ export default function DigitalSignaturePublicPage() {
                     <div className="border border-slate-300 rounded-xl overflow-hidden bg-white relative h-48 sm:h-56 touch-none shadow-inner">
                         <canvas
                             ref={canvasRef}
-                            width={700}
-                            height={220}
                             onMouseDown={startDrawing}
                             onMouseMove={draw}
                             onMouseUp={stopDrawing}
@@ -467,7 +502,7 @@ export default function DigitalSignaturePublicPage() {
                             onTouchStart={startDrawing}
                             onTouchMove={draw}
                             onTouchEnd={stopDrawing}
-                            className="w-full h-full cursor-crosshair"
+                            className="w-full h-full cursor-crosshair touch-none select-none"
                         />
                         {!hasDrawn && (
                             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
