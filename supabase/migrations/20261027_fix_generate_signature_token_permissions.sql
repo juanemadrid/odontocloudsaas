@@ -247,7 +247,7 @@ BEGIN
         END IF;
     END IF;
 
-    v_first_name := pg_catalog.split_part(pg_catalog.trim(COALESCE(v_record.nombres, 'Estimado Paciente')), ' ', 1);
+    v_first_name := pg_catalog.split_part(pg_catalog.btrim(COALESCE(v_record.nombres, 'Estimado Paciente')), ' ', 1);
 
     RETURN pg_catalog.jsonb_build_object(
         'success', true,
