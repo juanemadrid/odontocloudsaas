@@ -289,26 +289,84 @@ export default function DigitalSignaturePublicPage() {
         }
     };
 
-    // 4. Descargar PDF limpio del documento clínico (sin botones ni banners)
+    // 4. Descargar PDF limpio del documento clínico (Calibrado idéntico a la impresión)
     const handleDownloadPDF = async () => {
         if (!documentRef.current) return;
+        
+        // Contenedor temporal aislado con medidas y proporciones exactas de papel carta
+        const container = document.createElement("div");
+        container.style.position = "fixed";
+        container.style.top = "-99999px";
+        container.style.left = "-99999px";
+        container.style.width = "710px";
+        container.style.maxWidth = "710px";
+        container.style.backgroundColor = "#ffffff";
+        container.style.color = "#0f172a";
+        container.style.fontFamily = "Arial, Helvetica, sans-serif";
+        container.style.boxSizing = "border-box";
+        container.style.padding = "0";
+        container.style.margin = "0";
+        container.style.zIndex = "-9999";
+
+        // Clonar el documento clínico limpio
+        const clone = documentRef.current.cloneNode(true);
+        clone.style.width = "710px";
+        clone.style.maxWidth = "710px";
+        clone.style.boxShadow = "none";
+        clone.style.borderRadius = "0";
+        clone.style.border = "none";
+        clone.style.backgroundColor = "#ffffff";
+        clone.style.padding = "0";
+        clone.style.margin = "0";
+        
+        container.appendChild(clone);
+        document.body.appendChild(container);
+
         try {
-            const canvas = await html2canvas(documentRef.current, {
-                scale: 2,
+            // Asegurar carga completa de todas las imágenes
+            const imgs = container.querySelectorAll("img");
+            await Promise.all(
+                Array.from(imgs).map(img => {
+                    if (img.complete) return Promise.resolve();
+                    return new Promise(resolve => {
+                        img.onload = resolve;
+                        img.onerror = resolve;
+                    });
+                })
+            );
+
+            const canvas = await html2canvas(container, {
+                scale: 2.5,
                 useCORS: true,
                 backgroundColor: "#ffffff",
-                logging: false
+                logging: false,
+                width: 710
             });
+
             const imgData = canvas.toDataURL("image/png");
-            const pdf = new jsPDF("p", "mm", "letter");
-            const pdfWidth = pdf.internal.pageSize.getWidth();
-            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-            
-            pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-            pdf.save(`Evolucion_${patientInfo?.name || patientFirstName || "Paciente"}_${new Date().toISOString().slice(0, 10)}.pdf`);
+            const pdf = new jsPDF({
+                orientation: "portrait",
+                unit: "mm",
+                format: "letter"
+            });
+
+            // Calibrar márgenes exactamente idénticos al formato de impresión oficial:
+            // 14mm laterales, 12mm superior
+            const pageWidth = pdf.internal.pageSize.getWidth(); // 215.9 mm
+            const marginX = 14;
+            const marginY = 12;
+            const printableWidth = pageWidth - (marginX * 2); // 187.9 mm
+            const printableHeight = (canvas.height * printableWidth) / canvas.width;
+
+            pdf.addImage(imgData, "PNG", marginX, marginY, printableWidth, printableHeight, undefined, "FAST");
+            pdf.save(`Evolucion_${(patientDisplayName || "Paciente").replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 10)}.pdf`);
         } catch (error) {
             console.error("Error al descargar PDF:", error);
-            window.print();
+            handlePrint();
+        } finally {
+            try {
+                document.body.removeChild(container);
+            } catch {}
         }
     };
 
@@ -621,33 +679,33 @@ export default function DigitalSignaturePublicPage() {
                         </div>
 
                         {/* Tabla Institucional de Datos del Paciente (Formato OralDrive) */}
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'sans-serif', fontSize: '9px', color: '#1e293b', border: '1px solid #475569' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '9px', color: '#1e293b', border: '1px solid #cbd5e1' }}>
                             <tbody>
                                 <tr>
-                                    <td style={{ border: '1px solid #475569', padding: '4px 6px', fontWeight: 'bold', width: '20%', backgroundColor: '#f8fafc' }}>Nombre del paciente</td>
-                                    <td style={{ border: '1px solid #475569', padding: '4px 6px', width: '30%' }}>{patientDisplayName}</td>
-                                    <td style={{ border: '1px solid #475569', padding: '4px 6px', fontWeight: 'bold', width: '12%', backgroundColor: '#f8fafc' }}>Edad</td>
-                                    <td style={{ border: '1px solid #475569', padding: '4px 6px', width: '13%' }}>{patientInfo?.edad ? `${patientInfo.edad} años` : "—"}</td>
-                                    <td style={{ border: '1px solid #475569', padding: '4px 6px', fontWeight: 'bold', width: '12%', backgroundColor: '#f8fafc' }}>Nro Historia</td>
-                                    <td style={{ border: '1px solid #475569', padding: '4px 6px', width: '13%' }}>{patientDocNumber}</td>
+                                    <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', width: '20%', backgroundColor: '#f8fafc' }}>Nombre del paciente</td>
+                                    <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', width: '30%' }}>{patientDisplayName}</td>
+                                    <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', width: '12%', backgroundColor: '#f8fafc' }}>Edad</td>
+                                    <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', width: '13%' }}>{patientInfo?.edad ? `${patientInfo.edad} años` : "—"}</td>
+                                    <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', width: '12%', backgroundColor: '#f8fafc' }}>Nro Historia</td>
+                                    <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', width: '13%' }}>{patientDocNumber}</td>
                                 </tr>
                                 <tr>
-                                    <td style={{ border: '1px solid #475569', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Tipo documento</td>
-                                    <td style={{ border: '1px solid #475569', padding: '4px 6px' }}>{patientInfo?.tipo_documento || "Cédula de ciudadanía"}</td>
-                                    <td style={{ border: '1px solid #475569', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Nro documento</td>
-                                    <td style={{ border: '1px solid #475569', padding: '4px 6px' }} colSpan="3">{patientDocNumber}</td>
+                                    <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Tipo documento</td>
+                                    <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patientInfo?.tipo_documento || "Cédula de ciudadanía"}</td>
+                                    <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Nro documento</td>
+                                    <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }} colSpan="3">{patientDocNumber}</td>
                                 </tr>
                                 <tr>
-                                    <td style={{ border: '1px solid #475569', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Sexo / Género</td>
-                                    <td style={{ border: '1px solid #475569', padding: '4px 6px' }}>{patientInfo?.genero || "Femenino"}</td>
-                                    <td style={{ border: '1px solid #475569', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Teléfono</td>
-                                    <td style={{ border: '1px solid #475569', padding: '4px 6px' }} colSpan="3">{patientInfo?.telefono || "—"}</td>
+                                    <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Sexo / Género</td>
+                                    <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{patientInfo?.genero || "Femenino"}</td>
+                                    <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Teléfono</td>
+                                    <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }} colSpan="3">{patientInfo?.telefono || "—"}</td>
                                 </tr>
                                 <tr>
-                                    <td style={{ border: '1px solid #475569', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Doctor Tratante</td>
-                                    <td style={{ border: '1px solid #475569', padding: '4px 6px' }}>{doctorDisplayName}</td>
-                                    <td style={{ border: '1px solid #475569', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Fecha atención</td>
-                                    <td style={{ border: '1px solid #475569', padding: '4px 6px' }} colSpan="3">
+                                    <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Doctor Tratante</td>
+                                    <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }}>{doctorDisplayName}</td>
+                                    <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Fecha atención</td>
+                                    <td style={{ border: '1px solid #cbd5e1', padding: '4px 6px' }} colSpan="3">
                                         {documentSnapshot?.fecha ? new Date(documentSnapshot.fecha).toLocaleDateString("es-CO", { day: 'numeric', month: 'long', year: 'numeric' }) : new Date().toLocaleDateString("es-CO")}
                                     </td>
                                 </tr>
