@@ -169,7 +169,7 @@ BEGIN
         RAISE EXCEPTION 'NOT_AUTHENTICATED: Sesión requerida para registrar una nota aclaratoria.';
     END IF;
 
-    v_clean_comment := pg_catalog.btrim(pg_catalog.coalesce(p_comentario, ''));
+    v_clean_comment := pg_catalog.btrim(COALESCE(p_comentario, ''));
     IF pg_catalog.length(v_clean_comment) < 5 OR pg_catalog.length(v_clean_comment) > 5000 THEN
         RAISE EXCEPTION 'INVALID_ADDENDUM_LENGTH: La nota aclaratoria debe contener entre 5 y 5000 caracteres.';
     END IF;
@@ -197,7 +197,7 @@ BEGIN
         RAISE EXCEPTION 'UNAUTHORIZED_CLINICAL_ROLE_REQUIRED: Solo profesionales clínicos habilitados pueden redactar notas aclaratorias.';
     END IF;
 
-    v_author_snapshot := jsonb_build_object(
+    v_author_snapshot := pg_catalog.jsonb_build_object(
         'author_id', v_user_id,
         'author_name', v_profile.full_name,
         'author_role', COALESCE(NULLIF(v_normalized_role, ''), 'odontologo'),
@@ -207,7 +207,7 @@ BEGIN
 
     v_created_at := pg_catalog.clock_timestamp();
 
-    v_addendum_snapshot := jsonb_build_object(
+    v_addendum_snapshot := pg_catalog.jsonb_build_object(
         'evolution_id', p_evolution_id,
         'tenant_id', v_evo.tenant_id,
         'author_id', v_user_id,
@@ -239,7 +239,7 @@ BEGIN
     )
     RETURNING id INTO v_addendum_id;
 
-    RETURN jsonb_build_object(
+    RETURN pg_catalog.jsonb_build_object(
         'success', true,
         'addendum_id', v_addendum_id,
         'evolution_id', p_evolution_id,
