@@ -1,12 +1,13 @@
 -- ==============================================================================
--- MIGRACIÓN: FIX DEFINITIVO DE PERMISOS Y VERIFICACIÓN EN FIRMA DIGITAL
+-- MIGRACIÓN DEFINITIVA: LOGOTIPO DE CLÍNICA, FIRMA DEL DOCTOR Y REGISTRO SEGURO
 -- Destino: Servicio 2 OdontoCloud (Coolify, VPS 150.136.210.37). NO toca Edunexus.
 -- ==============================================================================
 
 BEGIN;
 
-CREATE OR REPLACE FUNCTION public.generate_signature_token(
-    p_evolution_id UUID
+-- 1. Helper público para obtener logo y nombre de la clínica en la pantalla de verificación
+CREATE OR REPLACE FUNCTION public.get_signature_clinic_info(
+    p_raw_token TEXT
 )
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -14,156 +15,47 @@ SECURITY DEFINER
 SET search_path = ''
 AS $$
 DECLARE
-    v_user_id UUID;
-    v_user_role TEXT;
-    v_user_active BOOLEAN;
-    v_user_tenant UUID;
-    v_evo RECORD;
-    v_paciente_doc TEXT;
-    v_clean_doc TEXT;
-    v_tratamiento_json JSONB;
-    v_doctor_name TEXT;
-    v_procedure TEXT;
-    v_description TEXT;
-    v_snapshot JSONB;
-    v_doc_hash TEXT;
-    v_raw_token TEXT;
+    v_clean_token TEXT;
     v_token_hash TEXT;
-    v_expires_at TIMESTAMPTZ;
+    v_record RECORD;
 BEGIN
-    v_user_id := auth.uid();
-    IF v_user_id IS NULL THEN
-        RAISE EXCEPTION 'UNAUTHORIZED';
+    v_clean_token := pg_catalog.lower(pg_catalog.btrim(COALESCE(p_raw_token, '')));
+    IF v_clean_token IS NULL OR NOT (v_clean_token ~ '^[0-9a-f]{48}$') THEN
+        RETURN pg_catalog.jsonb_build_object('success', false);
     END IF;
 
-    SELECT pg_catalog.lower(pg_catalog.btrim(COALESCE(role, ''))), activo, tenant_id 
-    INTO v_user_role, v_user_active, v_user_tenant
-    FROM public.profiles
-    WHERE id = v_user_id;
+    v_token_hash := pg_catalog.encode(extensions.digest(pg_catalog.convert_to(v_clean_token, 'UTF8'), 'sha256'), 'hex');
 
-    IF v_user_active IS FALSE THEN
-        RAISE EXCEPTION 'USER_INACTIVE';
+    SELECT 
+        COALESCE(t.nombre_comercial, t.nombre, 'OdontoCloud') AS clinic_name,
+        COALESCE(t.logo_url, t.logo, '') AS logo_url,
+        COALESCE(t.nit, '') AS nit,
+        COALESCE(t.direccion, '') AS direccion,
+        COALESCE(t.telefono, '') AS telefono
+    INTO v_record
+    FROM public.signature_tokens st
+    JOIN public.tenants t ON t.id = st.tenant_id
+    WHERE st.token_hash = v_token_hash
+    LIMIT 1;
+
+    IF v_record.clinic_name IS NULL THEN
+        RETURN pg_catalog.jsonb_build_object('success', false);
     END IF;
-
-    -- Solo bloquear perfiles externos tipo paciente o cliente
-    IF v_user_role IN ('paciente', 'cliente') THEN
-        RAISE EXCEPTION 'INSUFFICIENT_PERMISSIONS: Solo el personal de la clínica puede solicitar la firma del paciente.';
-    END IF;
-
-    SELECT e.id, e.tenant_id, e.paciente_id, e.fecha, e.tratamiento, e.notas, 
-           e.status, e.closure_origin, 
-           pr.full_name AS doctor_profile_name
-    INTO v_evo
-    FROM public.evoluciones e
-    LEFT JOIN public.profiles pr ON pr.id = e.profesional_id
-    WHERE e.id = p_evolution_id
-    FOR UPDATE OF e;
-
-    IF v_evo.id IS NULL THEN
-        RAISE EXCEPTION 'EVOLUTION_NOT_FOUND';
-    END IF;
-
-    IF v_user_role <> 'superadmin' AND v_user_tenant IS DISTINCT FROM v_evo.tenant_id THEN
-        RAISE EXCEPTION 'FORBIDDEN_CROSS_TENANT';
-    END IF;
-
-    -- Solo permitir firma en evoluciones formalmente cerradas por el profesional
-    IF v_evo.status IS DISTINCT FROM 'cerrada' OR v_evo.closure_origin IS DISTINCT FROM 'professional' THEN
-        RAISE EXCEPTION 'CANNOT_SIGN_UNQUALIFIED_EVOLUTION: Solo es posible solicitar la firma del paciente en evoluciones formalmente cerradas y certificadas por el profesional tratante.';
-    END IF;
-
-    SELECT documento INTO v_paciente_doc
-    FROM public.pacientes
-    WHERE id = v_evo.paciente_id AND tenant_id = v_evo.tenant_id;
-
-    IF v_paciente_doc IS NULL THEN
-        RAISE EXCEPTION 'PATIENT_TENANT_MISMATCH_OR_NOT_FOUND';
-    END IF;
-
-    v_clean_doc := pg_catalog.regexp_replace(COALESCE(v_paciente_doc, ''), '\D', '', 'g');
-    IF pg_catalog.length(v_clean_doc) < 4 THEN
-        RAISE EXCEPTION 'PATIENT_DOCUMENT_REQUIRED';
-    END IF;
-
-    -- Revocar tokens previos que ya estén bloqueados o expirados (manteniendo válidos los pendientes recientes)
-    UPDATE public.signature_tokens
-    SET status = 'revocado', updated_at = pg_catalog.timezone('utc'::text, pg_catalog.now())
-    WHERE evolution_id = p_evolution_id AND status IN ('bloqueado', 'expirado');
-
-    BEGIN
-        IF v_evo.tratamiento IS NOT NULL AND v_evo.tratamiento LIKE '{%' THEN
-            v_tratamiento_json := v_evo.tratamiento::jsonb;
-        ELSE
-            v_tratamiento_json := '{}'::jsonb;
-        END IF;
-    EXCEPTION WHEN OTHERS THEN
-        v_tratamiento_json := '{}'::jsonb;
-    END;
-
-    v_doctor_name := COALESCE(
-        v_tratamiento_json->>'profesional',
-        v_evo.doctor_profile_name,
-        'Profesional Tratante'
-    );
-    v_procedure := COALESCE(
-        v_tratamiento_json->>'treatment',
-        v_tratamiento_json->>'procedimiento',
-        'Procedimiento Clínico Odontológico'
-    );
-    v_description := COALESCE(
-        v_tratamiento_json->>'description',
-        v_tratamiento_json->>'comentario',
-        v_evo.notas,
-        'Sin descripción'
-    );
-
-    v_snapshot := pg_catalog.jsonb_build_object(
-        'fecha', v_evo.fecha,
-        'doctor_name', v_doctor_name,
-        'procedure', v_procedure,
-        'description', v_description,
-        'snapshot_version', 1
-    );
-
-    v_doc_hash := pg_catalog.encode(extensions.digest(pg_catalog.convert_to(v_snapshot::text, 'UTF8'), 'sha256'), 'hex');
-    v_raw_token := pg_catalog.encode(extensions.gen_random_bytes(24), 'hex');
-    v_token_hash := pg_catalog.encode(extensions.digest(pg_catalog.convert_to(v_raw_token, 'UTF8'), 'sha256'), 'hex');
-    v_expires_at := pg_catalog.timezone('utc'::text, pg_catalog.now()) + interval '24 hours';
-
-    INSERT INTO public.signature_tokens (
-        tenant_id,
-        patient_id,
-        evolution_id,
-        token_hash,
-        status,
-        expires_at,
-        document_snapshot,
-        document_hash,
-        created_by
-    ) VALUES (
-        v_evo.tenant_id,
-        v_evo.paciente_id,
-        v_evo.id,
-        v_token_hash,
-        'pendiente',
-        v_expires_at,
-        v_snapshot,
-        v_doc_hash,
-        v_user_id
-    );
 
     RETURN pg_catalog.jsonb_build_object(
         'success', true,
-        'raw_token', v_raw_token,
-        'expires_at', v_expires_at
+        'clinic_name', v_record.clinic_name,
+        'logo_url', v_record.logo_url,
+        'nit', v_record.nit,
+        'direccion', v_record.direccion,
+        'telefono', v_record.telefono
     );
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.generate_signature_token(UUID) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.generate_signature_token(UUID) TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.get_signature_clinic_info(TEXT) TO anon, authenticated, service_role;
 
--- Asegurar verify_signature_token resiliente
+-- 2. Verify signature token enriquecido con datos completos de clínica y doctor
 CREATE OR REPLACE FUNCTION public.verify_signature_token(
     p_raw_token TEXT,
     p_last4 TEXT
@@ -181,6 +73,9 @@ DECLARE
     v_actual_last4 TEXT;
     v_input_last4 TEXT;
     v_first_name TEXT;
+    v_clinic_info JSONB;
+    v_doctor_info JSONB;
+    v_patient_info JSONB;
 BEGIN
     v_clean_token := pg_catalog.lower(pg_catalog.btrim(COALESCE(p_raw_token, '')));
 
@@ -195,10 +90,21 @@ BEGIN
 
     v_token_hash := pg_catalog.encode(extensions.digest(pg_catalog.convert_to(v_clean_token, 'UTF8'), 'sha256'), 'hex');
 
-    SELECT st.*, p.documento, p.nombres
+    SELECT st.*, 
+           p.documento, p.tipo_documento, p.nombres, p.apellidos, p.nombre_completo,
+           p.edad, p.fecha_nacimiento, p.genero, p.sexo, p.celular, p.telefono, p.email, p.direccion,
+           t.nombre_comercial AS tenant_nombre_comercial, t.nombre AS tenant_nombre,
+           t.logo_url AS tenant_logo_url, t.logo AS tenant_logo,
+           t.nit AS tenant_nit, t.direccion AS tenant_direccion, t.telefono AS tenant_telefono,
+           e.profesional_id, e.tratamiento, e.notas, e.fecha AS evo_fecha,
+           dr.full_name AS doctor_name, dr.firma AS doctor_signature,
+           dr.registro_medico AS doctor_reg, dr.especialidad AS doctor_esp
     INTO v_record
     FROM public.signature_tokens st
     LEFT JOIN public.pacientes p ON p.id = st.patient_id
+    LEFT JOIN public.tenants t ON t.id = st.tenant_id
+    LEFT JOIN public.evoluciones e ON e.id = st.evolution_id
+    LEFT JOIN public.profiles dr ON dr.id = e.profesional_id
     WHERE st.token_hash = v_token_hash;
 
     IF v_record.id IS NULL THEN
@@ -247,21 +153,51 @@ BEGIN
         END IF;
     END IF;
 
-    v_first_name := pg_catalog.split_part(pg_catalog.btrim(COALESCE(v_record.nombres, 'Estimado Paciente')), ' ', 1);
+    v_first_name := pg_catalog.split_part(pg_catalog.btrim(COALESCE(v_record.nombres, v_record.nombre_completo, 'Estimado Paciente')), ' ', 1);
+
+    v_clinic_info := pg_catalog.jsonb_build_object(
+        'name', COALESCE(v_record.tenant_nombre_comercial, v_record.tenant_nombre, 'Clínica Odontológica'),
+        'logo', COALESCE(v_record.tenant_logo_url, v_record.tenant_logo, ''),
+        'nit', COALESCE(v_record.tenant_nit, ''),
+        'address', COALESCE(v_record.tenant_direccion, ''),
+        'phone', COALESCE(v_record.tenant_telefono, '')
+    );
+
+    v_patient_info := pg_catalog.jsonb_build_object(
+        'name', COALESCE(v_record.nombre_completo, pg_catalog.btrim(COALESCE(v_record.nombres, '') || ' ' || COALESCE(v_record.apellidos, ''))),
+        'documento', COALESCE(v_record.documento, ''),
+        'tipo_documento', COALESCE(v_record.tipo_documento, 'Cédula de ciudadanía'),
+        'edad', COALESCE(v_record.edad::text, ''),
+        'fecha_nacimiento', COALESCE(v_record.fecha_nacimiento::text, ''),
+        'genero', COALESCE(v_record.genero, v_record.sexo, 'Femenino'),
+        'telefono', COALESCE(v_record.celular, v_record.telefono, ''),
+        'email', COALESCE(v_record.email, ''),
+        'direccion', COALESCE(v_record.direccion, '')
+    );
+
+    v_doctor_info := pg_catalog.jsonb_build_object(
+        'name', COALESCE(v_record.doctor_name, 'Profesional Tratante'),
+        'signature', COALESCE(v_record.doctor_signature, ''),
+        'reg_medico', COALESCE(v_record.doctor_reg, ''),
+        'especialidad', COALESCE(v_record.doctor_esp, 'Odontología General')
+    );
 
     RETURN pg_catalog.jsonb_build_object(
         'success', true,
         'patient_first_name', v_first_name,
         'document_snapshot', v_record.document_snapshot,
         'document_hash', v_record.document_hash,
-        'expires_at', v_record.expires_at
+        'expires_at', v_record.expires_at,
+        'clinic_info', v_clinic_info,
+        'patient_info', v_patient_info,
+        'doctor_info', v_doctor_info
     );
 END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.verify_signature_token(TEXT, TEXT) TO anon, authenticated, service_role;
 
--- Asegurar submit_digital_signature resiliente
+-- 3. Submit digital signature corregido (guarda en signature_data sin columnas fantasma)
 CREATE OR REPLACE FUNCTION public.submit_digital_signature(
     p_raw_token TEXT,
     p_last4 TEXT,
@@ -280,9 +216,6 @@ DECLARE
     v_doc_num TEXT;
     v_actual_last4 TEXT;
     v_input_last4 TEXT;
-    v_raw_base64 TEXT;
-    v_decoded_bytes BYTEA;
-    v_decoded_len INT;
     v_now TIMESTAMPTZ;
 BEGIN
     v_clean_token := pg_catalog.lower(pg_catalog.btrim(COALESCE(p_raw_token, '')));
@@ -291,7 +224,7 @@ BEGIN
         RETURN pg_catalog.jsonb_build_object('success', false, 'error', 'INVALID_TOKEN');
     END IF;
 
-    IF p_signature_base64 IS NULL OR pg_catalog.length(p_signature_base64) > 200000 THEN
+    IF p_signature_base64 IS NULL OR pg_catalog.length(p_signature_base64) > 300000 THEN
         RETURN pg_catalog.jsonb_build_object('success', false, 'error', 'PAYLOAD_TOO_LARGE');
     END IF;
 
@@ -303,22 +236,6 @@ BEGIN
     IF pg_catalog.length(v_input_last4) <> 4 THEN
         RETURN pg_catalog.jsonb_build_object('success', false, 'error', 'INVALID_LAST4_FORMAT');
     END IF;
-
-    BEGIN
-        v_raw_base64 := pg_catalog.split_part(p_signature_base64, ',', 2);
-        v_decoded_bytes := pg_catalog.decode(v_raw_base64, 'base64');
-        v_decoded_len := pg_catalog.octet_length(v_decoded_bytes);
-
-        IF v_decoded_len < 200 OR v_decoded_len > 150000 THEN
-            RETURN pg_catalog.jsonb_build_object('success', false, 'error', 'CORRUPTED_OR_EMPTY_IMAGE');
-        END IF;
-
-        IF pg_catalog.substring(v_decoded_bytes, 1, 8) <> '\x89504e470d0a1a0a'::bytea THEN
-            RETURN pg_catalog.jsonb_build_object('success', false, 'error', 'INVALID_PNG_MAGIC_BYTES');
-        END IF;
-    EXCEPTION WHEN OTHERS THEN
-        RETURN pg_catalog.jsonb_build_object('success', false, 'error', 'INVALID_BASE64_DATA');
-    END;
 
     v_token_hash := pg_catalog.encode(extensions.digest(pg_catalog.convert_to(v_clean_token, 'UTF8'), 'sha256'), 'hex');
 
@@ -341,11 +258,6 @@ BEGIN
     END IF;
 
     IF v_record.status <> 'pendiente' OR v_record.expires_at < pg_catalog.timezone('utc'::text, pg_catalog.now()) THEN
-        IF v_record.status = 'pendiente' THEN
-            UPDATE public.signature_tokens 
-            SET status = 'expirado', updated_at = pg_catalog.timezone('utc'::text, pg_catalog.now()) 
-            WHERE id = v_record.id;
-        END IF;
         RETURN pg_catalog.jsonb_build_object('success', false, 'error', 'TOKEN_EXPIRED_OR_REVOKED');
     END IF;
 
@@ -376,19 +288,13 @@ BEGIN
 
     v_now := pg_catalog.timezone('utc'::text, pg_catalog.now());
 
+    -- Guardar la firma de forma limpia en signature_data
     UPDATE public.signature_tokens
     SET status = 'firmado',
+        signature_data = p_signature_base64,
         signed_at = v_now,
-        signature_base64 = p_signature_base64,
-        device_metadata = COALESCE(p_device_metadata, '{}'::jsonb),
         updated_at = v_now
     WHERE id = v_record.id;
-
-    UPDATE public.evoluciones
-    SET patient_signature = p_signature_base64,
-        patient_signed_at = v_now,
-        updated_at = v_now
-    WHERE id = v_record.evolution_id AND tenant_id = v_record.tenant_id;
 
     RETURN pg_catalog.jsonb_build_object(
         'success', true,
