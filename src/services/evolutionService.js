@@ -135,7 +135,18 @@ export const getEvolutionAddendaBatch = async (evolutionIds) => {
             console.warn("Aviso al consultar adendas por lote:", error.message);
             return [];
         }
-        return data || [];
+        return (data || []).map(ad => ({
+            ...ad,
+            comentario: ad.comentario || ad.contenido || ad.nota || '',
+            contenido: ad.comentario || ad.contenido || ad.nota || '',
+            nota: ad.comentario || ad.contenido || ad.nota || '',
+            author_snapshot: {
+                ...ad.author_snapshot,
+                author_name: ad.author_snapshot?.author_name || ad.author_snapshot?.nombre_completo || ad.author_snapshot?.full_name || 'Profesional',
+                nombre_completo: ad.author_snapshot?.nombre_completo || ad.author_snapshot?.author_name || ad.author_snapshot?.full_name || 'Profesional',
+                full_name: ad.author_snapshot?.full_name || ad.author_snapshot?.author_name || ad.author_snapshot?.nombre_completo || 'Profesional'
+            }
+        }));
     } catch (err) {
         console.error("Error en getEvolutionAddendaBatch:", err);
         return [];

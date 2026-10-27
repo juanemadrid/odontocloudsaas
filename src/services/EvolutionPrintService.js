@@ -312,10 +312,10 @@ export const EvolutionPrintService = {
                             ${addendas.map((ad, aIdx) => `
                               <div class="addenda-item">
                                 <div style="display: flex; justify-content: space-between; font-weight: bold; color: #0f172a; margin-bottom: 4px;">
-                                  <span>Nota #${aIdx + 1} · ${ad.author_snapshot?.nombre_completo || 'Profesional'} ${ad.author_snapshot?.registro_medico ? `(TP: ${ad.author_snapshot.registro_medico})` : ''}</span>
+                                  <span>Nota #${aIdx + 1} · ${ad.author_snapshot?.author_name || ad.author_snapshot?.nombre_completo || ad.author_snapshot?.full_name || 'Profesional'} ${ad.author_snapshot?.registro_medico ? `(TP: ${ad.author_snapshot.registro_medico})` : ''}</span>
                                   <span style="color: #64748b; font-weight: normal;">${new Date(ad.created_at).toLocaleString('es-CO')}</span>
                                 </div>
-                                <div style="color: #1e293b; white-space: pre-wrap;">${(ad.contenido || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+                                <div style="color: #1e293b; white-space: pre-wrap;">${(ad.comentario || ad.contenido || ad.nota || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
                               </div>
                             `).join('')}
                           </div>

@@ -185,7 +185,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
     const toast = useToast();
     
     const [saving, setSaving] = useState(false);
-    const [activeTab, setActiveTab] = useState('evolucion'); // 'evolucion' | 'ortodoncia' | 'nota'
+    const [activeTab, setActiveTab] = useState('evolucion'); // 'evolucion' | 'ortodoncia'
     const [showAIAssistant, setShowAIAssistant] = useState(false);
     const [doctors, setDoctors] = useState([]);
     const [planes, setPlanes] = useState([]);
@@ -415,9 +415,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
         setSterilizationError(null);
 
         if (initialData) {
-            if (initialData.type === 'nota') {
-                setActiveTab('nota');
-            } else if (initialData.type === 'evolucion_ortodoncia' || initialData.type === 'ortodoncia' || initialData.isOrthodontic) {
+            if (initialData.type === 'evolucion_ortodoncia' || initialData.type === 'ortodoncia' || initialData.isOrthodontic) {
                 setActiveTab('ortodoncia');
             } else {
                 setActiveTab('evolucion');
@@ -872,10 +870,8 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
             const selectedPlan = planes.find(p => p.id === data.planId);
             const treatmentName = selectedPlan?.title || selectedPlan?.nombre || '';
             const isOrtho = activeTab === 'ortodoncia';
-            const recordType = activeTab === 'nota' ? 'nota' : isOrtho ? 'evolucion_ortodoncia' : 'evolution';
-            const displayTreatment = recordType === 'nota' 
-                ? 'Nota aclaratoria' 
-                : isOrtho 
+            const recordType = isOrtho ? 'evolucion_ortodoncia' : 'evolution';
+            const displayTreatment = isOrtho 
                 ? (treatmentName ? `${treatmentName} (Ortodoncia)` : 'Evolución Ortodoncia') 
                 : treatmentName;
 
@@ -927,7 +923,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                 ...data,
                 doctorId: effectiveDocId,
                 profesionalId: effectiveDocId,
-                plantillaItems: recordType === 'nota' ? {} : plantillaDetails,
+                plantillaItems: plantillaDetails,
                 date: finalDate.toISOString(), 
                 tenant_id: userProfile?.inquilino || userProfile?.tenantId || patient?.tenant_id || "",
                 inquilino: userProfile?.inquilino || userProfile?.tenantId || patient?.tenant_id || "",
@@ -966,7 +962,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
             }
 
             // Si se evolucionaron procedimientos de un plan, actualizar el estado en treatment_plans
-            if (watchPlanId && recordType !== 'nota') {
+            if (watchPlanId) {
                 try {
                     const selectedPlan = planes.find(p => p.id === watchPlanId);
                     if (selectedPlan && selectedPlan.items) {
@@ -1015,8 +1011,8 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
             }
 
             const successMsg = isEditing 
-                ? (recordType === 'nota' ? "Nota aclaratoria actualizada" : "Evolución actualizada")
-                : (recordType === 'nota' ? "Nota aclaratoria registrada" : "Evolución registrada");
+                ? "Evolución actualizada"
+                : "Evolución registrada";
             toast.success(successMsg);
             if (onSave) onSave(savedEvolutionRecord);
             onClose();
@@ -1059,8 +1055,8 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                         <div>
                             <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">
                                 {Boolean(initialData?.id) 
-                                    ? (activeTab === 'nota' ? 'Editar Nota Aclaratoria' : activeTab === 'ortodoncia' ? 'Editar Evolución Ortodoncia' : 'Editar Evolución') 
-                                    : (activeTab === 'nota' ? 'Nueva Nota Aclaratoria' : activeTab === 'ortodoncia' ? 'Nueva Evolución Ortodoncia' : 'Nueva Evolución Clínica')
+                                    ? (activeTab === 'ortodoncia' ? 'Editar Evolución Ortodoncia' : 'Editar Evolución') 
+                                    : (activeTab === 'ortodoncia' ? 'Nueva Evolución Ortodoncia' : 'Nueva Evolución Clínica')
                                 }
                             </h3>
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
@@ -1069,7 +1065,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                         </div>
                     </div>
 
-                    {/* Selector de Pestaña: Evolución vs Ortodoncia vs Nota Aclaratoria */}
+                    {/* Selector de Pestaña: Evolución vs Ortodoncia */}
                     <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
                         <button
                             type="button"
@@ -1092,17 +1088,6 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                             }`}
                         >
                             Evolución Ortodoncia
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setActiveTab('nota')}
-                            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
-                                activeTab === 'nota' 
-                                    ? 'bg-[#8dc63f] text-white shadow-sm' 
-                                    : 'text-slate-400 hover:text-slate-600'
-                            }`}
-                        >
-                            Nota Aclaratoria
                         </button>
                     </div>
 
@@ -1153,8 +1138,8 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                     {/* Body Form Content (Scrollable) */}
                     <div className="flex-1 overflow-y-auto custom-scrollbar p-4 sm:p-6 md:p-8 flex flex-col lg:flex-row gap-6">
                     
-                    {/* COLUMNA IZQUIERDA (Oculta si es Nota Aclaratoria) */}
-                    <div className={`flex-1 min-w-0 space-y-4 ${activeTab === 'nota' ? 'hidden' : 'block'}`}>
+                    {/* COLUMNA IZQUIERDA */}
+                    <div className="flex-1 min-w-0 space-y-4 block">
                         
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
@@ -1381,8 +1366,8 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                         </div>
                     </div>
 
-                    {/* COLUMNA DERECHA (Siempre visible, pero expandida si es Nota) */}
-                    <div className={`flex-1 min-w-0 space-y-5 ${activeTab === 'nota' ? '' : 'border-t lg:border-t-0 lg:border-l border-slate-100 pt-6 lg:pt-0 lg:pl-8'}`}>
+                    {/* COLUMNA DERECHA */}
+                    <div className="flex-1 min-w-0 space-y-5 border-t lg:border-t-0 lg:border-l border-slate-100 pt-6 lg:pt-0 lg:pl-8">
                         
                         {/* Selector de Pestañas estilo OralDrive 1:1 en la parte superior derecha */}
                         <div className="flex items-center gap-2 mb-4">
@@ -1409,95 +1394,9 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                             >
                                 Evolución ortodoncia
                             </button>
-
-                            <button
-                                type="button"
-                                onClick={() => setActiveTab('nota')}
-                                className={`flex-1 py-1.5 px-3 rounded-md text-xs font-semibold text-center transition-all cursor-pointer ${
-                                    activeTab === 'nota'
-                                        ? 'bg-[#8dc63f] text-white shadow-xs'
-                                        : 'bg-white text-[#68942b] border border-[#8dc63f] hover:bg-[#8dc63f]/10'
-                                }`}
-                            >
-                                Nota aclaratoria
-                            </button>
                         </div>
 
-                        {/* VISTA 1: NOTA ACLARATORIA */}
-                        {activeTab === 'nota' && (
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest block mb-1">
-                                        Seleccione doctor <span className="text-rose-500">*</span>
-                                    </label>
-                                    <select 
-                                        {...register("doctorId")} 
-                                        value={watch("doctorId") || ""}
-                                        disabled={esDoctor}
-                                        className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 disabled:bg-slate-50 disabled:text-slate-400"
-                                    >
-                                        <option value="">Seleccione...</option>
-                                        {doctors.map(d => (
-                                            <option key={d.id} value={d.id}>
-                                                {`${d.nombre || d.nombres || ''} ${d.apellido || d.apellidos || ''}`.trim() || d.nombreCompleto}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                <div className="flex gap-4">
-                                    <div className="flex-1">
-                                        <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest block mb-1">
-                                            Fecha <span className="text-rose-500">*</span>
-                                        </label>
-                                        <input 
-                                            type="date" 
-                                            {...register("fecha")} 
-                                            className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400"
-                                            max="9999-12-31" min="1900-01-01" 
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="flex gap-4">
-                                    <div className="flex-1">
-                                        <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest block mb-1">
-                                            Hora inicio
-                                        </label>
-                                        <input 
-                                            type="time" 
-                                            {...register("horaInicio")} 
-                                            className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400"
-                                        />
-                                    </div>
-                                    <div className="flex-1">
-                                        <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest block mb-1">
-                                            Hora fin
-                                        </label>
-                                        <input 
-                                            type="time" 
-                                            {...register("horaFin")} 
-                                            className="w-full h-11 px-3 rounded-lg border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div className="flex flex-col gap-2">
-                                    <label className="text-[11px] font-black text-slate-500 uppercase tracking-widest block">
-                                        Comentario <span className="text-rose-500">*</span>
-                                    </label>
-                                    <textarea 
-                                        {...register("comentario")} 
-                                        readOnly={isClosed}
-                                        disabled={isClosed}
-                                        className={`w-full h-36 p-4 rounded-xl border border-slate-200 text-sm font-bold text-slate-700 bg-white outline-none focus:border-blue-400 custom-scrollbar resize-none ${isClosed ? 'bg-slate-50 text-slate-500 cursor-not-allowed select-text' : ''}`}
-                                        placeholder="Escribe aquí la nota aclaratoria..."
-                                    />
-                                </div>
-                            </div>
-                        )}
-
-                        {/* VISTA 2: EVOLUCIÓN CLÍNICA ESTÁNDAR */}
+                        {/* VISTA: EVOLUCIÓN CLÍNICA ESTÁNDAR */}
                         {activeTab === 'evolucion' && (
                             <div className="space-y-4">
                                 <div className="flex gap-4">

@@ -463,10 +463,10 @@ const printEvolution = async (evo, patient, clinicInfo = {}, userProfile = null,
         ${addendas.map((ad, idx) => `
           <div class="addenda-item">
             <div style="display: flex; justify-content: space-between; font-weight: bold; color: #0f172a; margin-bottom: 4px;">
-              <span>Nota #${idx + 1} · ${ad.author_snapshot?.nombre_completo || 'Profesional'} ${ad.author_snapshot?.registro_medico ? `(TP: ${ad.author_snapshot.registro_medico})` : ''}</span>
+              <span>Nota #${idx + 1} · ${ad.author_snapshot?.author_name || ad.author_snapshot?.nombre_completo || ad.author_snapshot?.full_name || 'Profesional'} ${ad.author_snapshot?.registro_medico ? `(TP: ${ad.author_snapshot.registro_medico})` : ''}</span>
               <span style="color: #64748b; font-weight: normal;">${new Date(ad.created_at).toLocaleString('es-CO')}</span>
             </div>
-            <div style="color: #1e293b; white-space: pre-wrap;">${(ad.contenido || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+            <div style="color: #1e293b; white-space: pre-wrap;">${(ad.comentario || ad.contenido || ad.nota || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
           </div>
         `).join('')}
       </div>
@@ -725,6 +725,17 @@ function EvolutionCard({
                         {typeBadgeLabel}
                     </span>
 
+                    {/* Badge Notas Aclaratorias (si existen) */}
+                    {Array.isArray(addendas) && addendas.length > 0 && (
+                        <span
+                            className="text-[9px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider border whitespace-nowrap bg-purple-100 text-purple-800 border-purple-200 flex items-center gap-1 shadow-xs"
+                            title={`${addendas.length} nota(s) aclaratoria(s) anexada(s)`}
+                        >
+                            <FiFileText size={10} className="text-purple-600" />
+                            {addendas.length} {addendas.length === 1 ? 'Nota Aclaratoria' : 'Notas Aclaratorias'}
+                        </span>
+                    )}
+
                     {/* ACCIONES: BORRADOR */}
                     {isDraft && (
                         <>
@@ -759,10 +770,10 @@ function EvolutionCard({
                         <>
                             <button
                                 onClick={() => onAddAddendum(evo)}
-                                className="h-7 px-2 bg-purple-50 text-purple-700 hover:bg-purple-600 hover:text-white rounded-lg flex items-center justify-center gap-1 transition-all border border-purple-200 text-[10px] font-black cursor-pointer"
-                                title="Agregar nota aclaratoria"
+                                className="h-7 px-2.5 bg-purple-50 text-purple-700 hover:bg-purple-600 hover:text-white rounded-lg flex items-center justify-center gap-1.5 transition-all border border-purple-200 text-[10px] font-black cursor-pointer shadow-xs"
+                                title="Agregar nota aclaratoria legal (Adenda inmutable)"
                             >
-                                <FiPlusCircle size={11} /> + Nota
+                                <FiPlusCircle size={12} /> + Nota Aclaratoria
                             </button>
                         </>
                     )}
@@ -772,10 +783,10 @@ function EvolutionCard({
                         <>
                             <button
                                 onClick={() => onAddAddendum(evo)}
-                                className="h-7 px-2 bg-purple-50 text-purple-700 hover:bg-purple-600 hover:text-white rounded-lg flex items-center justify-center gap-1 transition-all border border-purple-200 text-[10px] font-black cursor-pointer"
-                                title="Agregar nota aclaratoria"
+                                className="h-7 px-2.5 bg-purple-50 text-purple-700 hover:bg-purple-600 hover:text-white rounded-lg flex items-center justify-center gap-1.5 transition-all border border-purple-200 text-[10px] font-black cursor-pointer shadow-xs"
+                                title="Agregar nota aclaratoria legal (Adenda inmutable)"
                             >
-                                <FiPlusCircle size={11} /> + Nota
+                                <FiPlusCircle size={12} /> + Nota Aclaratoria
                             </button>
                             {/* FIRMA PACIENTE (P) Paso 1.2 — Exclusivamente en cerrada profesional */}
                             {isSignedPat ? (
@@ -948,19 +959,22 @@ function EvolutionCard({
 
             {/* SECCIÓN NOTAS ACLARATORIAS (ADENDAS) */}
             {Array.isArray(addendas) && addendas.length > 0 && (
-                <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
+                <div className="mt-3 pt-3 border-t border-purple-100/60 space-y-2">
                     <div className="flex items-center justify-between">
                         <span className="text-[10px] font-black text-purple-900 uppercase tracking-wider flex items-center gap-1.5">
                             <FiFileText size={12} className="text-purple-600" /> Notas Aclaratorias ({addendas.length})
                         </span>
                     </div>
                     {addendas.map((ad, idx) => (
-                        <div key={ad.id || idx} className="bg-purple-50/50 border border-purple-100 rounded-xl p-3 text-[10px]">
-                            <div className="flex items-center justify-between font-bold text-purple-950 mb-1">
-                                <span>Nota #{idx + 1} · {ad.author_snapshot?.nombre_completo || 'Profesional'} {ad.author_snapshot?.registro_medico ? `· TP: ${ad.author_snapshot.registro_medico}` : ''}</span>
-                                <span className="text-[9px] text-purple-600 font-semibold">{new Date(ad.created_at).toLocaleString('es-CO')}</span>
+                        <div key={ad.id || idx} className="bg-purple-50/70 border border-purple-200/90 rounded-xl p-3.5 text-[11px] shadow-xs">
+                            <div className="flex items-center justify-between font-bold text-purple-950 mb-1.5 border-b border-purple-200/50 pb-1">
+                                <span className="flex items-center gap-1.5">
+                                    <span className="bg-purple-600 text-white text-[9px] font-black px-1.5 py-0.5 rounded">Nota #{idx + 1}</span>
+                                    <span>{ad.author_snapshot?.author_name || ad.author_snapshot?.nombre_completo || ad.author_snapshot?.full_name || 'Profesional'} {ad.author_snapshot?.registro_medico ? `· TP: ${ad.author_snapshot.registro_medico}` : ''}</span>
+                                </span>
+                                <span className="text-[10px] text-purple-700 font-semibold">{new Date(ad.created_at).toLocaleString('es-CO')}</span>
                             </div>
-                            <p className="text-slate-700 whitespace-pre-wrap font-medium leading-relaxed">{ad.contenido}</p>
+                            <p className="text-slate-800 whitespace-pre-wrap font-medium leading-relaxed">{ad.comentario || ad.contenido || ad.nota || ''}</p>
                         </div>
                     ))}
                 </div>
