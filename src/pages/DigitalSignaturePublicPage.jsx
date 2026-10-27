@@ -91,7 +91,8 @@ export default function DigitalSignaturePublicPage() {
             });
 
             if (error) {
-                setAuthError("Error de comunicación con el servidor. Intente más tarde.");
+                console.error("RPC verify_signature_token error:", error);
+                setAuthError(`Error de comunicación con el servidor: ${error.message || "Intente más tarde."}`);
                 return;
             }
 

@@ -85,10 +85,10 @@ BEGIN
         RAISE EXCEPTION 'PATIENT_DOCUMENT_REQUIRED';
     END IF;
 
-    -- Revocar tokens previos pendientes para esta evolución
+    -- Revocar tokens previos que ya estén bloqueados o expirados (manteniendo válidos los pendientes recientes)
     UPDATE public.signature_tokens
     SET status = 'revocado', updated_at = pg_catalog.timezone('utc'::text, pg_catalog.now())
-    WHERE evolution_id = p_evolution_id AND status = 'pendiente';
+    WHERE evolution_id = p_evolution_id AND status IN ('bloqueado', 'expirado');
 
     BEGIN
         IF v_evo.tratamiento IS NOT NULL AND v_evo.tratamiento LIKE '{%' THEN
