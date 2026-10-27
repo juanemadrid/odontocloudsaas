@@ -32,12 +32,26 @@ export default function DigitalSignaturePublicPage() {
     const [hasDrawn, setHasDrawn] = useState(false);
     const documentRef = useRef(null);
 
-    // 1. Extraer el token exclusivamente desde el fragmento (#token=...)
+    // Extraer el token desde hash (#token=...), query (?token=...) o URL completa
+    const extractToken = () => {
+        try {
+            const hash = window.location.hash || "";
+            const search = window.location.search || "";
+            const href = window.location.href || "";
+            const match = hash.match(/token=([a-fA-F0-9]{32,64})/i) ||
+                          search.match(/token=([a-fA-F0-9]{32,64})/i) ||
+                          href.match(/token=([a-fA-F0-9]{32,64})/i);
+            return match ? match[1] : null;
+        } catch {
+            return null;
+        }
+    };
+
+    // 1. Extraer el token al montar
     useEffect(() => {
-        const hash = window.location.hash || "";
-        const match = hash.match(/token=([a-fA-F0-9]+)/);
-        if (match && match[1]) {
-            setRawToken(match[1]);
+        const found = extractToken();
+        if (found) {
+            setRawToken(found);
         }
     }, []);
 
@@ -56,6 +70,13 @@ export default function DigitalSignaturePublicPage() {
     const handleVerifyAccess = async (e) => {
         if (e) e.preventDefault();
         setAuthError(null);
+
+        const tokenToUse = rawToken || extractToken();
+        if (!tokenToUse) {
+            setAuthError("No se detectó el token de seguridad en el enlace. Por favor vuelva a abrir el enlace recibido.");
+            return;
+        }
+
         const cleanLast4 = last4Input.replace(/\D/g, "");
         if (cleanLast4.length !== 4) {
             setAuthError("Debe ingresar exactamente los 4 últimos dígitos de su documento.");
@@ -65,7 +86,7 @@ export default function DigitalSignaturePublicPage() {
         setVerifying(true);
         try {
             const { data, error } = await supabase.rpc("verify_signature_token", {
-                p_raw_token: rawToken,
+                p_raw_token: tokenToUse,
                 p_last4: cleanLast4
             });
 
@@ -154,13 +175,19 @@ export default function DigitalSignaturePublicPage() {
         }
 
         const cleanLast4 = last4Input.replace(/\D/g, "");
+        const tokenToUse = rawToken || extractToken();
+        if (!tokenToUse) {
+            alert("No se detectó el token de firma. Por favor recargue el enlace.");
+            return;
+        }
+
         setSigning(true);
         try {
             const canvas = canvasRef.current;
             const patientSignature = canvas.toDataURL("image/png");
 
             const { data, error } = await supabase.rpc("submit_digital_signature", {
-                p_raw_token: rawToken,
+                p_raw_token: tokenToUse,
                 p_last4: cleanLast4,
                 p_signature_base64: patientSignature
             });
