@@ -46,3 +46,4 @@ scripts/vps/
 *.bak
 
 !scripts/test_muv_without_fev_proxy.mjs
+!scripts/export_tenant_backup.mjs

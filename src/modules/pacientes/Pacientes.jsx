@@ -20,6 +20,7 @@ import {
 } from "../../services/patientService";
 import { useAudit } from "../../hooks/useAudit";
 import ImportadorPacientes from "./components/ImportadorPacientes";
+import ExportBackupModal from "./components/ExportBackupModal";
 
 export default function Pacientes() {
   const { userProfile } = useAuth();
@@ -34,6 +35,7 @@ export default function Pacientes() {
   const [term, setTerm] = useState("");
   const [isSearching, setIsSearching] = useState(false);
   const [showImporter, setShowImporter] = useState(false);
+  const [showBackupModal, setShowBackupModal] = useState(false);
   const [page, setPage] = useState(0);
   const [pageSize] = useState(5);
   const [totalCount, setTotalCount] = useState(0);
@@ -276,6 +278,7 @@ export default function Pacientes() {
           onSearchChange={setTerm}
           onCreateNew={handleOpenNew}
           onImportClick={() => setShowImporter(true)}
+          onBackupClick={() => setShowBackupModal(true)}
           onDelete={handleDelete}
           onEdit={handleOpenEdit}
           onToggleStatus={async (p) => {
@@ -323,6 +326,13 @@ export default function Pacientes() {
         <ImportadorPacientes
           onComplete={() => reloadData()}
           onClose={() => setShowImporter(false)}
+        />
+      )}
+
+      {showBackupModal && (
+        <ExportBackupModal
+          isOpen={showBackupModal}
+          onClose={() => setShowBackupModal(false)}
         />
       )}
     </div>

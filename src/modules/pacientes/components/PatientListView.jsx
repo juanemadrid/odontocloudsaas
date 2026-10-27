@@ -10,6 +10,7 @@ import {
     FiUserX,
     FiUserCheck,
     FiUpload,
+    FiArchive,
     FiAlertTriangle,
     FiCheckSquare,
     FiSquare
@@ -34,6 +35,7 @@ export default function PatientListView({
     onSearchChange,
     onCreateNew,
     onImportClick,
+    onBackupClick,
     onToggleStatus,
     onDelete
 }) {
@@ -187,6 +189,15 @@ export default function PatientListView({
                             >
                                 <FiUpload size={14} className="text-blue-600" />
                                 <span>Importar Pacientes (Excel)</span>
+                            </button>
+
+                            <button
+                                onClick={onBackupClick}
+                                className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 px-3 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                                title="Descargar Copia de Seguridad completa de Historias Clínicas (Formato OralDrive ZIP)"
+                            >
+                                <FiArchive size={14} className="text-emerald-700" />
+                                <span>Copia de Seguridad (ZIP)</span>
                             </button>
 
                             <button
