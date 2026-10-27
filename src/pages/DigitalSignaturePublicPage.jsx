@@ -337,19 +337,47 @@ export default function DigitalSignaturePublicPage() {
         doc.open();
         doc.write(`
             <!DOCTYPE html>
-            <html>
+            <html lang="es">
             <head>
                 <meta charset="utf-8" />
                 <title>Evolución Clínica - ${clinicInfo.name}</title>
                 <style>
-                    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 20px; color: #1e293b; }
-                    @page { size: letter; margin: 12mm 15mm; }
-                    table { width: 100%; border-collapse: collapse; }
+                    * {
+                        box-sizing: border-box;
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                    }
+                    @page {
+                        size: letter;
+                        margin: 10mm 14mm;
+                    }
+                    html, body {
+                        margin: 0;
+                        padding: 0;
+                        background: #ffffff !important;
+                        color: #0f172a;
+                        font-family: Arial, Helvetica, sans-serif;
+                        font-size: 10px;
+                        line-height: 1.35;
+                    }
+                    table {
+                        width: 100%;
+                        border-collapse: collapse;
+                    }
+                    /* Eliminar sombras y bordes de tarjeta en papel físico */
+                    .shadow-xl, .shadow-lg, .shadow-md, .shadow-sm, .shadow-inner, .shadow {
+                        box-shadow: none !important;
+                    }
+                    .rounded-3xl, .rounded-2xl, .rounded-xl, .rounded-lg {
+                        border-radius: 0 !important;
+                    }
                 </style>
                 <script src="https://cdn.tailwindcss.com"></script>
             </head>
             <body>
-                ${documentRef.current.outerHTML}
+                <div style="width: 100%; margin: 0; padding: 0;">
+                    ${documentRef.current.outerHTML}
+                </div>
             </body>
             </html>
         `);
@@ -488,7 +516,28 @@ export default function DigitalSignaturePublicPage() {
         );
     }
 
-    // Pantalla Principal: Hoja Clínica Profesional Idéntica al Sistema
+    // Helpers de formateo para vista médica limpia
+    const cleanDoctorSpecialty = (raw) => {
+        if (!raw) return "Odontólogo Tratante";
+        const str = String(raw).trim();
+        if (/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/i.test(str)) {
+            return "Odontología General";
+        }
+        return str;
+    };
+
+    const cleanDoctorReg = (raw) => {
+        if (!raw) return "";
+        const str = String(raw).trim();
+        if (/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/i.test(str)) {
+            return "";
+        }
+        return str;
+    };
+
+    const doctorDisplayName = doctorInfo?.name || documentSnapshot?.doctor_name || "Profesional Tratante";
+    const patientDisplayName = patientInfo?.name || patientFirstName || "Paciente";
+    const patientDocNumber = patientInfo?.documento || "—";
     const doctorSig = doctorInfo?.signature;
     const finalPatientSig = savedSignatureData || documentSnapshot?.patient_signature;
 
@@ -504,7 +553,7 @@ export default function DigitalSignaturePublicPage() {
                         </div>
                         <div>
                             <h2 className="text-sm font-black text-slate-800 uppercase tracking-wide">
-                                Atención para {patientFirstName}
+                                Atención para {patientDisplayName}
                             </h2>
                             <p className="text-[11px] text-slate-500 font-semibold">
                                 {signatureSaved ? "Documento formalmente firmado y certificado." : "Revise su evolución y registre su firma al pie del documento."}
@@ -532,143 +581,159 @@ export default function DigitalSignaturePublicPage() {
                     </div>
                 </div>
 
-                {/* Hoja Clínica Profesional (Capturada para PDF e Impresión) */}
-                <div 
-                    ref={documentRef} 
-                    className="bg-white rounded-2xl shadow-xl border border-slate-200 p-6 sm:p-10 space-y-6 text-slate-800"
-                >
-                    {/* Cabecera Clínica con Logo y Datos */}
-                    <div className="flex justify-between items-center pb-4 border-b border-slate-200">
-                        <div className="flex items-center gap-3">
-                            {clinicInfo.logo ? (
-                                <img 
-                                    src={clinicInfo.logo} 
-                                    alt={clinicInfo.name} 
-                                    className="h-12 w-auto max-w-[140px] object-contain rounded"
-                                    crossOrigin="anonymous"
-                                />
-                            ) : (
-                                <div className="w-12 h-12 bg-slate-100 rounded-xl border flex items-center justify-center font-black text-indigo-600 text-xs">
-                                    {clinicInfo.name.slice(0, 3).toUpperCase()}
+                {/* Contenedor Visual en Pantalla (En papel físico se remueven márgenes y sombras) */}
+                <div className="bg-white rounded-2xl shadow-lg border border-slate-200/80 p-6 sm:p-10 print:shadow-none print:border-none print:p-0 print:m-0">
+                    {/* Hoja Clínica Limpia (Capturada para PDF e Impresión sin sombras ni marcos flotantes) */}
+                    <div 
+                        ref={documentRef} 
+                        className="space-y-6 text-slate-800 bg-white"
+                        style={{ width: "100%", backgroundColor: "#ffffff" }}
+                    >
+                        {/* Cabecera Clínica con Logo y Datos */}
+                        <div className="flex justify-between items-center pb-4 border-b border-slate-300">
+                            <div className="flex items-center gap-3">
+                                {clinicInfo.logo ? (
+                                    <img 
+                                        src={clinicInfo.logo} 
+                                        alt={clinicInfo.name} 
+                                        className="h-12 w-auto max-w-[140px] object-contain rounded"
+                                        crossOrigin="anonymous"
+                                    />
+                                ) : (
+                                    <div className="w-12 h-12 bg-slate-100 rounded-lg border border-slate-300 flex items-center justify-center font-black text-indigo-600 text-xs">
+                                        {clinicInfo.name.slice(0, 3).toUpperCase()}
+                                    </div>
+                                )}
+                                <div>
+                                    <h1 className="text-xs sm:text-sm font-black uppercase text-slate-800 leading-tight">
+                                        {clinicInfo.name}
+                                    </h1>
+                                    <p className="text-[9px] font-bold text-slate-500 uppercase mt-0.5">
+                                        {clinicInfo.nit ? `NIT: ${clinicInfo.nit} · ` : ""}{clinicInfo.address || ""}{clinicInfo.phone ? ` · TEL: ${clinicInfo.phone}` : ""}
+                                    </p>
                                 </div>
-                            )}
+                            </div>
+                            <div className="text-right">
+                                <span className="text-[9px] font-black bg-slate-100 text-slate-700 px-3 py-1 rounded border border-slate-300 uppercase tracking-widest">
+                                    Evolución
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Tabla Institucional de Datos del Paciente (Formato OralDrive) */}
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'sans-serif', fontSize: '9px', color: '#1e293b', border: '1px solid #475569' }}>
+                            <tbody>
+                                <tr>
+                                    <td style={{ border: '1px solid #475569', padding: '4px 6px', fontWeight: 'bold', width: '20%', backgroundColor: '#f8fafc' }}>Nombre del paciente</td>
+                                    <td style={{ border: '1px solid #475569', padding: '4px 6px', width: '30%' }}>{patientDisplayName}</td>
+                                    <td style={{ border: '1px solid #475569', padding: '4px 6px', fontWeight: 'bold', width: '12%', backgroundColor: '#f8fafc' }}>Edad</td>
+                                    <td style={{ border: '1px solid #475569', padding: '4px 6px', width: '13%' }}>{patientInfo?.edad ? `${patientInfo.edad} años` : "—"}</td>
+                                    <td style={{ border: '1px solid #475569', padding: '4px 6px', fontWeight: 'bold', width: '12%', backgroundColor: '#f8fafc' }}>Nro Historia</td>
+                                    <td style={{ border: '1px solid #475569', padding: '4px 6px', width: '13%' }}>{patientDocNumber}</td>
+                                </tr>
+                                <tr>
+                                    <td style={{ border: '1px solid #475569', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Tipo documento</td>
+                                    <td style={{ border: '1px solid #475569', padding: '4px 6px' }}>{patientInfo?.tipo_documento || "Cédula de ciudadanía"}</td>
+                                    <td style={{ border: '1px solid #475569', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Nro documento</td>
+                                    <td style={{ border: '1px solid #475569', padding: '4px 6px' }} colSpan="3">{patientDocNumber}</td>
+                                </tr>
+                                <tr>
+                                    <td style={{ border: '1px solid #475569', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Sexo / Género</td>
+                                    <td style={{ border: '1px solid #475569', padding: '4px 6px' }}>{patientInfo?.genero || "Femenino"}</td>
+                                    <td style={{ border: '1px solid #475569', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Teléfono</td>
+                                    <td style={{ border: '1px solid #475569', padding: '4px 6px' }} colSpan="3">{patientInfo?.telefono || "—"}</td>
+                                </tr>
+                                <tr>
+                                    <td style={{ border: '1px solid #475569', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Doctor Tratante</td>
+                                    <td style={{ border: '1px solid #475569', padding: '4px 6px' }}>{doctorDisplayName}</td>
+                                    <td style={{ border: '1px solid #475569', padding: '4px 6px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Fecha atención</td>
+                                    <td style={{ border: '1px solid #475569', padding: '4px 6px' }} colSpan="3">
+                                        {documentSnapshot?.fecha ? new Date(documentSnapshot.fecha).toLocaleDateString("es-CO", { day: 'numeric', month: 'long', year: 'numeric' }) : new Date().toLocaleDateString("es-CO")}
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+                        {/* Detalle del Tratamiento y Descripción */}
+                        <div className="space-y-3">
+                            <div className="bg-slate-50 p-3 rounded border border-slate-300">
+                                <span className="block text-[9px] font-black uppercase text-slate-500 mb-0.5">Procedimiento Realizado</span>
+                                <p className="text-xs font-bold text-slate-800">{documentSnapshot?.procedure || "Atención Odontológica General"}</p>
+                            </div>
+
                             <div>
-                                <h1 className="text-xs sm:text-sm font-black uppercase text-slate-800 leading-tight">
-                                    {clinicInfo.name}
-                                </h1>
-                                <p className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">
-                                    {clinicInfo.nit ? `NIT: ${clinicInfo.nit} · ` : ""}{clinicInfo.address || ""}{clinicInfo.phone ? ` · TEL: ${clinicInfo.phone}` : ""}
+                                <span className="block text-[9px] font-black uppercase text-slate-500 mb-0.5">Observaciones / Notas Clínicas</span>
+                                <div className="text-xs text-slate-700 leading-relaxed font-medium bg-white p-3 rounded border border-slate-300 whitespace-pre-wrap">
+                                    {documentSnapshot?.description || "Sin observaciones adicionales."}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Cuadro de Firmas (Doctor Tratante y Paciente) */}
+                        <div className="pt-6 border-t border-dashed border-slate-300 grid grid-cols-2 gap-8 items-start">
+                            
+                            {/* 1. Bloque de Firma del Doctor */}
+                            <div className="text-center flex flex-col items-center">
+                                <div className="w-full max-w-[220px] h-20 flex items-end justify-center pb-1 border-b border-slate-700 mb-2">
+                                    {doctorSig ? (
+                                        <img 
+                                            src={doctorSig} 
+                                            alt="Firma del Profesional" 
+                                            className="max-h-16 max-w-[190px] object-contain" 
+                                            crossOrigin="anonymous"
+                                        />
+                                    ) : (
+                                        <span className="text-[10px] text-slate-400 font-semibold italic mb-1">Certificado Digitalmente</span>
+                                    )}
+                                </div>
+                                <p className="text-[10px] font-black text-slate-900 uppercase tracking-wide">
+                                    {doctorDisplayName}
                                 </p>
-                            </div>
-                        </div>
-                        <div className="text-right">
-                            <span className="text-[9px] font-black bg-indigo-50 text-indigo-700 px-3 py-1 rounded-md border border-indigo-100 uppercase tracking-widest">
-                                Evolución
-                            </span>
-                        </div>
-                    </div>
-
-                    {/* Tabla Institucional de Datos del Paciente (Formato OralDrive) */}
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'sans-serif', fontSize: '9px', color: '#334155', border: '1px solid #cbd5e1' }}>
-                        <tbody>
-                            <tr>
-                                <td style={{ border: '1px solid #cbd5e1', padding: '5px 7px', fontWeight: 'bold', width: '20%', backgroundColor: '#f8fafc' }}>Nombre del paciente</td>
-                                <td style={{ border: '1px solid #cbd5e1', padding: '5px 7px', width: '30%' }}>{patientInfo?.name || patientFirstName}</td>
-                                <td style={{ border: '1px solid #cbd5e1', padding: '5px 7px', fontWeight: 'bold', width: '12%', backgroundColor: '#f8fafc' }}>Edad</td>
-                                <td style={{ border: '1px solid #cbd5e1', padding: '5px 7px', width: '13%' }}>{patientInfo?.edad ? `${patientInfo.edad} años` : "—"}</td>
-                                <td style={{ border: '1px solid #cbd5e1', padding: '5px 7px', fontWeight: 'bold', width: '12%', backgroundColor: '#f8fafc' }}>Nro Historia</td>
-                                <td style={{ border: '1px solid #cbd5e1', padding: '5px 7px', width: '13%' }}>{patientInfo?.documento || "—"}</td>
-                            </tr>
-                            <tr>
-                                <td style={{ border: '1px solid #cbd5e1', padding: '5px 7px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Tipo documento</td>
-                                <td style={{ border: '1px solid #cbd5e1', padding: '5px 7px' }}>{patientInfo?.tipo_documento || "Cédula de ciudadanía"}</td>
-                                <td style={{ border: '1px solid #cbd5e1', padding: '5px 7px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Nro documento</td>
-                                <td style={{ border: '1px solid #cbd5e1', padding: '5px 7px' }} colSpan="3">{patientInfo?.documento || "—"}</td>
-                            </tr>
-                            <tr>
-                                <td style={{ border: '1px solid #cbd5e1', padding: '5px 7px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Sexo / Género</td>
-                                <td style={{ border: '1px solid #cbd5e1', padding: '5px 7px' }}>{patientInfo?.genero || "Femenino"}</td>
-                                <td style={{ border: '1px solid #cbd5e1', padding: '5px 7px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Teléfono</td>
-                                <td style={{ border: '1px solid #cbd5e1', padding: '5px 7px' }} colSpan="3">{patientInfo?.telefono || "—"}</td>
-                            </tr>
-                            <tr>
-                                <td style={{ border: '1px solid #cbd5e1', padding: '5px 7px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Doctor Tratante</td>
-                                <td style={{ border: '1px solid #cbd5e1', padding: '5px 7px' }}>{doctorInfo?.name || documentSnapshot?.doctor_name || "Profesional"}</td>
-                                <td style={{ border: '1px solid #cbd5e1', padding: '5px 7px', fontWeight: 'bold', backgroundColor: '#f8fafc' }}>Fecha atención</td>
-                                <td style={{ border: '1px solid #cbd5e1', padding: '5px 7px' }} colSpan="3">
-                                    {documentSnapshot?.fecha ? new Date(documentSnapshot.fecha).toLocaleDateString("es-CO", { day: 'numeric', month: 'long', year: 'numeric' }) : new Date().toLocaleDateString("es-CO")}
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-
-                    {/* Detalle del Tratamiento y Descripción */}
-                    <div className="space-y-3">
-                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                            <span className="block text-[9px] font-black uppercase text-slate-400 mb-1">Procedimiento Realizado</span>
-                            <p className="text-xs font-bold text-slate-800">{documentSnapshot?.procedure || "Atención Odontológica General"}</p>
-                        </div>
-
-                        <div>
-                            <span className="block text-[9px] font-black uppercase text-slate-400 mb-1">Observaciones / Notas Clínicas</span>
-                            <div className="text-xs text-slate-700 leading-relaxed font-medium bg-white p-4 rounded-xl border border-slate-200">
-                                {documentSnapshot?.description || "Sin observaciones adicionales."}
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Cuadro de Firmas (Doctor Tratante y Paciente) */}
-                    <div className="pt-6 border-t border-dashed border-slate-200 grid grid-cols-2 gap-6 items-end">
-                        
-                        {/* 1. Bloque de Firma del Doctor */}
-                        <div className="text-center">
-                            <div className="h-20 flex items-end justify-center pb-1 border-b border-slate-400 mb-2">
-                                {doctorSig ? (
-                                    <img 
-                                        src={doctorSig} 
-                                        alt="Firma del Profesional" 
-                                        className="max-h-16 max-w-[180px] object-contain" 
-                                        crossOrigin="anonymous"
-                                    />
-                                ) : (
-                                    <span className="text-[10px] text-slate-400 font-semibold italic">Certificado Digitalmente</span>
+                                <p className="text-[9px] font-bold text-slate-500 uppercase mt-0.5">
+                                    {cleanDoctorSpecialty(doctorInfo?.especialidad)}
+                                </p>
+                                {cleanDoctorReg(doctorInfo?.reg_medico) && (
+                                    <p className="text-[8px] text-slate-500 mt-0.5">
+                                        R.P.: {cleanDoctorReg(doctorInfo?.reg_medico)}
+                                    </p>
                                 )}
                             </div>
-                            <p className="text-[10px] font-black text-slate-800 uppercase">{doctorInfo?.name || documentSnapshot?.doctor_name}</p>
-                            <p className="text-[8px] font-bold text-slate-400 uppercase">{doctorInfo?.especialidad || "Odontólogo Tratante"}</p>
-                            {doctorInfo?.reg_medico && (
-                                <p className="text-[8px] text-slate-400">R.P.: {doctorInfo.reg_medico}</p>
-                            )}
-                        </div>
 
-                        {/* 2. Bloque de Firma del Paciente */}
-                        <div className="text-center">
-                            <div className="h-20 flex items-end justify-center pb-1 border-b border-slate-400 mb-2">
-                                {finalPatientSig ? (
-                                    <img 
-                                        src={finalPatientSig} 
-                                        alt="Firma del Paciente" 
-                                        className="max-h-16 max-w-[180px] object-contain" 
-                                        crossOrigin="anonymous"
-                                    />
+                            {/* 2. Bloque de Firma del Paciente */}
+                            <div className="text-center flex flex-col items-center">
+                                <div className="w-full max-w-[220px] h-20 flex items-end justify-center pb-1 border-b border-slate-700 mb-2">
+                                    {finalPatientSig ? (
+                                        <img 
+                                            src={finalPatientSig} 
+                                            alt="Firma del Paciente" 
+                                            className="max-h-16 max-w-[190px] object-contain" 
+                                            crossOrigin="anonymous"
+                                        />
+                                    ) : (
+                                        <span className="text-[10px] text-slate-400 font-semibold italic mb-1">Pendiente de firma</span>
+                                    )}
+                                </div>
+                                <p className="text-[10px] font-black text-slate-900 uppercase tracking-wide">
+                                    {patientDisplayName}
+                                </p>
+                                <p className="text-[9px] font-bold text-slate-500 uppercase mt-0.5">
+                                    Firma del Paciente / Acudiente
+                                </p>
+                                {savedAt ? (
+                                    <p className="text-[8px] text-slate-500 mt-0.5">
+                                        Firmado el: {new Date(savedAt).toLocaleDateString("es-CO")}
+                                    </p>
                                 ) : (
-                                    <span className="text-[10px] text-slate-400 font-semibold italic">Pendiente de firma</span>
+                                    patientDocNumber !== "—" && (
+                                        <p className="text-[8px] text-slate-500 mt-0.5">
+                                            Doc: {patientDocNumber}
+                                        </p>
+                                    )
                                 )}
                             </div>
-                            <p className="text-[10px] font-black text-slate-800 uppercase">{patientInfo?.name || patientFirstName}</p>
-                            <p className="text-[8px] font-bold text-slate-400 uppercase">Firma del Paciente / Acudiente</p>
-                            {savedAt && (
-                                <p className="text-[8px] text-slate-400">Firmado el: {new Date(savedAt).toLocaleDateString("es-CO")}</p>
-                            )}
-                        </div>
 
+                        </div>
                     </div>
-
-                    {documentHash && (
-                        <div className="text-[8px] text-slate-400 font-mono text-center pt-2">
-                            Sello Digital Criptográfico SHA-256: {documentHash}
-                        </div>
-                    )}
                 </div>
 
                 {/* Recuadro de Captura de Firma (Solo visible si aún no ha firmado) */}

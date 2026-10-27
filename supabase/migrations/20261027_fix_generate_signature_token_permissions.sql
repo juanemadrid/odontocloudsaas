@@ -178,8 +178,8 @@ BEGIN
     v_doctor_info := pg_catalog.jsonb_build_object(
         'name', COALESCE(v_record.doctor_name, 'Profesional Tratante'),
         'signature', COALESCE(v_record.doctor_signature, ''),
-        'reg_medico', COALESCE(v_record.doctor_reg, ''),
-        'especialidad', COALESCE(v_record.doctor_esp, 'Odontología General')
+        'reg_medico', CASE WHEN v_record.doctor_reg ~* '[0-9a-f]{8}-[0-9a-f]{4}' THEN '' ELSE COALESCE(v_record.doctor_reg, '') END,
+        'especialidad', CASE WHEN v_record.doctor_esp ~* '[0-9a-f]{8}-[0-9a-f]{4}' THEN 'Odontología General' ELSE COALESCE(v_record.doctor_esp, 'Odontología General') END
     );
 
     RETURN pg_catalog.jsonb_build_object(
