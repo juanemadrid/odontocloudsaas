@@ -55,7 +55,7 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.get_signature_clinic_info(TEXT) TO anon, authenticated, service_role;
 
--- 2. Verify signature token enriquecido con datos completos de clínica y doctor
+-- 2. Verify signature token enriquecido usando SOLO columnas existentes de pacientes
 CREATE OR REPLACE FUNCTION public.verify_signature_token(
     p_raw_token TEXT,
     p_last4 TEXT
@@ -73,6 +73,7 @@ DECLARE
     v_actual_last4 TEXT;
     v_input_last4 TEXT;
     v_first_name TEXT;
+    v_full_name TEXT;
     v_clinic_info JSONB;
     v_doctor_info JSONB;
     v_patient_info JSONB;
@@ -91,12 +92,10 @@ BEGIN
     v_token_hash := pg_catalog.encode(extensions.digest(pg_catalog.convert_to(v_clean_token, 'UTF8'), 'sha256'), 'hex');
 
     SELECT st.*, 
-           p.documento, p.tipo_documento, p.nombres, p.apellidos, p.nombre_completo,
-           p.edad, p.fecha_nacimiento, p.genero, p.sexo, p.celular, p.telefono, p.email, p.direccion,
+           p.documento, p.nombres, p.apellidos,
            t.nombre_comercial AS tenant_nombre_comercial, t.nombre AS tenant_nombre,
            t.logo_url AS tenant_logo_url, t.logo AS tenant_logo,
            t.nit AS tenant_nit, t.direccion AS tenant_direccion, t.telefono AS tenant_telefono,
-           e.profesional_id, e.tratamiento, e.notas, e.fecha AS evo_fecha,
            dr.full_name AS doctor_name, dr.firma AS doctor_signature,
            dr.registro_medico AS doctor_reg, dr.especialidad AS doctor_esp
     INTO v_record
@@ -153,7 +152,11 @@ BEGIN
         END IF;
     END IF;
 
-    v_first_name := pg_catalog.split_part(pg_catalog.btrim(COALESCE(v_record.nombres, v_record.nombre_completo, 'Estimado Paciente')), ' ', 1);
+    v_first_name := pg_catalog.split_part(pg_catalog.btrim(COALESCE(v_record.nombres, 'Estimado Paciente')), ' ', 1);
+    v_full_name := pg_catalog.btrim(COALESCE(v_record.nombres, '') || ' ' || COALESCE(v_record.apellidos, ''));
+    IF pg_catalog.length(v_full_name) = 0 THEN
+        v_full_name := 'Estimado Paciente';
+    END IF;
 
     v_clinic_info := pg_catalog.jsonb_build_object(
         'name', COALESCE(v_record.tenant_nombre_comercial, v_record.tenant_nombre, 'Clínica Odontológica'),
@@ -164,15 +167,8 @@ BEGIN
     );
 
     v_patient_info := pg_catalog.jsonb_build_object(
-        'name', COALESCE(v_record.nombre_completo, pg_catalog.btrim(COALESCE(v_record.nombres, '') || ' ' || COALESCE(v_record.apellidos, ''))),
-        'documento', COALESCE(v_record.documento, ''),
-        'tipo_documento', COALESCE(v_record.tipo_documento, 'Cédula de ciudadanía'),
-        'edad', COALESCE(v_record.edad::text, ''),
-        'fecha_nacimiento', COALESCE(v_record.fecha_nacimiento::text, ''),
-        'genero', COALESCE(v_record.genero, v_record.sexo, 'Femenino'),
-        'telefono', COALESCE(v_record.celular, v_record.telefono, ''),
-        'email', COALESCE(v_record.email, ''),
-        'direccion', COALESCE(v_record.direccion, '')
+        'name', v_full_name,
+        'documento', COALESCE(v_record.documento, '')
     );
 
     v_doctor_info := pg_catalog.jsonb_build_object(
@@ -304,6 +300,10 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION public.submit_digital_signature(TEXT, TEXT, TEXT, JSONB) TO anon, authenticated, service_role;
+
+UPDATE public.signature_tokens 
+SET attempts = 0 
+WHERE status = 'pendiente';
 
 COMMIT;
 
