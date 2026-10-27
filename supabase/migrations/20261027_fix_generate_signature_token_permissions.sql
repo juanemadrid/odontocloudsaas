@@ -1,5 +1,5 @@
 -- ==============================================================================
--- MIGRACIÓN DEFINITIVA: LOGOTIPO DE CLÍNICA, FIRMA DEL DOCTOR Y REGISTRO SEGURO
+-- MIGRACIÓN DEFINITIVA Y EXACTA: CORRECCIÓN QUIRÚRGICA DE COLUMNAS REALES
 -- Destino: Servicio 2 OdontoCloud (Coolify, VPS 150.136.210.37). NO toca Edunexus.
 -- ==============================================================================
 
@@ -27,8 +27,8 @@ BEGIN
     v_token_hash := pg_catalog.encode(extensions.digest(pg_catalog.convert_to(v_clean_token, 'UTF8'), 'sha256'), 'hex');
 
     SELECT 
-        COALESCE(t.nombre_comercial, t.nombre, 'OdontoCloud') AS clinic_name,
-        COALESCE(t.logo_url, t.logo, '') AS logo_url,
+        COALESCE(t.nombre, 'OdontoCloud') AS clinic_name,
+        COALESCE(t.logo_url, '') AS logo_url,
         COALESCE(t.nit, '') AS nit,
         COALESCE(t.direccion, '') AS direccion,
         COALESCE(t.telefono, '') AS telefono
@@ -55,7 +55,7 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.get_signature_clinic_info(TEXT) TO anon, authenticated, service_role;
 
--- 2. Verify signature token enriquecido usando SOLO columnas existentes de pacientes
+-- 2. Verify signature token enriquecido usando ÚNICAMENTE columnas reales comprobadas
 CREATE OR REPLACE FUNCTION public.verify_signature_token(
     p_raw_token TEXT,
     p_last4 TEXT
@@ -93,11 +93,15 @@ BEGIN
 
     SELECT st.*, 
            p.documento, p.nombres, p.apellidos,
-           t.nombre_comercial AS tenant_nombre_comercial, t.nombre AS tenant_nombre,
-           t.logo_url AS tenant_logo_url, t.logo AS tenant_logo,
-           t.nit AS tenant_nit, t.direccion AS tenant_direccion, t.telefono AS tenant_telefono,
-           dr.full_name AS doctor_name, dr.firma AS doctor_signature,
-           dr.registro_medico AS doctor_reg, dr.especialidad AS doctor_esp
+           t.nombre AS tenant_nombre,
+           t.logo_url AS tenant_logo_url,
+           t.nit AS tenant_nit, 
+           t.direccion AS tenant_direccion, 
+           t.telefono AS tenant_telefono,
+           dr.full_name AS doctor_name, 
+           dr.firma AS doctor_signature,
+           dr.registro_medico AS doctor_reg, 
+           dr.especialidad AS doctor_esp
     INTO v_record
     FROM public.signature_tokens st
     LEFT JOIN public.pacientes p ON p.id = st.patient_id
@@ -159,8 +163,8 @@ BEGIN
     END IF;
 
     v_clinic_info := pg_catalog.jsonb_build_object(
-        'name', COALESCE(v_record.tenant_nombre_comercial, v_record.tenant_nombre, 'Clínica Odontológica'),
-        'logo', COALESCE(v_record.tenant_logo_url, v_record.tenant_logo, ''),
+        'name', COALESCE(v_record.tenant_nombre, 'Clínica Odontológica'),
+        'logo', COALESCE(v_record.tenant_logo_url, ''),
         'nit', COALESCE(v_record.tenant_nit, ''),
         'address', COALESCE(v_record.tenant_direccion, ''),
         'phone', COALESCE(v_record.tenant_telefono, '')
@@ -193,7 +197,7 @@ $$;
 
 GRANT EXECUTE ON FUNCTION public.verify_signature_token(TEXT, TEXT) TO anon, authenticated, service_role;
 
--- 3. Submit digital signature corregido (guarda en signature_data sin columnas fantasma)
+-- 3. Submit digital signature limpio y robusto (solo actualiza signature_data en signature_tokens)
 CREATE OR REPLACE FUNCTION public.submit_digital_signature(
     p_raw_token TEXT,
     p_last4 TEXT,
