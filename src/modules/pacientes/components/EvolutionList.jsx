@@ -3,6 +3,7 @@ import supabase from '../../../lib/supabaseClient';
 import { useToast } from '../../../context/ToastContext';
 import { useAuth } from '../../../context/AuthContext';
 import { FiActivity, FiEdit3, FiTrash2, FiPenTool, FiCheck, FiFileText, FiX, FiAlertCircle, FiPrinter, FiLock, FiEye, FiPlusCircle, FiShield } from 'react-icons/fi';
+import { FaWhatsapp, FaEnvelope } from 'react-icons/fa';
 import { getDoctorSignatureAndData, validateDoctorCanSign } from '../../../services/doctorSignatureService';
 import { closeEvolution, createEvolutionAddendum, getEvolutionAddendaBatch } from '../../../services/evolutionService';
 import { isDoctorUser } from '../../../utils/doctorHelpers';
@@ -987,8 +988,21 @@ function SendChannelModal({ isOpen, onClose, patient, evolution, clinicInfo }) {
 
     const [generatingToken, setGeneratingToken] = useState(false);
 
+    const patientName = patient?.nombreCompleto || patient?.nombre || patient?.full_name || [patient?.nombres, patient?.apellidos].filter(Boolean).join(" ") || "Paciente";
+    const rawPhone = patient?.telefono || patient?.celular || patient?.phone || patient?.telefonoMovil || patient?.movil || "";
+    const cleanPhone = String(rawPhone).replace(/\D/g, "");
+    const formattedPhone = cleanPhone.startsWith("57") ? cleanPhone : (cleanPhone.length === 10 ? `57${cleanPhone}` : cleanPhone);
+    const patientEmail = patient?.email || patient?.correo || "";
+    const clinicName = clinicInfo?.nombre || clinicInfo?.name || clinicInfo?.razonSocial || "OdontoCloud";
+
     const handleSendWhatsApp = async () => {
         if (!evolution?.id) return;
+
+        if (!cleanPhone || cleanPhone.length < 7) {
+            alert("El paciente no tiene un número de celular o teléfono válido registrado.");
+            return;
+        }
+
         setGeneratingToken(true);
         try {
             const { data: tokenResult, error: tokenError } = await supabase.rpc(
@@ -999,6 +1013,10 @@ function SendChannelModal({ isOpen, onClose, patient, evolution, clinicInfo }) {
             if (tokenError) {
                 if (tokenError.message?.includes("PATIENT_DOCUMENT_REQUIRED")) {
                     alert("El paciente debe tener un documento de identidad válido registrado antes de enviar el enlace de firma.");
+                } else if (tokenError.message?.includes("CANNOT_SIGN_UNQUALIFIED_EVOLUTION")) {
+                    alert("Solo es posible solicitar la firma del paciente en evoluciones formalmente cerradas y certificadas por el profesional tratante.");
+                } else if (tokenError.message?.includes("INSUFFICIENT_PERMISSIONS")) {
+                    alert("No tiene permisos suficientes para solicitar la firma del paciente. Verifique su perfil de usuario.");
                 } else {
                     alert("Error al generar el enlace de firma seguro: " + (tokenError.message || "Error desconocido"));
                 }
@@ -1010,8 +1028,6 @@ function SendChannelModal({ isOpen, onClose, patient, evolution, clinicInfo }) {
                 return;
             }
 
-            const cleanPhone = String(patientPhone).replace(/\D/g, "");
-            const formattedPhone = cleanPhone.startsWith("57") ? cleanPhone : `57${cleanPhone}`;
             const basePath = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
             const secureSignUrl = `${window.location.origin}${basePath}/portal-paciente/firma-digital#token=${tokenResult.raw_token}`;
 
@@ -1028,13 +1044,52 @@ function SendChannelModal({ isOpen, onClose, patient, evolution, clinicInfo }) {
         }
     };
 
-    const handleSendEmail = () => {
+    const handleSendEmail = async () => {
         if (!patientEmail) {
             alert("El paciente no tiene un correo electrónico registrado.");
             return;
         }
-        alert(`✅ Enlace de firma enviado exitosamente al correo: ${patientEmail}`);
-        onClose();
+        if (!evolution?.id) return;
+
+        setGeneratingToken(true);
+        try {
+            const { data: tokenResult, error: tokenError } = await supabase.rpc(
+                "generate_signature_token",
+                { p_evolution_id: evolution.id }
+            );
+
+            if (tokenError) {
+                if (tokenError.message?.includes("PATIENT_DOCUMENT_REQUIRED")) {
+                    alert("El paciente debe tener un documento de identidad válido registrado antes de enviar el enlace de firma.");
+                } else if (tokenError.message?.includes("CANNOT_SIGN_UNQUALIFIED_EVOLUTION")) {
+                    alert("Solo es posible solicitar la firma del paciente en evoluciones formalmente cerradas y certificadas por el profesional tratante.");
+                } else if (tokenError.message?.includes("INSUFFICIENT_PERMISSIONS")) {
+                    alert("No tiene permisos suficientes para solicitar la firma del paciente. Verifique su perfil de usuario.");
+                } else {
+                    alert("Error al generar el enlace de firma seguro: " + (tokenError.message || "Error desconocido"));
+                }
+                return;
+            }
+
+            if (!tokenResult?.raw_token) {
+                alert("No se pudo generar el token seguro de firma.");
+                return;
+            }
+
+            const basePath = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
+            const secureSignUrl = `${window.location.origin}${basePath}/portal-paciente/firma-digital#token=${tokenResult.raw_token}`;
+            const subject = encodeURIComponent(`Firma Digital de Evolución Clínica - ${clinicName}`);
+            const body = encodeURIComponent(`Hola ${patientName},\n\nLe contactamos de la clínica ${clinicName}.\nPara certificar y firmar su evolución clínica de forma digital y segura, por favor ingrese al siguiente enlace:\n\n${secureSignUrl}\n\nEste enlace es seguro y expirará en 24 horas.`);
+
+            window.open(`mailto:${patientEmail}?subject=${subject}&body=${body}`, '_blank');
+            alert(`✅ Se preparó el enlace de firma para el correo: ${patientEmail}`);
+            onClose();
+        } catch (e) {
+            console.error("Error al preparar correo seguro:", e);
+            alert("Ocurrió un error al preparar el enlace seguro de correo.");
+        } finally {
+            setGeneratingToken(false);
+        }
     };
 
     return (
@@ -1082,9 +1137,7 @@ function SendChannelModal({ isOpen, onClose, patient, evolution, clinicInfo }) {
                             title="Enviar por WhatsApp"
                             className="w-12 h-12 rounded-xl bg-[#25D366] hover:bg-[#20ba59] text-white flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer"
                         >
-                            <svg className="w-6 h-6 fill-current" viewBox="0 0 24 24">
-                                <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.771-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.299.045-.677.063-1.092-.069-.252-.08-.575-.187-.988-.365-1.739-.751-2.874-2.502-2.961-2.617-.087-.116-.708-.94-.708-1.793s.448-1.273.607-1.446c.159-.173.346-.217.462-.217l.332.006c.106.005.249-.04.39.298.144.347.491 1.2.534 1.287.043.087.072.188.014.304-.058.116-.087.188-.173.289l-.26.304c-.087.086-.177.18-.076.354.101.174.449.741.964 1.201.662.591 1.221.774 1.394.86s.274.072.376-.043c.101-.116.433-.506.549-.68.116-.173.231-.145.39-.087s1.011.477 1.184.564.289.13.332.202c.045.072.045.419-.099.824zm-3.423-10.416c-4.408 0-7.99 3.582-7.99 7.99 0 1.408.365 2.73 1.001 3.872l-1.062 3.882 3.987-1.045c1.104.602 2.371.944 3.722.945 4.406 0 7.988-3.582 7.989-7.99.001-4.408-3.58-7.99-7.987-7.99z"/>
-                            </svg>
+                            <FaWhatsapp size={24} className="text-white" />
                         </button>
 
                         {/* Correo (Azul) */}
@@ -1094,9 +1147,7 @@ function SendChannelModal({ isOpen, onClose, patient, evolution, clinicInfo }) {
                             title="Enviar por Correo Electrónico"
                             className="w-12 h-12 rounded-xl bg-[#0284c7] hover:bg-[#0369a1] text-white flex items-center justify-center transition-all shadow-md active:scale-95 cursor-pointer"
                         >
-                            <svg className="w-6 h-6 fill-none stroke-current stroke-2" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                            </svg>
+                            <FaEnvelope size={20} className="text-white" />
                         </button>
                     </div>
                 </div>
