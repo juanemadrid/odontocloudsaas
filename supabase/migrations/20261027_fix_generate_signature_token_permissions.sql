@@ -199,9 +199,7 @@ BEGIN
     INTO v_record
     FROM public.signature_tokens st
     LEFT JOIN public.pacientes p ON p.id = st.patient_id
-    WHERE st.token_hash = v_token_hash
-       OR st.token_hash = pg_catalog.encode(extensions.digest(v_clean_token::bytea, 'sha256'), 'hex')
-    FOR UPDATE OF st;
+    WHERE st.token_hash = v_token_hash;
 
     IF v_record.id IS NULL THEN
         RETURN pg_catalog.jsonb_build_object('success', false, 'error', 'TOKEN_NOT_FOUND');
@@ -328,9 +326,7 @@ BEGIN
     INTO v_record
     FROM public.signature_tokens st
     LEFT JOIN public.pacientes p ON p.id = st.patient_id
-    WHERE st.token_hash = v_token_hash
-       OR st.token_hash = pg_catalog.encode(extensions.digest(v_clean_token::bytea, 'sha256'), 'hex')
-    FOR UPDATE OF st;
+    WHERE st.token_hash = v_token_hash;
 
     IF v_record.id IS NULL THEN
         RETURN pg_catalog.jsonb_build_object('success', false, 'error', 'TOKEN_NOT_FOUND');
