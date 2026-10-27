@@ -125,31 +125,54 @@ export const createEvolutionAddendum = async (evolutionId, comentario) => {
     return data;
 };
 
+const normalizeAddendum = (ad) => ({
+    ...ad,
+    comentario: ad.comentario || ad.contenido || ad.nota || '',
+    contenido: ad.comentario || ad.contenido || ad.nota || '',
+    nota: ad.comentario || ad.contenido || ad.nota || '',
+    author_snapshot: {
+        ...ad.author_snapshot,
+        author_name: ad.author_snapshot?.author_name || ad.author_snapshot?.nombre_completo || ad.author_snapshot?.full_name || 'Profesional',
+        nombre_completo: ad.author_snapshot?.nombre_completo || ad.author_snapshot?.author_name || ad.author_snapshot?.full_name || 'Profesional',
+        full_name: ad.author_snapshot?.full_name || ad.author_snapshot?.author_name || ad.author_snapshot?.nombre_completo || 'Profesional'
+    }
+});
+
 export const getEvolutionAddendaBatch = async (evolutionIds) => {
     if (!Array.isArray(evolutionIds) || evolutionIds.length === 0) return [];
     try {
         const { data, error } = await supabase.rpc("get_evolution_addenda_batch", {
             p_evolution_ids: evolutionIds
         });
-        if (error) {
-            console.warn("Aviso al consultar adendas por lote:", error.message);
-            return [];
+
+        if (!error && Array.isArray(data) && data.length > 0) {
+            return data.map(normalizeAddendum);
         }
-        return (data || []).map(ad => ({
-            ...ad,
-            comentario: ad.comentario || ad.contenido || ad.nota || '',
-            contenido: ad.comentario || ad.contenido || ad.nota || '',
-            nota: ad.comentario || ad.contenido || ad.nota || '',
-            author_snapshot: {
-                ...ad.author_snapshot,
-                author_name: ad.author_snapshot?.author_name || ad.author_snapshot?.nombre_completo || ad.author_snapshot?.full_name || 'Profesional',
-                nombre_completo: ad.author_snapshot?.nombre_completo || ad.author_snapshot?.author_name || ad.author_snapshot?.full_name || 'Profesional',
-                full_name: ad.author_snapshot?.full_name || ad.author_snapshot?.author_name || ad.author_snapshot?.nombre_completo || 'Profesional'
+
+        if (error) {
+            console.warn("Aviso RPC get_evolution_addenda_batch:", error.message || error);
+        }
+
+        // Respaldo directo en tabla si la RPC devolvió vacío o falló por políticas
+        try {
+            const { data: directData, error: directErr } = await supabase
+                .from("evolution_addenda")
+                .select("id, evolution_id, author_id, author_snapshot, addendum_snapshot, comentario, content_hash, created_at")
+                .in("evolution_id", evolutionIds)
+                .order("created_at", { ascending: true });
+
+            if (!directErr && Array.isArray(directData) && directData.length > 0) {
+                return directData.map(normalizeAddendum);
             }
-        }));
+        } catch (fallbackErr) {
+            console.warn("Aviso en consulta directa de respaldo:", fallbackErr);
+        }
+
+        return (data || []).map(normalizeAddendum);
     } catch (err) {
         console.error("Error en getEvolutionAddendaBatch:", err);
         return [];
     }
 };
+
 

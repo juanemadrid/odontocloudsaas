@@ -1769,14 +1769,37 @@ export default function EvolutionList({ patientId, patientName, patientObj, onEd
     const handleSaveAddendum = async (evoId, noteText) => {
         setIsSavingAddendum(true);
         try {
-            await createEvolutionAddendum(evoId, noteText);
+            const saveRes = await createEvolutionAddendum(evoId, noteText);
             toast.success("Nota aclaratoria registrada exitosamente ✅");
             setAddendumModalEvo(null);
+
             const updated = await getEvolutionAddendaBatch([evoId]);
-            setAddendasByEvoId(prev => ({
-                ...prev,
-                [evoId]: updated || []
-            }));
+            if (Array.isArray(updated) && updated.length > 0) {
+                setAddendasByEvoId(prev => ({
+                    ...prev,
+                    [evoId]: updated
+                }));
+            } else {
+                // Respaldo garantizado en el estado para visualización inmediata
+                const optimisticNote = {
+                    id: saveRes?.addendum_id || `addendum-${Date.now()}`,
+                    evolution_id: evoId,
+                    comentario: noteText.trim(),
+                    contenido: noteText.trim(),
+                    nota: noteText.trim(),
+                    created_at: saveRes?.created_at || new Date().toISOString(),
+                    author_snapshot: {
+                        author_name: userProfile?.nombreCompleto || userProfile?.full_name || 'Profesional',
+                        nombre_completo: userProfile?.nombreCompleto || userProfile?.full_name || 'Profesional',
+                        full_name: userProfile?.nombreCompleto || userProfile?.full_name || 'Profesional',
+                        registro_medico: userProfile?.registroMedico || userProfile?.registro_medico || ''
+                    }
+                };
+                setAddendasByEvoId(prev => ({
+                    ...prev,
+                    [evoId]: [...(prev[evoId] || []), optimisticNote]
+                }));
+            }
         } catch (error) {
             console.error("Error al registrar nota aclaratoria:", error);
             toast.error("Error al registrar nota aclaratoria: " + (error.message || "Error desconocido"));
