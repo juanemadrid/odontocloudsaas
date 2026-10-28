@@ -1143,6 +1143,7 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
         elaboradoPor: initialDetalles?.elaboradoPor || userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administración",
         usuario_nombre: initialDetalles?.usuario_nombre || userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administración",
         usuarioNombre: initialDetalles?.usuarioNombre || userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administración",
+        usuario_id: user?.id || userProfile?.uid || null,
       };
 
       const currentOperation = initialFactura?.id ? FEV_OPERATION.RETRY : FEV_OPERATION.EMIT;
@@ -1177,7 +1178,6 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
 
       const dbFactura = {
         tenant_id: inquilino,
-        usuario_id: user?.id || userProfile?.uid || null,
         paciente_id: targetTercero.tipo === "paciente" ? targetTercero.id : null,
         numero: finalNumero,
         subtotal: subtotalBruto,

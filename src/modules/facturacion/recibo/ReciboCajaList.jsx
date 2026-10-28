@@ -315,12 +315,12 @@ export default function ReciboCajaList({ onNew }) {
                 qrCode: dianResult?.qrCode || null,
                 factusInvoiceNumber: dianResult?.factusInvoiceNumber || finalInvoiceNumber,
                 dianStatus: dianResult?.dianStatus || "NO_CONFIGURADA",
+                usuario_id: isUUID(userProfile?.id) ? userProfile.id : null,
                 creado_por: userProfile?.nombreCompleto || userProfile?.email || "Administración"
             };
 
             const dbFactura = {
                 tenant_id: inquilino,
-                usuario_id: isUUID(userProfile?.id) ? userProfile.id : null,
                 paciente_id: (patientData.id && isUUID(patientData.id)) ? patientData.id : null,
                 numero: finalInvoiceNumber,
                 subtotal: totalMonto,
