@@ -13,6 +13,7 @@ import { printReciboCaja, printElectronicInvoice } from "../../../utils/electron
 import { getReceiptPlanFinancials } from "../../../services/billingService";
 import { getConfigSection, getConfigItems } from "../../../services/configPersistenceService";
 import { isDoctorUser } from "../../../utils/doctorHelpers";
+import FacturaElectronicaForm from "../electronica/FacturaElectronicaForm";
 
 const fmt = (n) => {
   const num = Number(n || 0);
@@ -70,6 +71,113 @@ export default function ReciboCajaList({ onNew }) {
     const [fechaInicio, setFechaInicio] = useState("");
     const [fechaFin, setFechaFin] = useState("");
     const [searchTerm, setSearchTerm] = useState("");
+
+    // Selección de recibos para Generar Factura
+    const [selectedReciboIds, setSelectedReciboIds] = useState(new Set());
+    const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+    const [invoiceInitialData, setInvoiceInitialData] = useState(null);
+
+    const handleToggleSelectAll = (e) => {
+        if (e.target.checked) {
+            const selectable = (filteredRecibos || [])
+                .filter(r => !(String(r.estado || "").toLowerCase() === "anulado" || Boolean(r.anulado)))
+                .map(r => r.id);
+            setSelectedReciboIds(new Set(selectable));
+        } else {
+            setSelectedReciboIds(new Set());
+        }
+    };
+
+    const handleToggleSelectRow = (id) => {
+        setSelectedReciboIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    };
+
+    const handleGenerateInvoiceClick = () => {
+        if (selectedReciboIds.size === 0) {
+            if (toast && toast.warning) {
+                toast.warning("Debes marcar con la casilla (✓) al menos un recibo de caja de la lista para generarle la factura de venta.");
+            } else if (toast && toast.info) {
+                toast.info("Debes marcar con la casilla (✓) al menos un recibo de caja de la lista para generarle la factura de venta.");
+            }
+            return;
+        }
+
+        const selectedList = recibos.filter(r => selectedReciboIds.has(r.id));
+        if (selectedList.length === 0) return;
+
+        // Validar que todos los recibos seleccionados pertenezcan al mismo paciente
+        const firstDoc = (selectedList[0].pacienteDocumento || "").trim();
+        const firstName = (selectedList[0].pacienteNombre || "").trim().toLowerCase();
+
+        const hasDifferentPatient = selectedList.some(r => {
+            const doc = (r.pacienteDocumento || "").trim();
+            const name = (r.pacienteNombre || "").trim().toLowerCase();
+            if (firstDoc && doc) return doc !== firstDoc;
+            return name !== firstName;
+        });
+
+        if (hasDifferentPatient) {
+            if (toast && toast.error) {
+                toast.error("Todos los recibos seleccionados deben pertenecer al mismo paciente para unificarse en una sola factura.");
+            }
+            return;
+        }
+
+        const first = selectedList[0];
+        const invoiceItems = selectedList.flatMap((r, rIdx) => {
+            if (Array.isArray(r.conceptos) && r.conceptos.length > 0) {
+                return r.conceptos.map((c, cIdx) => ({
+                    id: `rc_${r.id}_${cIdx}`,
+                    concepto: c.concepto || c.nombre || `Recibo #${r.consecutivoNumero}`,
+                    descripcion: c.descripcion || c.concepto || `RC #${r.consecutivoNumero} - ${r.pacienteNombre}`,
+                    precioUnitario: Number(c.valor || c.monto || c.precio || r.total || 0),
+                    cantidad: Number(c.cantidad || 1),
+                    descuento: Number(c.descuento || 0),
+                    total: Number(c.total || c.valor || r.total || 0)
+                }));
+            }
+            return [{
+                id: `rc_${r.id}_${rIdx}`,
+                concepto: r.concepto || `Recibo de caja #${r.consecutivoNumero}`,
+                descripcion: `Abono según RC #${r.consecutivoNumero} - ${r.pacienteNombre}`,
+                precioUnitario: Number(r.total || 0),
+                cantidad: 1,
+                descuento: 0,
+                total: Number(r.total || 0)
+            }];
+        });
+
+        const totalCalc = invoiceItems.reduce((acc, it) => acc + Number(it.total || 0), 0);
+        const rcNumeros = selectedList.map(r => `#${r.consecutivoNumero}`).join(", ");
+
+        setInvoiceInitialData({
+            pacienteNombre: first.pacienteNombre,
+            pacienteDocumento: first.pacienteDocumento,
+            pacienteTipoDocumento: first.pacienteTipoDocumento || "CC",
+            pacienteTelefono: first.pacienteTelefono,
+            pacienteDireccion: first.pacienteDireccion,
+            pacienteCiudad: first.pacienteCiudad,
+            profesional: first.profesionalNombre,
+            medioPago: first.medioPago || "Efectivo",
+            observaciones: `Factura generada a partir de los recibos de caja: ${rcNumeros}`,
+            recibo_asociado: selectedList.map(r => r.consecutivoNumero).join(", "),
+            recibosAsociados: selectedList.map(r => ({
+                recibo_id: r.id,
+                recibo_numero: r.consecutivoNumero,
+                monto: r.total
+            })),
+            items: invoiceItems,
+            total: totalCalc
+        });
+
+        setShowInvoiceModal(true);
+    };
+
 
     useEffect(() => {
         if (userProfile) {
@@ -1119,10 +1227,18 @@ export default function ReciboCajaList({ onNew }) {
             {/* SUB-BAR / ACTIONS */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pt-1">
                 <button 
-                    onClick={() => toast && toast.info("Función de generar factura a partir del recibo seleccionada.")}
-                    className="px-4 py-2 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-lg font-bold text-[12px] shadow-sm transition-all flex items-center gap-1.5 cursor-pointer border-0"
+                    type="button"
+                    onClick={handleGenerateInvoiceClick}
+                    className="px-4 py-2 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-lg font-bold text-[12px] shadow-sm transition-all flex items-center gap-2 cursor-pointer border-0 active:scale-95"
+                    title={selectedReciboIds.size > 0 ? `Generar factura para ${selectedReciboIds.size} recibo(s) seleccionado(s)` : "Selecciona uno o varios recibos para generar su factura"}
                 >
-                    <FiPlus size={15} /> + Generar factura
+                    <FiPlus size={15} /> 
+                    <span>+ Generar factura</span>
+                    {selectedReciboIds.size > 0 && (
+                        <span className="bg-white text-[#5b8c22] text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs">
+                            {selectedReciboIds.size} {selectedReciboIds.size === 1 ? "recibo" : "recibos"}
+                        </span>
+                    )}
                 </button>
 
                 <div className="flex items-center gap-3 w-full sm:w-auto">
@@ -1152,8 +1268,13 @@ export default function ReciboCajaList({ onNew }) {
             </div>
 
             {/* Drag helper bar (OralDrive style) */}
-            <div className="text-[11px] text-slate-400 font-medium italic pl-1">
-                Arrastra una columna aquí para agrupar por ella
+            <div className="text-[11px] text-slate-400 font-medium italic pl-1 flex items-center justify-between">
+                <span>Arrastra una columna aquí para agrupar por ella</span>
+                {selectedReciboIds.size > 0 && (
+                    <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-md">
+                        ✓ {selectedReciboIds.size} recibo(s) palomeado(s) para facturación
+                    </span>
+                )}
             </div>
 
             {/* MAIN TABLE CONTAINER (OralDrive Style) */}
@@ -1163,7 +1284,21 @@ export default function ReciboCajaList({ onNew }) {
                         {/* Table Header */}
                         <thead>
                             <tr className="bg-slate-50/90 border-b border-slate-200 text-slate-500 text-[11px] font-bold">
-                                <th className="py-2.5 px-3 w-10 text-center text-slate-400"></th>
+                                {/* Checkbox seleccionar todos */}
+                                <th className="py-2.5 px-3 w-9 text-center">
+                                    <input 
+                                        type="checkbox"
+                                        checked={
+                                            filteredRecibos.length > 0 && 
+                                            filteredRecibos.filter(r => !(String(r.estado || "").toLowerCase() === "anulado" || Boolean(r.anulado))).length > 0 &&
+                                            filteredRecibos.filter(r => !(String(r.estado || "").toLowerCase() === "anulado" || Boolean(r.anulado))).every(r => selectedReciboIds.has(r.id))
+                                        }
+                                        onChange={handleToggleSelectAll}
+                                        className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer accent-[#8CC63F]"
+                                        title="Seleccionar / deseleccionar todos los recibos"
+                                    />
+                                </th>
+                                <th className="py-2.5 px-2 w-7 text-center text-slate-400"></th>
                                 <th className="py-2.5 px-3 w-20">Doc.</th>
                                 <th className="py-2.5 px-3 w-24 text-center">Doc. Ref.</th>
                                 <th className="py-2.5 px-4">Paciente / Tercero</th>
@@ -1180,14 +1315,14 @@ export default function ReciboCajaList({ onNew }) {
                         <tbody className="divide-y divide-slate-100 text-[12px] text-slate-700">
                             {loading ? (
                                 <tr>
-                                    <td colSpan="10" className="py-14 text-center text-slate-400 font-medium">
+                                    <td colSpan="11" className="py-14 text-center text-slate-400 font-medium">
                                         <div className="w-6 h-6 border-2 border-blue-600/20 border-t-blue-600 rounded-full animate-spin mx-auto mb-2" />
                                         Cargando recibos de caja...
                                     </td>
                                 </tr>
                             ) : !hasSearched ? (
                                 <tr>
-                                    <td colSpan="10" className="py-16 text-center text-slate-400 font-medium">
+                                    <td colSpan="11" className="py-16 text-center text-slate-400 font-medium">
                                         <FiCalendar size={32} className="mx-auto mb-3 text-slate-300" />
                                         <p className="text-[13px] font-bold text-slate-700">Selecciona el rango de fechas y haz clic en "Buscar"</p>
                                         <p className="text-[11px] text-slate-400 mt-1">Los recibos de caja se consultarán únicamente para el período especificado.</p>
@@ -1195,7 +1330,7 @@ export default function ReciboCajaList({ onNew }) {
                                 </tr>
                             ) : filteredRecibos.length === 0 ? (
                                 <tr>
-                                    <td colSpan="10" className="py-12 text-center text-slate-400 font-medium italic">
+                                    <td colSpan="11" className="py-12 text-center text-slate-400 font-medium italic">
                                         No se encontraron registros de recibos de caja en este rango de fechas.
                                     </td>
                                 </tr>
@@ -1203,21 +1338,36 @@ export default function ReciboCajaList({ onNew }) {
                                 filteredRecibos.map((r) => {
                                     const isAnulado = String(r.estado || "").toLowerCase() === "anulado" || Boolean(r.anulado);
                                     const isExpanded = expandedRowId === r.id;
+                                    const isSelected = selectedReciboIds.has(r.id);
 
                                     return (
                                         <React.Fragment key={r.id}>
                                             <tr 
                                                 onClick={() => toggleRow(r.id)}
                                                 className={`transition-colors cursor-pointer ${
-                                                    isExpanded 
-                                                        ? 'bg-blue-50/40' 
-                                                        : isAnulado 
-                                                            ? 'bg-rose-50/40 hover:bg-rose-50/70 border-l-4 border-l-rose-500' 
-                                                            : 'hover:bg-slate-50/80'
+                                                    isSelected
+                                                        ? 'bg-emerald-50/60 hover:bg-emerald-50/80 border-l-4 border-l-[#8CC63F]'
+                                                        : isExpanded 
+                                                            ? 'bg-blue-50/40' 
+                                                            : isAnulado 
+                                                                ? 'bg-rose-50/40 hover:bg-rose-50/70 border-l-4 border-l-rose-500' 
+                                                                : 'hover:bg-slate-50/80'
                                                 }`}
                                             >
+                                                {/* Checkbox de selección para facturar */}
+                                                <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                                    <input 
+                                                        type="checkbox"
+                                                        checked={isSelected}
+                                                        onChange={() => handleToggleSelectRow(r.id)}
+                                                        disabled={isAnulado}
+                                                        className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed accent-[#8CC63F]"
+                                                        title={isAnulado ? "No se puede facturar un recibo anulado" : "Palomear para generar factura"}
+                                                    />
+                                                </td>
+
                                                 {/* Expander Icon */}
-                                                <td className="py-3 px-3 text-center text-slate-400">
+                                                <td className="py-3 px-2 text-center text-slate-400">
                                                     {isExpanded ? <FiChevronDown size={14} className="text-blue-600" /> : <FiChevronRight size={14} />}
                                                 </td>
 
@@ -1621,6 +1771,51 @@ export default function ReciboCajaList({ onNew }) {
                 </div>
             )}
 
+            {/* ========================================================================= */}
+            {/* MODAL: GENERAR FACTURA DE VENTA DESDE RECIBOS SELECCIONADOS               */}
+            {/* ========================================================================= */}
+            {showInvoiceModal && invoiceInitialData && (
+                <div className="fixed inset-0 z-[1250] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-fadeIn">
+                    <div className="bg-white w-full max-w-6xl max-h-[94vh] overflow-y-auto rounded-2xl shadow-2xl p-6 border border-slate-100 animate-scaleIn">
+                        <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
+                            <div className="flex items-center gap-2.5">
+                                <span className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                                    <FiFileText size={18} />
+                                </span>
+                                <div>
+                                    <h2 className="text-sm font-bold text-slate-800">Generar Factura a partir de Recibo(s) de Caja</h2>
+                                    <p className="text-[11px] text-slate-500">
+                                        Paciente: <span className="font-bold text-slate-700">{invoiceInitialData.pacienteNombre}</span> · Recibos: <span className="font-mono text-emerald-700 font-bold">{invoiceInitialData.recibo_asociado}</span>
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowInvoiceModal(false)}
+                                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                                title="Cerrar modal"
+                            >
+                                <FiX size={18} />
+                            </button>
+                        </div>
+
+                        <FacturaElectronicaForm
+                            initialFactura={invoiceInitialData}
+                            onCancel={() => setShowInvoiceModal(false)}
+                            onSuccess={() => {
+                                setShowInvoiceModal(false);
+                                setSelectedReciboIds(new Set());
+                                loadData();
+                                if (toast && toast.success) {
+                                    toast.success("Factura generada y vinculada a los recibos de caja exitosamente.");
+                                }
+                            }}
+                        />
+                    </div>
+                </div>
+            )}
+
         </div>
     );
 }
+
