@@ -77,16 +77,9 @@ export default function ReciboCajaList({ onNew }) {
     const [showInvoiceModal, setShowInvoiceModal] = useState(false);
     const [invoiceInitialData, setInvoiceInitialData] = useState(null);
 
-    const handleToggleSelectAll = (e) => {
-        if (e.target.checked) {
-            const selectable = (filteredRecibos || [])
-                .filter(r => !(String(r.estado || "").toLowerCase() === "anulado" || Boolean(r.anulado)))
-                .map(r => r.id);
-            setSelectedReciboIds(new Set(selectable));
-        } else {
-            setSelectedReciboIds(new Set());
-        }
-    };
+    // Paginación (10 registros por página según requerimiento)
+    const PAGE_SIZE = 10;
+    const [currentPage, setCurrentPage] = useState(1);
 
     const handleToggleSelectRow = (id) => {
         setSelectedReciboIds(prev => {
@@ -1154,6 +1147,46 @@ export default function ReciboCajaList({ onNew }) {
         );
     }, [recibos, searchTerm]);
 
+    // Paginación y selección por página (10 registros por página según solicitud)
+    const totalPages = Math.max(1, Math.ceil(filteredRecibos.length / PAGE_SIZE));
+
+    const paginatedRecibos = useMemo(() => {
+        const start = (currentPage - 1) * PAGE_SIZE;
+        return filteredRecibos.slice(start, start + PAGE_SIZE);
+    }, [filteredRecibos, currentPage]);
+
+    const selectableCurrentPage = useMemo(() => {
+        return paginatedRecibos.filter(r => !(String(r.estado || "").toLowerCase() === "anulado" || Boolean(r.anulado)));
+    }, [paginatedRecibos]);
+
+    const isCurrentPageAllSelected = selectableCurrentPage.length > 0 && selectableCurrentPage.every(r => selectedReciboIds.has(r.id));
+
+    const handleToggleSelectAll = (e) => {
+        if (e.target.checked) {
+            setSelectedReciboIds(prev => {
+                const next = new Set(prev);
+                selectableCurrentPage.forEach(r => next.add(r.id));
+                return next;
+            });
+        } else {
+            setSelectedReciboIds(prev => {
+                const next = new Set(prev);
+                selectableCurrentPage.forEach(r => next.delete(r.id));
+                return next;
+            });
+        }
+    };
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchTerm, fechaInicio, fechaFin]);
+
+    useEffect(() => {
+        if (currentPage > totalPages) {
+            setCurrentPage(totalPages);
+        }
+    }, [totalPages, currentPage]);
+
     const handleCreateNew = onNew || (() => navigate("nuevo"));
 
     return (
@@ -1271,9 +1304,19 @@ export default function ReciboCajaList({ onNew }) {
             <div className="text-[11px] text-slate-400 font-medium italic pl-1 flex items-center justify-between">
                 <span>Arrastra una columna aquí para agrupar por ella</span>
                 {selectedReciboIds.size > 0 && (
-                    <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-md">
-                        ✓ {selectedReciboIds.size} recibo(s) palomeado(s) para facturación
-                    </span>
+                    <div className="flex items-center gap-2 not-italic">
+                        <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-md flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#8CC63F]" />
+                            {selectedReciboIds.size} {selectedReciboIds.size === 1 ? "recibo seleccionado" : "recibos seleccionados"}
+                        </span>
+                        <button
+                            type="button"
+                            onClick={() => setSelectedReciboIds(new Set())}
+                            className="text-[10px] text-slate-400 hover:text-slate-600 underline cursor-pointer"
+                        >
+                            Deseleccionar
+                        </button>
+                    </div>
                 )}
             </div>
 
@@ -1284,18 +1327,14 @@ export default function ReciboCajaList({ onNew }) {
                         {/* Table Header */}
                         <thead>
                             <tr className="bg-slate-50/90 border-b border-slate-200 text-slate-500 text-[11px] font-bold">
-                                {/* Checkbox seleccionar todos */}
-                                <th className="py-2.5 px-3 w-9 text-center">
+                                {/* Checkbox seleccionar todos en la página */}
+                                <th className="py-2.5 px-3 w-8 text-center">
                                     <input 
                                         type="checkbox"
-                                        checked={
-                                            filteredRecibos.length > 0 && 
-                                            filteredRecibos.filter(r => !(String(r.estado || "").toLowerCase() === "anulado" || Boolean(r.anulado))).length > 0 &&
-                                            filteredRecibos.filter(r => !(String(r.estado || "").toLowerCase() === "anulado" || Boolean(r.anulado))).every(r => selectedReciboIds.has(r.id))
-                                        }
+                                        checked={isCurrentPageAllSelected}
                                         onChange={handleToggleSelectAll}
-                                        className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer accent-[#8CC63F]"
-                                        title="Seleccionar / deseleccionar todos los recibos"
+                                        className="w-3.5 h-3.5 rounded border border-slate-300 text-[#8CC63F] accent-[#8CC63F] cursor-pointer focus:ring-0 focus:outline-none transition-all"
+                                        title="Seleccionar / deseleccionar todos los recibos de esta página"
                                     />
                                 </th>
                                 <th className="py-2.5 px-2 w-7 text-center text-slate-400"></th>
@@ -1335,7 +1374,7 @@ export default function ReciboCajaList({ onNew }) {
                                     </td>
                                 </tr>
                             ) : (
-                                filteredRecibos.map((r) => {
+                                paginatedRecibos.map((r) => {
                                     const isAnulado = String(r.estado || "").toLowerCase() === "anulado" || Boolean(r.anulado);
                                     const isExpanded = expandedRowId === r.id;
                                     const isSelected = selectedReciboIds.has(r.id);
@@ -1346,33 +1385,33 @@ export default function ReciboCajaList({ onNew }) {
                                                 onClick={() => toggleRow(r.id)}
                                                 className={`transition-colors cursor-pointer ${
                                                     isSelected
-                                                        ? 'bg-emerald-50/60 hover:bg-emerald-50/80 border-l-4 border-l-[#8CC63F]'
+                                                        ? 'bg-emerald-50/40 hover:bg-emerald-50/60 border-l-2 border-l-[#8CC63F]'
                                                         : isExpanded 
                                                             ? 'bg-blue-50/40' 
                                                             : isAnulado 
-                                                                ? 'bg-rose-50/40 hover:bg-rose-50/70 border-l-4 border-l-rose-500' 
+                                                                ? 'bg-rose-50/40 hover:bg-rose-50/70 border-l-2 border-l-rose-500' 
                                                                 : 'hover:bg-slate-50/80'
                                                 }`}
                                             >
                                                 {/* Checkbox de selección para facturar */}
-                                                <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                                <td className="py-2.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
                                                     <input 
                                                         type="checkbox"
                                                         checked={isSelected}
                                                         onChange={() => handleToggleSelectRow(r.id)}
                                                         disabled={isAnulado}
-                                                        className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed accent-[#8CC63F]"
+                                                        className="w-3.5 h-3.5 rounded border border-slate-300 text-[#8CC63F] accent-[#8CC63F] cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed focus:ring-0 focus:outline-none transition-all"
                                                         title={isAnulado ? "No se puede facturar un recibo anulado" : "Palomear para generar factura"}
                                                     />
                                                 </td>
 
                                                 {/* Expander Icon */}
-                                                <td className="py-3 px-2 text-center text-slate-400">
+                                                <td className="py-2.5 px-2 text-center text-slate-400">
                                                     {isExpanded ? <FiChevronDown size={14} className="text-blue-600" /> : <FiChevronRight size={14} />}
                                                 </td>
 
                                                 {/* Doc. (Consecutivo) */}
-                                                <td className={`py-3 px-3 font-semibold font-mono ${isAnulado ? 'text-rose-600 font-bold' : 'text-slate-700'}`}>
+                                                <td className={`py-2.5 px-3 font-semibold font-mono ${isAnulado ? 'text-rose-600 font-bold' : 'text-slate-700'}`}>
                                                     <div className="flex items-center gap-1.5">
                                                         <span>{r.consecutivoNumero}</span>
                                                         {isAnulado && (
@@ -1384,7 +1423,7 @@ export default function ReciboCajaList({ onNew }) {
                                                 </td>
 
                                                 {/* Doc. Ref. (Eye Button like OralDrive) */}
-                                                <td className="py-3 px-3 text-center" onClick={e => e.stopPropagation()}>
+                                                <td className="py-2.5 px-3 text-center" onClick={e => e.stopPropagation()}>
                                                     <button 
                                                         type="button"
                                                         onClick={() => setAssociatedDocsModal({ open: true, recibo: r })}
@@ -1396,37 +1435,37 @@ export default function ReciboCajaList({ onNew }) {
                                                 </td>
 
                                                 {/* Pac./Ter. */}
-                                                <td className={`py-3 px-4 font-semibold uppercase ${isAnulado ? 'text-rose-600 font-bold' : 'text-slate-800'}`}>
+                                                <td className={`py-2.5 px-4 font-semibold uppercase ${isAnulado ? 'text-rose-600 font-bold' : 'text-slate-800'}`}>
                                                     {r.pacienteNombre}
                                                 </td>
 
                                                 {/* Profesional */}
-                                                <td className={`py-3 px-4 font-medium ${isAnulado ? 'text-rose-500 opacity-80' : 'text-slate-600'}`}>
+                                                <td className={`py-2.5 px-4 font-medium ${isAnulado ? 'text-rose-500 opacity-80' : 'text-slate-600'}`}>
                                                     {r.profesionalNombre}
                                                 </td>
 
                                                 {/* Medio de pago */}
-                                                <td className={`py-3 px-4 font-medium ${isAnulado ? 'text-rose-500 opacity-80' : 'text-slate-600'}`}>
+                                                <td className={`py-2.5 px-4 font-medium ${isAnulado ? 'text-rose-500 opacity-80' : 'text-slate-600'}`}>
                                                     {r.medioPago}
                                                 </td>
 
                                                 {/* Referencia */}
-                                                <td className="py-3 px-3 text-slate-500 font-mono text-[11px]">
+                                                <td className="py-2.5 px-3 text-slate-500 font-mono text-[11px]">
                                                     {r.referencia || "—"}
                                                 </td>
 
                                                 {/* Vence en */}
-                                                <td className="py-3 px-3 text-center text-slate-600 font-semibold font-mono">
+                                                <td className="py-2.5 px-3 text-center text-slate-600 font-semibold font-mono">
                                                     {r.venceEn || 0}
                                                 </td>
 
                                                 {/* T. Doc. */}
-                                                <td className={`py-3 px-4 text-right font-bold font-mono ${isAnulado ? 'text-rose-600 line-through opacity-75' : 'text-slate-800'}`}>
+                                                <td className={`py-2.5 px-4 text-right font-bold font-mono ${isAnulado ? 'text-rose-600 line-through opacity-75' : 'text-slate-800'}`}>
                                                     {fmt(r.total)}
                                                 </td>
 
                                                 {/* Acciones directas (Imprimir y Anular) */}
-                                                <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                                <td className="py-2.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
                                                     <div className="flex items-center justify-center gap-1.5">
                                                         <button
                                                             type="button"
@@ -1462,7 +1501,7 @@ export default function ReciboCajaList({ onNew }) {
                                             {/* EXPANDED ROW ACTIONS (OralDrive Style) */}
                                             {isExpanded && (
                                                 <tr className="bg-slate-50/90 border-b border-slate-200/80 animate-fadeIn">
-                                                    <td colSpan="10" className="py-4 px-8">
+                                                    <td colSpan="11" className="py-4 px-8">
                                                         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                                                             <div className="space-y-1 text-xs">
                                                                 <div>
@@ -1541,6 +1580,68 @@ export default function ReciboCajaList({ onNew }) {
                             )}
                         </tbody>
                     </table>
+                </div>
+
+                {/* Paginador (1:1 OralDrive / OdontoCloud - 10 recibos por página) */}
+                <div className="px-5 py-3 border-t border-slate-200 bg-white flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
+                    <div>
+                        {filteredRecibos.length > 0 ? (
+                            <span>
+                                Mostrando <strong className="text-slate-700 font-bold">{(currentPage - 1) * PAGE_SIZE + 1}</strong> a <strong className="text-slate-700 font-bold">{Math.min(currentPage * PAGE_SIZE, filteredRecibos.length)}</strong> de <strong className="text-slate-700 font-bold">{filteredRecibos.length}</strong> recibos
+                            </span>
+                        ) : (
+                            <span>0 recibos</span>
+                        )}
+                    </div>
+
+                    {totalPages > 1 && (
+                        <div className="flex items-center gap-1">
+                            <button
+                                type="button"
+                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                disabled={currentPage === 1}
+                                className="w-7 h-7 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors text-xs font-bold cursor-pointer"
+                                title="Página anterior"
+                            >
+                                ‹
+                            </button>
+                            {Array.from({ length: totalPages }, (_, i) => i + 1)
+                                .filter(pageNum => {
+                                    if (totalPages <= 7) return true;
+                                    if (pageNum === 1 || pageNum === totalPages) return true;
+                                    return Math.abs(pageNum - currentPage) <= 1;
+                                })
+                                .map((pageNum, idx, arr) => {
+                                    const prevPageNum = arr[idx - 1];
+                                    const showEllipsis = prevPageNum && pageNum - prevPageNum > 1;
+                                    return (
+                                        <React.Fragment key={pageNum}>
+                                            {showEllipsis && <span className="px-1 text-slate-400">...</span>}
+                                            <button
+                                                type="button"
+                                                onClick={() => setCurrentPage(pageNum)}
+                                                className={`w-7 h-7 rounded text-xs font-semibold transition-all cursor-pointer ${
+                                                    currentPage === pageNum
+                                                        ? "bg-[#8CC63F] text-white shadow-xs font-bold"
+                                                        : "border border-slate-200 bg-white hover:bg-slate-50 text-slate-600"
+                                                }`}
+                                            >
+                                                {pageNum}
+                                            </button>
+                                        </React.Fragment>
+                                    );
+                                })}
+                            <button
+                                type="button"
+                                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                disabled={currentPage === totalPages}
+                                className="w-7 h-7 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center transition-colors text-xs font-bold cursor-pointer"
+                                title="Página siguiente"
+                            >
+                                ›
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
 
