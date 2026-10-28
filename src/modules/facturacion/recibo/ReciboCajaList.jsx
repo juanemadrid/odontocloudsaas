@@ -13,7 +13,9 @@ import { printReciboCaja, printElectronicInvoice } from "../../../utils/electron
 import { getReceiptPlanFinancials } from "../../../services/billingService";
 import { getConfigSection, getConfigItems } from "../../../services/configPersistenceService";
 import { isDoctorUser } from "../../../utils/doctorHelpers";
-import FacturaElectronicaForm from "../electronica/FacturaElectronicaForm";
+import { consumeNextConsecutivo, CONSECUTIVO_TYPES } from "../../../services/consecutivosService";
+import { emitirFacturaDian } from "../../../services/DianService";
+import { getFactusCredentialsForTenant } from "../../../services/factusAdminService";
 
 const fmt = (n) => {
   const num = Number(n || 0);
@@ -74,8 +76,13 @@ export default function ReciboCajaList({ onNew }) {
 
     // Selección de recibos para Generar Factura
     const [selectedReciboIds, setSelectedReciboIds] = useState(new Set());
-    const [showInvoiceModal, setShowInvoiceModal] = useState(false);
-    const [invoiceInitialData, setInvoiceInitialData] = useState(null);
+    const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
+    const [generatedInvoiceModal, setGeneratedInvoiceModal] = useState({
+        open: false,
+        factura: null,
+        patientData: null,
+        rcNumerosText: ""
+    });
 
     // Paginación (10 registros por página según requerimiento)
     const PAGE_SIZE = 10;
@@ -90,20 +97,26 @@ export default function ReciboCajaList({ onNew }) {
         });
     };
 
-    const handleGenerateInvoiceClick = () => {
+    const isUUID = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(str || ""));
+
+    const handleGenerateInvoiceClick = async () => {
         if (selectedReciboIds.size === 0) {
-            if (toast && toast.warning) {
-                toast.warning("Debes marcar con la casilla (✓) al menos un recibo de caja de la lista para generarle la factura de venta.");
-            } else if (toast && toast.info) {
-                toast.info("Debes marcar con la casilla (✓) al menos un recibo de caja de la lista para generarle la factura de venta.");
-            }
+            toast && toast.warning("Debes marcar con la casilla (✓) al menos un recibo de caja de la lista para generarle la factura de venta.");
             return;
         }
 
         const selectedList = recibos.filter(r => selectedReciboIds.has(r.id));
         if (selectedList.length === 0) return;
 
-        // Validar que todos los recibos seleccionados pertenezcan al mismo paciente
+        // 1. Validar si alguno de los recibos ya tiene factura asociada
+        const alreadyInvoiced = selectedList.find(r => r.fevNumero || r.docRefNumber || r.associatedDoc?.numero);
+        if (alreadyInvoiced) {
+            const invoiceNum = alreadyInvoiced.fevNumero || alreadyInvoiced.docRefNumber || alreadyInvoiced.associatedDoc?.numero;
+            toast && toast.warning(`El recibo #${alreadyInvoiced.consecutivoNumero} ya tiene la factura ${invoiceNum} vinculada. Desmárcalo para continuar.`);
+            return;
+        }
+
+        // 2. Validar que todos los recibos seleccionados pertenezcan al mismo paciente
         const firstDoc = (selectedList[0].pacienteDocumento || "").trim();
         const firstName = (selectedList[0].pacienteNombre || "").trim().toLowerCase();
 
@@ -115,60 +128,302 @@ export default function ReciboCajaList({ onNew }) {
         });
 
         if (hasDifferentPatient) {
-            if (toast && toast.error) {
-                toast.error("Todos los recibos seleccionados deben pertenecer al mismo paciente para unificarse en una sola factura.");
-            }
+            toast && toast.error("Todos los recibos seleccionados deben pertenecer al mismo paciente para unificarse en una sola factura de venta.");
             return;
         }
 
-        const first = selectedList[0];
-        const invoiceItems = selectedList.flatMap((r, rIdx) => {
-            if (Array.isArray(r.conceptos) && r.conceptos.length > 0) {
-                return r.conceptos.map((c, cIdx) => ({
-                    id: `rc_${r.id}_${cIdx}`,
-                    concepto: c.concepto || c.nombre || `Recibo #${r.consecutivoNumero}`,
-                    descripcion: c.descripcion || c.concepto || `RC #${r.consecutivoNumero} - ${r.pacienteNombre}`,
-                    precioUnitario: Number(c.valor || c.monto || c.precio || r.total || 0),
-                    cantidad: Number(c.cantidad || 1),
-                    descuento: Number(c.descuento || 0),
-                    total: Number(c.total || c.valor || r.total || 0)
-                }));
+        setIsGeneratingInvoice(true);
+        try {
+            const first = selectedList[0];
+
+            // 3. Obtener datos completos del paciente / tercero
+            let patientData = {
+                id: first.pacienteId || first.paciente_id || first._raw?.paciente_id,
+                nombre: first.pacienteNombre || "Paciente",
+                documento: first.pacienteDocumento || "",
+                tipoDocumento: first.pacienteTipoDocumento || "CC",
+                direccion: first.pacienteDireccion || "Dirección no registrada",
+                telefono: first.pacienteTelefono || "",
+                ciudad: first.pacienteCiudad || companyInfo?.ciudad || "Sincelejo",
+                email: ""
+            };
+
+            if (patientData.id && isUUID(patientData.id)) {
+                try {
+                    const { data: pDb } = await supabase.from("pacientes").select("*").eq("id", patientData.id).maybeSingle();
+                    if (pDb) {
+                        const full = `${pDb.nombres || pDb.nombre || ""} ${pDb.apellidos || pDb.apellido || ""}`.trim();
+                        if (full) patientData.nombre = full;
+                        patientData.documento = pDb.documento || pDb.nroDocumento || patientData.documento;
+                        patientData.tipoDocumento = pDb.tipoDocumento || pDb.tipo_documento || patientData.tipoDocumento;
+                        patientData.direccion = pDb.direccion || pDb.direccionDomicilio || patientData.direccion;
+                        patientData.telefono = pDb.telefono || pDb.celular || patientData.telefono;
+                        patientData.ciudad = pDb.ciudad || pDb.ciudadDomicilio || patientData.ciudad;
+                        patientData.email = pDb.email || pDb.correo || "";
+                    }
+                } catch (pErr) {
+                    console.warn("Aviso al consultar detalles del paciente:", pErr);
+                }
             }
-            return [{
-                id: `rc_${r.id}_${rIdx}`,
-                concepto: r.concepto || `Recibo de caja #${r.consecutivoNumero}`,
-                descripcion: `Abono según RC #${r.consecutivoNumero} - ${r.pacienteNombre}`,
-                precioUnitario: Number(r.total || 0),
-                cantidad: 1,
+
+            // 4. Mapear conceptos e ítems del o los recibos seleccionados
+            const invoiceItems = selectedList.flatMap((r, rIdx) => {
+                if (Array.isArray(r.conceptos) && r.conceptos.length > 0) {
+                    return r.conceptos.map((c, cIdx) => ({
+                        id: `rc_${r.id}_${cIdx}`,
+                        code: c.code || `SERV-${String(cIdx + 1).padStart(4, "0")}`,
+                        nombre: c.concepto || c.nombre || `Recibo #${r.consecutivoNumero}`,
+                        concepto: c.concepto || c.nombre || `Recibo #${r.consecutivoNumero}`,
+                        descripcion: c.descripcion || c.concepto || `RC #${r.consecutivoNumero} - ${r.pacienteNombre}`,
+                        precioUnitario: Number(c.valor || c.monto || c.precio || r.total || 0),
+                        cantidad: Number(c.cantidad || 1),
+                        descuento: Number(c.descuento || 0),
+                        total: Number(c.total || c.valor || r.total || 0)
+                    }));
+                }
+                const conceptoDesc = r.concepto || r.observaciones || `Recibo de caja #${r.consecutivoNumero}`;
+                return [{
+                    id: `rc_${r.id}_${rIdx}`,
+                    code: `SERV-${String(rIdx + 1).padStart(4, "0")}`,
+                    nombre: conceptoDesc,
+                    concepto: conceptoDesc,
+                    descripcion: `Abono según RC #${r.consecutivoNumero} - ${r.pacienteNombre}`,
+                    precioUnitario: Number(r.total || 0),
+                    cantidad: 1,
+                    descuento: 0,
+                    total: Number(r.total || 0)
+                }];
+            });
+
+            const totalMonto = invoiceItems.reduce((acc, it) => acc + Number(it.total || 0), 0);
+            const rcNumerosList = selectedList.map(r => r.consecutivoNumero);
+            const rcNumerosText = rcNumerosList.map(n => `#${n}`).join(", ");
+
+            // 5. Determinar y asignar consecutivo oficial para Facturas de Venta
+            let consList = [];
+            try {
+                consList = await getConfigItems(inquilino, "consecutivos", "consecutivos");
+            } catch (errC) {
+                console.warn("Aviso al leer consecutivos:", errC);
+            }
+            const activeCons = (Array.isArray(consList) && consList.find(c => c.activo !== false)) || (Array.isArray(consList) ? consList[0] : null) || {};
+            const prefix = activeCons.fvPrefijo || activeCons.fePrefijoFactura || "FCEV";
+
+            let maxExisting = 0;
+            try {
+                const { data: factList } = await supabase
+                    .from("facturas")
+                    .select("numero")
+                    .eq("tenant_id", inquilino);
+                (factList || []).forEach(f => {
+                    const numPart = parseInt(String(f.numero || "").replace(/\D/g, ""), 10);
+                    if (!isNaN(numPart) && numPart > maxExisting && numPart < 1000000) {
+                        maxExisting = numPart;
+                    }
+                });
+            } catch (e) {
+                console.warn("Aviso al consultar facturas existentes:", e);
+            }
+
+            let nextVal = await consumeNextConsecutivo(inquilino, CONSECUTIVO_TYPES.FACTURA_VENTA);
+            if (maxExisting >= nextVal) {
+                nextVal = maxExisting + 1;
+                try {
+                    const { saveConfigItem } = await import("../../../services/configPersistenceService");
+                    await saveConfigItem(inquilino, "consecutivos", "consecutivos", {
+                        ...activeCons,
+                        fvNumActual: nextVal
+                    });
+                } catch {}
+            }
+            let finalInvoiceNumber = `${prefix ? prefix + "-" : ""}${nextVal}`;
+
+            // 6. Verificar si hay emisión con Factus / DIAN configurada
+            let dianResult = null;
+            try {
+                const tenantCreds = await getFactusCredentialsForTenant(inquilino);
+                const hasCredentials = Boolean(
+                    tenantCreds?.factusClientId &&
+                    tenantCreds?.factusClientSecret &&
+                    tenantCreds?.factusUsername &&
+                    tenantCreds?.factusPassword
+                );
+
+                if (hasCredentials) {
+                    const invoicePayload = {
+                        items: invoiceItems,
+                        total: totalMonto,
+                        subtotal: totalMonto,
+                        medioPago: first.medioPago || "10",
+                        condicionPago: "1",
+                        observaciones: `Factura generada automáticamente a partir del recibo de caja ${rcNumerosText}`,
+                        factusReferenceCode: `OC-${Date.now().toString(36).toUpperCase()}`,
+                        tenant_id: inquilino
+                    };
+                    dianResult = await emitirFacturaDian(invoicePayload, patientData, tenantCreds);
+                    if (dianResult?.success && dianResult?.factusInvoiceNumber) {
+                        finalInvoiceNumber = dianResult.factusInvoiceNumber;
+                    }
+                }
+            } catch (dianErr) {
+                console.warn("Aviso al intentar emitir con DIAN/Factus:", dianErr);
+            }
+
+            // 7. Estructurar payload y guardar en la tabla "facturas"
+            const dbDetalles = {
+                items: invoiceItems,
+                subtotal: totalMonto,
                 descuento: 0,
-                total: Number(r.total || 0)
-            }];
+                total: totalMonto,
+                totalNeto: totalMonto,
+                medioPago: first.medioPago || "Efectivo",
+                medio_pago: first.medioPago || "Efectivo",
+                condicionPago: "1",
+                observaciones: `Factura generada automáticamente a partir del recibo de caja ${rcNumerosText}`,
+                profesional: first.profesionalNombre || "Sin asignar",
+                profesional_nombre: first.profesionalNombre || "Sin asignar",
+                fecha: new Date().toISOString().split("T")[0],
+                pacienteNombre: patientData.nombre,
+                pacienteDocumento: patientData.documento,
+                pacienteTipoDocumento: patientData.tipoDocumento,
+                pacienteDireccion: patientData.direccion,
+                pacienteCiudad: patientData.ciudad,
+                pacienteTelefono: patientData.telefono,
+                pacienteEmail: patientData.email,
+                recibos_asociados: selectedList.map(r => ({
+                    id: r.id,
+                    recibo_id: r.id,
+                    numero: r.consecutivoNumero,
+                    monto: Number(r.total || 0),
+                    fecha: r.rawDate || r.fecha,
+                    metodo: r.medioPago || "Efectivo",
+                    tabla_origen: r.isPago ? "pagos" : "recibos_caja"
+                })),
+                recibo_asociado: {
+                    id: first.id,
+                    recibo_id: first.id,
+                    numero: first.consecutivoNumero,
+                    monto: Number(first.total || 0),
+                    fecha: first.rawDate || first.fecha,
+                    metodo: first.medioPago || "Efectivo",
+                    tabla_origen: first.isPago ? "pagos" : "recibos_caja"
+                },
+                monto_pagado: totalMonto,
+                saldo_pendiente: 0,
+                estado_pago: "PAGADO",
+                cufe: dianResult?.cufe || null,
+                qrCode: dianResult?.qrCode || null,
+                factusInvoiceNumber: dianResult?.factusInvoiceNumber || finalInvoiceNumber,
+                dianStatus: dianResult?.dianStatus || "NO_CONFIGURADA",
+                creado_por: userProfile?.nombreCompleto || userProfile?.email || "Administración"
+            };
+
+            const dbFactura = {
+                tenant_id: inquilino,
+                usuario_id: isUUID(userProfile?.id) ? userProfile.id : null,
+                paciente_id: (patientData.id && isUUID(patientData.id)) ? patientData.id : null,
+                numero: finalInvoiceNumber,
+                subtotal: totalMonto,
+                impuestos: 0,
+                total: totalMonto,
+                estado: (dianResult?.success && dianResult?.cufe) ? "Emitido" : "Pendiente",
+                fecha_emision: new Date().toISOString(),
+                detalles: dbDetalles,
+                created_at: new Date().toISOString()
+            };
+
+            const { data: savedFactura, error: insErr } = await supabase
+                .from("facturas")
+                .insert([dbFactura])
+                .select()
+                .single();
+
+            if (insErr) {
+                console.error("Error insertando factura:", insErr);
+                throw new Error(insErr.message || "Error al registrar la factura en la base de datos.");
+            }
+
+            // 8. Vincular recibos a la factura en BD
+            for (const r of selectedList) {
+                if (r.id) {
+                    const targetTable = r.isPago ? "pagos" : "recibos_caja";
+                    try {
+                        await supabase
+                            .from(targetTable)
+                            .update({ factura_id: savedFactura.id })
+                            .eq("id", r.id);
+                    } catch (e) {
+                        console.warn(`Aviso al actualizar factura_id en ${targetTable}:`, e);
+                    }
+                }
+            }
+
+            // 9. Limpiar selección y recargar datos de la tabla
+            setSelectedReciboIds(new Set());
+            await loadData();
+
+            toast && toast.success(`¡Factura #${finalInvoiceNumber} generada y alojada exitosamente en Facturas de Venta! ✅`);
+
+            // 10. Abrir modal de confirmación con opción de impresión directa
+            setGeneratedInvoiceModal({
+                open: true,
+                factura: savedFactura,
+                patientData: patientData,
+                rcNumerosText: rcNumerosText
+            });
+
+        } catch (err) {
+            console.error("Error generando factura automática:", err);
+            toast && toast.error(`Error al generar la factura: ${err.message || "Ocurrió un error inesperado"}`);
+        } finally {
+            setIsGeneratingInvoice(false);
+        }
+    };
+
+    const handlePrintGeneratedInvoice = () => {
+        if (!generatedInvoiceModal.factura) return;
+        const fac = generatedInvoiceModal.factura;
+        const pac = generatedInvoiceModal.patientData;
+        const tenantData = companyInfo || {
+            nombreComercial: userProfile?.tenant?.nombreComercial || userProfile?.tenantNombre || "ATM Centro del Dolor Orofacial",
+            nit: userProfile?.tenant?.nit || "64576359-3",
+            direccion: userProfile?.tenant?.direccion || "Calle 16#17-68",
+            ciudad: userProfile?.tenant?.ciudad || "Sincelejo",
+            telefono: userProfile?.tenant?.telefono || "3103583706",
+            email: userProfile?.tenant?.email || "atmcentrodedolor@gmail.com",
+            logoUrl: userProfile?.tenant?.logo_url || userProfile?.tenant?.logoUrl || ""
+        };
+
+        const invoicePayload = {
+            ...fac,
+            numero: fac.numero,
+            factusNumero: fac.numero,
+            fecha: fac.fecha_emision,
+            fecha_emision: fac.fecha_emision,
+            fecha_vencimiento: fac.fecha_emision,
+            total: Number(fac.total || 0),
+            subtotal: Number(fac.subtotal || fac.total || 0),
+            formaPago: "10",
+            medioPago: fac.detalles?.medioPago || "Efectivo",
+            observaciones: fac.detalles?.observaciones || "",
+            items: fac.detalles?.items || [],
+            cufe: fac.detalles?.cufe || "",
+            qrCode: fac.detalles?.qrCode || "",
+            pacienteNombre: pac?.nombre,
+            pacienteDocumento: pac?.documento,
+            pacienteTipoDocumento: pac?.tipoDocumento || "CC",
+            pacienteDireccion: pac?.direccion,
+            pacienteCiudad: pac?.ciudad,
+            pacienteTelefono: pac?.telefono
+        };
+
+        printElectronicInvoice({
+            factura: invoicePayload,
+            patient: pac,
+            userProfile,
+            tenant: tenantData,
+            items: fac.detalles?.items || []
         });
-
-        const totalCalc = invoiceItems.reduce((acc, it) => acc + Number(it.total || 0), 0);
-        const rcNumeros = selectedList.map(r => `#${r.consecutivoNumero}`).join(", ");
-
-        setInvoiceInitialData({
-            pacienteNombre: first.pacienteNombre,
-            pacienteDocumento: first.pacienteDocumento,
-            pacienteTipoDocumento: first.pacienteTipoDocumento || "CC",
-            pacienteTelefono: first.pacienteTelefono,
-            pacienteDireccion: first.pacienteDireccion,
-            pacienteCiudad: first.pacienteCiudad,
-            profesional: first.profesionalNombre,
-            medioPago: first.medioPago || "Efectivo",
-            observaciones: `Factura generada a partir de los recibos de caja: ${rcNumeros}`,
-            recibo_asociado: selectedList.map(r => r.consecutivoNumero).join(", "),
-            recibosAsociados: selectedList.map(r => ({
-                recibo_id: r.id,
-                recibo_numero: r.consecutivoNumero,
-                monto: r.total
-            })),
-            items: invoiceItems,
-            total: totalCalc
-        });
-
-        setShowInvoiceModal(true);
     };
 
 
@@ -1262,15 +1517,25 @@ export default function ReciboCajaList({ onNew }) {
                 <button 
                     type="button"
                     onClick={handleGenerateInvoiceClick}
-                    className="px-4 py-2 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-lg font-bold text-[12px] shadow-sm transition-all flex items-center gap-2 cursor-pointer border-0 active:scale-95"
-                    title={selectedReciboIds.size > 0 ? `Generar factura para ${selectedReciboIds.size} recibo(s) seleccionado(s)` : "Selecciona uno o varios recibos para generar su factura"}
+                    disabled={isGeneratingInvoice}
+                    className="px-4 py-2 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-lg font-bold text-[12px] shadow-sm transition-all flex items-center gap-2 cursor-pointer border-0 active:scale-95 disabled:opacity-60 disabled:cursor-wait"
+                    title={selectedReciboIds.size > 0 ? `Generar factura automáticamente para ${selectedReciboIds.size} recibo(s) seleccionado(s)` : "Selecciona uno o varios recibos para generar su factura"}
                 >
-                    <FiPlus size={15} /> 
-                    <span>+ Generar factura</span>
-                    {selectedReciboIds.size > 0 && (
-                        <span className="bg-white text-[#5b8c22] text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs">
-                            {selectedReciboIds.size} {selectedReciboIds.size === 1 ? "recibo" : "recibos"}
-                        </span>
+                    {isGeneratingInvoice ? (
+                        <>
+                            <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                            <span>Generando factura...</span>
+                        </>
+                    ) : (
+                        <>
+                            <FiPlus size={15} /> 
+                            <span>+ Generar factura</span>
+                            {selectedReciboIds.size > 0 && (
+                                <span className="bg-white text-[#5b8c22] text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs">
+                                    {selectedReciboIds.size} {selectedReciboIds.size === 1 ? "recibo" : "recibos"}
+                                </span>
+                            )}
+                        </>
                     )}
                 </button>
 
@@ -1873,45 +2138,107 @@ export default function ReciboCajaList({ onNew }) {
             )}
 
             {/* ========================================================================= */}
-            {/* MODAL: GENERAR FACTURA DE VENTA DESDE RECIBOS SELECCIONADOS               */}
+            {/* MODAL: FACTURA GENERADA AUTOMÁTICAMENTE CON ÉXITO                         */}
             {/* ========================================================================= */}
-            {showInvoiceModal && invoiceInitialData && (
-                <div className="fixed inset-0 z-[1250] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-fadeIn">
-                    <div className="bg-white w-full max-w-6xl max-h-[94vh] overflow-y-auto rounded-2xl shadow-2xl p-6 border border-slate-100 animate-scaleIn">
-                        <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
-                            <div className="flex items-center gap-2.5">
-                                <span className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-                                    <FiFileText size={18} />
-                                </span>
+            {generatedInvoiceModal.open && generatedInvoiceModal.factura && (
+                <div 
+                    className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fadeIn"
+                    onClick={() => setGeneratedInvoiceModal({ open: false, factura: null, patientData: null, rcNumerosText: "" })}
+                >
+                    <div 
+                        className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden border border-slate-200 animate-zoomIn"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        {/* Header con gradiente verde institucional */}
+                        <div className="px-6 py-5 bg-gradient-to-r from-[#8CC63F] to-emerald-600 text-white flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center text-white">
+                                    <FiCheck size={22} className="stroke-[3]" />
+                                </div>
                                 <div>
-                                    <h2 className="text-sm font-bold text-slate-800">Generar Factura a partir de Recibo(s) de Caja</h2>
-                                    <p className="text-[11px] text-slate-500">
-                                        Paciente: <span className="font-bold text-slate-700">{invoiceInitialData.pacienteNombre}</span> · Recibos: <span className="font-mono text-emerald-700 font-bold">{invoiceInitialData.recibo_asociado}</span>
+                                    <h3 className="text-base font-bold text-white leading-tight">
+                                        ¡Factura de venta generada!
+                                    </h3>
+                                    <p className="text-xs text-white/90">
+                                        Creada y alojada en Facturas de Venta
                                     </p>
                                 </div>
                             </div>
-                            <button
-                                type="button"
-                                onClick={() => setShowInvoiceModal(false)}
-                                className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-                                title="Cerrar modal"
+                            <button 
+                                onClick={() => setGeneratedInvoiceModal({ open: false, factura: null, patientData: null, rcNumerosText: "" })}
+                                className="w-8 h-8 rounded-lg text-white/80 hover:text-white hover:bg-white/20 flex items-center justify-center transition-colors cursor-pointer border-0"
                             >
                                 <FiX size={18} />
                             </button>
                         </div>
 
-                        <FacturaElectronicaForm
-                            initialFactura={invoiceInitialData}
-                            onCancel={() => setShowInvoiceModal(false)}
-                            onSuccess={() => {
-                                setShowInvoiceModal(false);
-                                setSelectedReciboIds(new Set());
-                                loadData();
-                                if (toast && toast.success) {
-                                    toast.success("Factura generada y vinculada a los recibos de caja exitosamente.");
-                                }
-                            }}
-                        />
+                        {/* Contenido con detalles resumidos */}
+                        <div className="p-6 space-y-4">
+                            <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 flex items-center justify-between">
+                                <div>
+                                    <span className="text-[11px] font-semibold text-slate-500 block">Número de factura:</span>
+                                    <span className="text-lg font-black font-mono text-slate-800">
+                                        #{generatedInvoiceModal.factura.numero}
+                                    </span>
+                                </div>
+                                <div className="text-right">
+                                    <span className="text-[11px] font-semibold text-slate-500 block">Total facturado:</span>
+                                    <span className="text-lg font-black font-mono text-emerald-600">
+                                        {fmt(generatedInvoiceModal.factura.total)}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="space-y-2 text-xs text-slate-600 border border-slate-100 rounded-xl p-3.5 bg-white">
+                                <div className="flex justify-between py-1 border-b border-slate-100">
+                                    <span className="font-semibold text-slate-500">Paciente / Tercero:</span>
+                                    <span className="font-bold text-slate-800 uppercase">
+                                        {generatedInvoiceModal.patientData?.nombre}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between py-1 border-b border-slate-100">
+                                    <span className="font-semibold text-slate-500">Documento:</span>
+                                    <span className="font-mono font-medium text-slate-700">
+                                        {generatedInvoiceModal.patientData?.tipoDocumento} {generatedInvoiceModal.patientData?.documento}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between py-1 border-b border-slate-100">
+                                    <span className="font-semibold text-slate-500">Recibo(s) asociado(s):</span>
+                                    <span className="font-mono font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
+                                        {generatedInvoiceModal.rcNumerosText}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between py-1">
+                                    <span className="font-semibold text-slate-500">Módulo destino:</span>
+                                    <span className="font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
+                                        Facturas de venta
+                                    </span>
+                                </div>
+                            </div>
+
+                            <p className="text-[11px] text-slate-400 text-center italic">
+                                La factura ha sido guardada en la base de datos y vinculada a los recibos seleccionados con su consecutivo correspondiente.
+                            </p>
+                        </div>
+
+                        {/* Botones de acción */}
+                        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-3">
+                            <button
+                                type="button"
+                                onClick={handlePrintGeneratedInvoice}
+                                className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                            >
+                                <FiPrinter size={14} className="text-slate-500" />
+                                <span>Imprimir factura</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setGeneratedInvoiceModal({ open: false, factura: null, patientData: null, rcNumerosText: "" })}
+                                className="px-5 py-2 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-xl font-bold text-xs transition-all shadow-xs cursor-pointer border-0"
+                            >
+                                Aceptar
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
