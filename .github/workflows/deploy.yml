@@ -52,6 +52,9 @@ jobs:
       - name: Production readiness tests
         run: npm run test:production
 
+      - name: Invoice and receipt regression tests
+        run: npm run test:facturacion
+
       - name: Build project
         env:
           VITE_SUPABASE_URL: https://supabasekong-ueh7xuehxl9thmhre7fpk4xx.150.136.210.37.sslip.io

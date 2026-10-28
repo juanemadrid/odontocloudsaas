@@ -7,13 +7,16 @@ export const invokeFactusProxy = async (action, payload = {}) => {
 
   if (error) {
     let message = error.message || "No fue posible contactar el servicio Factus.";
+    const status = error.context?.status || 0;
     try {
       const details = await error.context?.json();
       message = details?.error || message;
     } catch {
       // La respuesta no siempre incluye JSON.
     }
-    throw new Error(message);
+    const failure = new Error(message);
+    failure.status = status;
+    throw failure;
   }
 
   if (!data?.success) {

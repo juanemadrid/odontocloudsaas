@@ -19,6 +19,7 @@ import {
   isFacturaSectorSalud,
 } from "./factusHealthPayloadBuilder.js";
 import { calculateNIT_DV } from "../utils/dian/dianHelpers.js";
+import { factusPaymentCode } from "./factusPayment.js";
 
 /**
  * factusService.js
@@ -380,7 +381,7 @@ export const sendInvoice = async (invoiceData, patientData, tenantCredentials) =
 
   // ── Payment ──
   const paymentForm = String(invoiceData.condicionPago || "1");
-  const paymentMethodCode = String(invoiceData.medioPago || "10");
+  const paymentMethodCode = factusPaymentCode(invoiceData.medioPago);
 
   const referenceCode =
     invoiceData.factusReferenceCode ||

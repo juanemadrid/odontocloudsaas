@@ -106,10 +106,11 @@ export const getFactusAdminStats = async () => {
   }
 };
 
-export const getFactusCredentialsForTenant = async (tenantId) => {
+export const getFactusCredentialsForTenant = async (tenantId, { throwOnError = false } = {}) => {
   try {
     return toCompatibilityCredentials(await getFactusStatus(tenantId));
   } catch (error) {
+    if (throwOnError) throw error;
     // Factus Edge Function puede no estar desplegada — no es un error crítico
     return null;
   }

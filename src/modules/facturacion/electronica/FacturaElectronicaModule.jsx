@@ -196,7 +196,7 @@ export default function FacturaElectronicaModule() {
                 pacienteDireccion: f.pacienteDireccion || det.pacienteDireccion || "",
                 pacienteCiudad: f.pacienteCiudad || det.pacienteCiudad || "",
                 pacienteTipoDocumento: f.pacienteTipoDocumento || det.pacienteTipoDocumento || "CC",
-                factusInvoiceNumber: f.numero || f.factusNumero || f.nroFactura || det.factusInvoiceNumber,
+                factusInvoiceNumber: det.factusInvoiceNumber || (String(f.numero || "").startsWith("BORRADOR-") ? null : (f.numero || f.factusNumero || f.nroFactura)),
                 factusCufe: f.factusCufe || det.cufe || det.factusCufe,
                 factusQr: f.factusQr || det.qrCode || det.factusQr,
                 factusPdfUrl: f.factusPdfUrl || det.factusPdfUrl,

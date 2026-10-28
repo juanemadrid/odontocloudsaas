@@ -14,8 +14,9 @@ import { getReceiptPlanFinancials } from "../../../services/billingService";
 import { getConfigSection, getConfigItems } from "../../../services/configPersistenceService";
 import { isDoctorUser } from "../../../utils/doctorHelpers";
 import { consumeNextConsecutivo, CONSECUTIVO_TYPES } from "../../../services/consecutivosService";
-import { emitirFacturaDian } from "../../../services/DianService";
+import FacturaElectronicaForm from "../electronica/FacturaElectronicaForm";
 import { getFactusCredentialsForTenant } from "../../../services/factusAdminService";
+import { createReceiptInvoiceDraft } from "../../../services/receiptInvoiceDraftService";
 
 const fmt = (n) => {
   const num = Number(n || 0);
@@ -77,6 +78,7 @@ export default function ReciboCajaList({ onNew }) {
     // Selección de recibos para Generar Factura
     const [selectedReciboIds, setSelectedReciboIds] = useState(new Set());
     const [isGeneratingInvoice, setIsGeneratingInvoice] = useState(false);
+    const [invoiceToReview, setInvoiceToReview] = useState(null);
     const [generatedInvoiceModal, setGeneratedInvoiceModal] = useState({
         open: false,
         factura: null,
@@ -135,6 +137,10 @@ export default function ReciboCajaList({ onNew }) {
         setIsGeneratingInvoice(true);
         try {
             const first = selectedList[0];
+            // An outage must not be mistaken for a clinic without Factus.
+            const tenantCreds = await getFactusCredentialsForTenant(inquilino, { throwOnError: true });
+            const hasCredentials = Boolean(tenantCreds?.serverManaged);
+            const referenceCode = `OC-${crypto.randomUUID()}`;
 
             // 3. Obtener datos completos del paciente / tercero
             let patientData = {
@@ -225,8 +231,8 @@ export default function ReciboCajaList({ onNew }) {
                 console.warn("Aviso al consultar facturas existentes:", e);
             }
 
-            let nextVal = await consumeNextConsecutivo(inquilino, CONSECUTIVO_TYPES.FACTURA_VENTA);
-            if (maxExisting >= nextVal) {
+            let nextVal = hasCredentials ? null : await consumeNextConsecutivo(inquilino, CONSECUTIVO_TYPES.FACTURA_VENTA);
+            if (!hasCredentials && maxExisting >= nextVal) {
                 nextVal = maxExisting + 1;
                 try {
                     const { saveConfigItem } = await import("../../../services/configPersistenceService");
@@ -236,38 +242,7 @@ export default function ReciboCajaList({ onNew }) {
                     });
                 } catch {}
             }
-            let finalInvoiceNumber = `${prefix ? prefix + "-" : ""}${nextVal}`;
-
-            // 6. Verificar si hay emisión con Factus / DIAN configurada
-            let dianResult = null;
-            try {
-                const tenantCreds = await getFactusCredentialsForTenant(inquilino);
-                const hasCredentials = Boolean(
-                    tenantCreds?.factusClientId &&
-                    tenantCreds?.factusClientSecret &&
-                    tenantCreds?.factusUsername &&
-                    tenantCreds?.factusPassword
-                );
-
-                if (hasCredentials) {
-                    const invoicePayload = {
-                        items: invoiceItems,
-                        total: totalMonto,
-                        subtotal: totalMonto,
-                        medioPago: first.medioPago || "10",
-                        condicionPago: "1",
-                        observaciones: `Factura generada automáticamente a partir del recibo de caja ${rcNumerosText}`,
-                        factusReferenceCode: `OC-${Date.now().toString(36).toUpperCase()}`,
-                        tenant_id: inquilino
-                    };
-                    dianResult = await emitirFacturaDian(invoicePayload, patientData, tenantCreds);
-                    if (dianResult?.success && dianResult?.factusInvoiceNumber) {
-                        finalInvoiceNumber = dianResult.factusInvoiceNumber;
-                    }
-                }
-            } catch (dianErr) {
-                console.warn("Aviso al intentar emitir con DIAN/Factus:", dianErr);
-            }
+            const finalInvoiceNumber = hasCredentials ? `BORRADOR-${referenceCode}` : `${prefix ? prefix + "-" : ""}${nextVal}`;
 
             // 7. Estructurar payload y guardar en la tabla "facturas"
             const dbDetalles = {
@@ -311,10 +286,13 @@ export default function ReciboCajaList({ onNew }) {
                 monto_pagado: totalMonto,
                 saldo_pendiente: 0,
                 estado_pago: "PAGADO",
-                cufe: dianResult?.cufe || null,
-                qrCode: dianResult?.qrCode || null,
-                factusInvoiceNumber: dianResult?.factusInvoiceNumber || finalInvoiceNumber,
-                dianStatus: dianResult?.dianStatus || "NO_CONFIGURADA",
+                cufe: null,
+                qrCode: null,
+                factusReferenceCode: referenceCode,
+                factusInvoiceNumber: null,
+                dianStatus: hasCredentials ? "BORRADOR" : "NO_CONFIGURADA",
+                technicalError: false,
+                lastError: null,
                 usuario_id: isUUID(userProfile?.id) ? userProfile.id : null,
                 creado_por: userProfile?.nombreCompleto || userProfile?.email || "Administración"
             };
@@ -326,43 +304,24 @@ export default function ReciboCajaList({ onNew }) {
                 subtotal: totalMonto,
                 impuestos: 0,
                 total: totalMonto,
-                estado: (dianResult?.success && dianResult?.cufe) ? "Emitido" : "Pendiente",
+                estado: "Pendiente",
                 fecha_emision: new Date().toISOString(),
                 detalles: dbDetalles,
                 created_at: new Date().toISOString()
             };
 
-            const { data: savedFactura, error: insErr } = await supabase
-                .from("facturas")
-                .insert([dbFactura])
-                .select()
-                .single();
-
-            if (insErr) {
-                console.error("Error insertando factura:", insErr);
-                throw new Error(insErr.message || "Error al registrar la factura en la base de datos.");
-            }
-
-            // 8. Vincular recibos a la factura en BD
-            for (const r of selectedList) {
-                if (r.id) {
-                    const targetTable = r.isPago ? "pagos" : "recibos_caja";
-                    try {
-                        await supabase
-                            .from(targetTable)
-                            .update({ factura_id: savedFactura.id })
-                            .eq("id", r.id);
-                    } catch (e) {
-                        console.warn(`Aviso al actualizar factura_id en ${targetTable}:`, e);
-                    }
-                }
-            }
+            const savedFactura = await createReceiptInvoiceDraft(dbFactura, selectedList);
 
             // 9. Limpiar selección y recargar datos de la tabla
             setSelectedReciboIds(new Set());
             await loadData();
 
-            toast && toast.success(`¡Factura #${finalInvoiceNumber} generada y alojada exitosamente en Facturas de Venta! ✅`);
+            if (hasCredentials) {
+                toast.info("Borrador guardado. Revise los datos fiscales y de salud antes de emitir.");
+                setInvoiceToReview(savedFactura);
+                return;
+            }
+            toast.warning("Documento guardado sin emisión electrónica: Factus no está configurado.");
 
             // 10. Abrir modal de confirmación con opción de impresión directa
             setGeneratedInvoiceModal({
@@ -1444,6 +1403,14 @@ export default function ReciboCajaList({ onNew }) {
 
     const handleCreateNew = onNew || (() => navigate("nuevo"));
 
+    if (invoiceToReview) {
+        return <FacturaElectronicaForm
+            initialFactura={invoiceToReview}
+            onCancel={() => { setInvoiceToReview(null); loadData(); }}
+            onSuccess={() => { setInvoiceToReview(null); loadData(); }}
+        />;
+    }
+
     return (
         <div className="p-4 md:p-6 max-w-[1700px] mx-auto space-y-4 animate-fadeIn">
 
@@ -2157,7 +2124,7 @@ export default function ReciboCajaList({ onNew }) {
                                 </div>
                                 <div>
                                     <h3 className="text-base font-bold text-white leading-tight">
-                                        ¡Factura de venta generada!
+                                        {generatedInvoiceModal.factura.detalles?.dianStatus === "ACEPTADA" ? "Factura aceptada por la DIAN" : "Documento guardado"}
                                     </h3>
                                     <p className="text-xs text-white/90">
                                         Creada y alojada en Facturas de Venta
@@ -2217,7 +2184,8 @@ export default function ReciboCajaList({ onNew }) {
                             </div>
 
                             <p className="text-[11px] text-slate-400 text-center italic">
-                                La factura ha sido guardada en la base de datos y vinculada a los recibos seleccionados con su consecutivo correspondiente.
+                                Estado: {generatedInvoiceModal.factura.detalles?.dianStatus || "Sin emisión confirmada"}.
+                                {generatedInvoiceModal.factura.detalles?.lastError || " Documento disponible en Facturas de Venta."}
                             </p>
                         </div>
 

@@ -65,15 +65,20 @@ export const emitirFacturaDian = async (
       null;
 
     const isTestMode = tenantCredentials.factusTestMode ?? true;
+    const accepted = Boolean(cufe) && bill?.is_validated !== false && bill?.is_validated !== 0;
 
     return {
-      success: true,
-      dianStatus: isTestMode ? "SIMULADA" : "ACEPTADA",
+      success: accepted,
+      dianStatus: accepted ? (isTestMode ? "SIMULADA" : "ACEPTADA") : "INDETERMINADO",
       cufe,
       qrCode,
       factusInvoiceNumber: invoiceNumber,
       factusResponse: result,
-      message: isTestMode
+      technicalError: !accepted,
+      ...(!accepted ? { errorCategory: "TECHNICAL_ERROR", errorCode: "VALIDATION_UNCONFIRMED" } : {}),
+      message: !accepted
+        ? "Factus respondió sin validación confirmada. Consulte el estado antes de reintentar."
+        : isTestMode
         ? "Factura emitida en modo sandbox (sin validez fiscal)."
         : "Factura aceptada por la DIAN.",
       timestamp: new Date().toISOString(),

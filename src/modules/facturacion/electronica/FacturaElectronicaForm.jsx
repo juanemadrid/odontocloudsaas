@@ -8,6 +8,7 @@ import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
 import { emitirFacturaDian } from "../../../services/DianService";
+import { factusPaymentCode } from "../../../services/factusPayment.js";
 import { computePaymentStatus } from "../../../services/billingReceiptLinkService";
 import { getDoctorsList } from "../../../services/supabaseServices";
 import { getConfigItems, getConfigSection } from "../../../services/configPersistenceService";
@@ -35,6 +36,7 @@ import {
   releaseFevBackendLock,
   getOrGenerateAuthoritativeReferenceCode,
   handle409Conflict,
+  claimFevEmission,
   FEV_STAGE,
   FEV_LOCK_STATE,
   FEV_OPERATION,
@@ -119,6 +121,7 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
   const [mediosPagoList, setMediosPagoList] = useState([]);
 
   const [facturaBorrador, setFacturaBorrador] = useState(false);
+  const [requiresStatusCheck, setRequiresStatusCheck] = useState(false);
 
   // Modal para Crear Tercero al Instante (Exacto OralDrive)
   const [showNewTerceroModal, setShowNewTerceroModal] = useState(false);
@@ -748,6 +751,10 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
 
   // ─── Proceso de Guardado / Emisión ───
   const handleSaveFactura = async () => {
+    if (requiresStatusCheck || initialDetalles.technicalError === true) {
+      toast.warning("Consulte el estado de esta factura en Facturas de Venta antes de volver a emitir.");
+      return;
+    }
     if (!validateForm()) return;
 
     let backendLockToken = null;
@@ -803,16 +810,11 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
       const isSalud = hasClinicalItems || targetTercero.tipo === "paciente";
 
       const mapMedioPagoCode = (mp) => {
-        const s = String(mp || "").toLowerCase();
-        if (s.includes("efectivo")) return "10";
-        if (s.includes("débito") || s.includes("debito")) return "47";
-        if (s.includes("crédito") || s.includes("credito")) return "48";
-        if (s.includes("transfer") || s.includes("nequi") || s.includes("banc")) return "42";
-        if (s.includes("cheque")) return "20";
-        return "10";
+        return factusPaymentCode(mp);
       };
 
       const mapCondicionPagoCode = (cp) => {
+        if (cp === "1" || cp === "2") return cp;
         const s = String(cp || "").toLowerCase();
         if (s.includes("crédito") || s.includes("credito")) return "2";
         return "1";
@@ -928,7 +930,7 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
 
       // Emisión oficial ante la DIAN vía Factus API
       const { getFactusCredentialsForTenant } = await import("../../../services/factusAdminService");
-      const tenantData = (await getFactusCredentialsForTenant(inquilino)) || {};
+      const tenantData = (await getFactusCredentialsForTenant(inquilino, { throwOnError: true })) || {};
       const hasCredentials = Boolean(tenantData.factusClientId && tenantData.factusClientSecret);
 
       if (!hasCredentials) setNoCredsWarning(true);
@@ -1086,6 +1088,11 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
         invoiceData.beneficiary = preflightResult.beneficiary;
       }
 
+      if (initialFactura?.id) {
+        await claimFevEmission({ invoiceId: initialFactura.id, tenantId: inquilino, referenceCode: stableRefCode });
+        setRequiresStatusCheck(true);
+      }
+
       const result = await emitirFacturaDian(
         invoiceData,
         pacienteData,
@@ -1093,7 +1100,9 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
       );
 
       const finalNumero = result.factusInvoiceNumber || initialFactura?.numero || `FE-${Date.now().toString().slice(-4)}`;
-      const linkedReceiptsList = selectedRecibo ? [selectedRecibo] : [];
+      const keepsOriginalReceipts = selectedRecibo?.id === initialDetalles.recibo_asociado?.id
+        && Array.isArray(initialDetalles.recibos_asociados) && initialDetalles.recibos_asociados.length > 0;
+      const linkedReceiptsList = keepsOriginalReceipts ? initialDetalles.recibos_asociados : (selectedRecibo ? [selectedRecibo] : []);
       const paymentCalc = computePaymentStatus(totalConceptos, linkedReceiptsList);
 
       let dbDetalles = {
@@ -1132,9 +1141,10 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
           monto: Number(selectedRecibo.monto || selectedRecibo.total || 0),
           fecha: selectedRecibo.fecha || selectedRecibo.created_at,
           metodo: selectedRecibo.metodo || "Efectivo",
-          tabla_origen: selectedRecibo.isPago ? "pagos" : "recibos_caja",
+          tabla_origen: selectedRecibo.tabla_origen || (selectedRecibo.isPago ? "pagos" : "recibos_caja"),
         } : null,
         monto_pagado: paymentCalc.totalPagado,
+        recibos_asociados: linkedReceiptsList,
         saldo_pendiente: paymentCalc.saldoPendiente,
         estado_pago: paymentCalc.estadoPago,
         creado_por: initialDetalles?.creado_por || userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || "Administración",
@@ -1203,6 +1213,12 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
       } catch (errDb) {
         console.warn("Error guardando en facturas:", errDb.message);
       }
+
+      if (!savedFactura) {
+        setRequiresStatusCheck(true);
+        throw new Error("El resultado del envío no pudo guardarse. Consulte el estado en Facturas de Venta antes de volver a emitir.");
+      }
+      setRequiresStatusCheck(Boolean(result.technicalError));
 
       if (result.success && result.cufe) {
         setSuccessData(result);

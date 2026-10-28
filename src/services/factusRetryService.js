@@ -270,9 +270,11 @@ export const normalizeFactusError = (error, rawResponse = null) => {
     lowerMsg.includes("econnaborted") ||
     lowerMsg.includes("fetch failed") ||
     lowerMsg.includes("network error") ||
+    lowerMsg.includes("failed to fetch") ||
+    lowerMsg.includes("failed to send a request") ||
     lowerMsg.includes("gateway") ||
     status === 504 ||
-    status === 502;
+    status >= 500;
 
   if (isNetworkTimeout) {
     return {
@@ -409,6 +411,13 @@ export const getFevRetryDecision = (factura) => {
   const attempts = Array.isArray(detalles.fevAttempts) ? detalles.fevAttempts : [];
   const lastAttempt = attempts.length > 0 ? attempts[attempts.length - 1] : null;
 
+  if (detalles.receiptLinkState && detalles.receiptLinkState !== 'COMPLETE') {
+    return { decision: RETRY_DECISION.NOT_RETRYABLE, canRetry: false,
+      requiresStatusCheck: false, requiresCorrection: false, requiresDeletion: false,
+      reason: 'RECEIPT_LINK_INCOMPLETE', lastAttempt,
+      friendlyMessage: 'La asociación de recibos no se completó. Revise el documento antes de emitir.' };
+  }
+
   // RULE 1: STRICT CUFE BLOCK — Fiscal double-emission blocker
   if (cufe || dianStatus === "ACEPTADA" || (dianStatus === "SIMULADA" && (cufe || factura.numero))) {
     return {
@@ -452,7 +461,22 @@ export const getFevRetryDecision = (factura) => {
   }
 
   // RULE 3: DIAN_REJECTED RECONCILIATION
-  if (lastAttempt?.status === FEV_STAGE.DIAN_REJECTED || dianStatus === "RECHAZADA") {
+  if (dianStatus === "RECHAZADA" && !lastAttempt) {
+    const checked = typeof detalles.factusExists === "boolean";
+    return {
+      decision: !checked ? RETRY_DECISION.STATUS_CHECK_REQUIRED : detalles.factusExists
+        ? RETRY_DECISION.CORRECT_DELETE_AND_RECREATE : RETRY_DECISION.CORRECTION_REQUIRED,
+      canRetry: checked,
+      requiresCorrection: checked,
+      requiresStatusCheck: !checked,
+      requiresDeletion: detalles.factusExists === true,
+      reason: "LEGACY_REJECTION_UNVERIFIED",
+      friendlyMessage: checked ? "Estado consultado en Factus. Revise los datos antes de emitir." : "Este registro no conserva la respuesta del intento. Verifique el estado en Factus antes de volver a emitir.",
+      lastAttempt: null,
+      lastErrorMessage: detalles.lastError || null,
+    };
+  }
+  if (lastAttempt?.status === FEV_STAGE.DIAN_REJECTED) {
     // CASO B: Si tuviese CUFE o validación DIAN confirmada
     if (cufe || lastAttempt?.cufe) {
       return {
@@ -583,6 +607,13 @@ export const getFevRetryDecision = (factura) => {
   }
 
   // RULE 7: DRAFT / INITIAL EMISSION — Safe to emit
+  if (dianStatus === 'RECHAZADA') {
+    return { decision: RETRY_DECISION.CORRECTION_REQUIRED, canRetry: true,
+      requiresCorrection: true, requiresStatusCheck: false, requiresDeletion: false,
+      reason: 'VERIFIED_DOCUMENT_REQUIRES_REVIEW', lastAttempt,
+      friendlyMessage: 'Revise los datos antes de volver a emitir el documento.',
+      lastErrorMessage: lastAttempt?.error_message || detalles.lastError || null };
+  }
   return {
     decision: RETRY_DECISION.RETRY_ALLOWED,
     canRetry: true,
@@ -599,6 +630,24 @@ export const getFevRetryDecision = (factura) => {
 };
 
 // ─────────────────────────────────────────────────────────────
+// Compare-and-set complements the RPC lock: a stale tab or missing lock RPC
+// cannot transmit a document whose state was changed by another session.
+export const claimFevEmission = async ({ invoiceId, tenantId, referenceCode, client = supabase }) => {
+  const { data: current, error: readError } = await client.from('facturas')
+    .select('*').eq('id', invoiceId).eq('tenant_id', tenantId).single();
+  if (readError || !current) throw new Error('No se pudo verificar el estado actual de la factura. No se envió a Factus.');
+  const decision = getFevRetryDecision(current);
+  if (!decision.canRetry) throw new Error(decision.friendlyMessage);
+  const { data: claimed, error } = await client.from('facturas').update({ detalles: {
+    ...current.detalles, factusReferenceCode: referenceCode,
+    dianStatus: 'INDETERMINADO', technicalError: true,
+    lastError: 'Emisión iniciada; consulte el estado en Factus antes de reintentar.',
+  } }).eq('id', invoiceId).eq('tenant_id', tenantId)
+    .eq('detalles', JSON.stringify(current.detalles)).select('id').single();
+  if (error || !claimed) throw new Error('Otra sesión cambió la factura o no pudo guardarse el inicio de emisión. Actualice el documento; no se envió a Factus.');
+  return current;
+};
+
 // 6. Attempt History Recorder (fevAttempts Extended)
 // ─────────────────────────────────────────────────────────────
 export const recordFevAttempt = (detalles = {}, attemptData = {}) => {
@@ -665,7 +714,7 @@ export const checkFactusBillStatus = async ({ tenantId, referenceCode, invoiceNu
 
   try {
     const response = await checkFactusBill({
-      billNumber: invoiceNumber,
+      billNumber: String(invoiceNumber || "").startsWith("BORRADOR-") ? undefined : invoiceNumber,
       referenceCode,
       tenantId,
     });

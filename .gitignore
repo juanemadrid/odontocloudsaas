@@ -31,6 +31,7 @@ scripts/*.mjs
 !scripts/test-help-db.mjs
 !scripts/test-help-controls-ui.mjs
 !scripts/test-product-demo.mjs
+!scripts/test-factus-emission-regressions.mjs
 !scripts/test_rips_operational_export.mjs
 !scripts/test_rips_payment_source_normalization.mjs
 !scripts/test_rips_without_fev_compliance.mjs
