@@ -2,6 +2,18 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { factusPaymentCode } from '../src/services/factusPayment.js';
+import { receiptConceptAmounts } from '../src/services/receiptInvoiceItems.js';
+
+const receipt = { consecutivoNumero: 2076, total: 190000, conceptos: [{}] };
+assert.deepEqual(receiptConceptAmounts({ precioUnitario:190000, total:190000 }, receipt),
+  { precioUnitario:190000, total:190000, cantidad:1, descuento:0 });
+assert.deepEqual(receiptConceptAmounts({ precioUnitario:100000, cantidad:2, descuento:5000, total:190000 }, receipt),
+  { precioUnitario:100000, total:190000, cantidad:2, descuento:10000 });
+assert.equal(receiptConceptAmounts({ total:190000, cantidad:2 }, receipt).precioUnitario,95000);
+assert.throws(() => receiptConceptAmounts({}, { ...receipt, conceptos:[{},{}] }), /inconsistentes/);
+assert.throws(() => receiptConceptAmounts({ precioUnitario:0, total:190000 }, receipt), /inconsistentes/);
+assert.throws(() => receiptConceptAmounts({ precioUnitario:100000, total:190000 }, receipt), /inconsistentes/);
+console.log('PASS: receipt unit prices, quantities, per-unit discounts and missing/inconsistent line amounts.');
 
 // Real service code, isolated transport: never sends invoices or accesses a DB.
 const context = vm.createContext({ console, Date, Set, crypto: globalThis.crypto,

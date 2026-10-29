@@ -114,7 +114,10 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
   const [isSearchingTercero, setIsSearchingTercero] = useState(false);
   const searchContainerRef = useRef(null);
 
-  const [condicionPago, setCondicionPago] = useState(() => initialDetalles?.condicionPago || initialFactura?.condicionPago || "Contado");
+  const [condicionPago, setCondicionPago] = useState(() => {
+    const stored = initialDetalles?.condicionPagoNombre || initialDetalles?.condicionPago || initialFactura?.condicionPago || "Contado";
+    return String(stored) === "1" ? "Contado" : String(stored) === "2" ? "Crédito" : stored;
+  });
   const [condicionesPagoList, setCondicionesPagoList] = useState([]);
 
   const [medioPago, setMedioPago] = useState(() => initialDetalles?.medioPago || initialFactura?.medioPago || "Efectivo");
@@ -1579,6 +1582,9 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
                   required
                 >
                   <option value="">Seleccione...</option>
+                  {condicionPago && !condicionesPagoList.some((cond) =>
+                    (typeof cond === "string" ? cond : (cond.nombre || cond.label || "Condición")) === condicionPago
+                  ) && <option value={condicionPago}>{condicionPago}</option>}
                   {condicionesPagoList.map((cond, idx) => {
                     const condName = typeof cond === "string" ? cond : (cond.nombre || cond.label || "Condición");
                     const diasInfo = cond.dias ? ` (${cond.dias} días)` : "";

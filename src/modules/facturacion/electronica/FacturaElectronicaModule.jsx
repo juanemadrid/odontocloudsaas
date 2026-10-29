@@ -1289,6 +1289,12 @@ export default function FacturaElectronicaModule() {
             </div>
 
             <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+              {getFevRetryDecision(viewingFacturaDetails).lastErrorMessage && (
+                <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 whitespace-pre-wrap break-words">
+                  <strong>Último error de emisión: </strong>
+                  {getFevRetryDecision(viewingFacturaDetails).lastErrorMessage}
+                </div>
+              )}
               <div className="border border-slate-200 rounded-xl overflow-hidden">
                 <table className="w-full text-xs text-left">
                   <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
@@ -1310,10 +1316,10 @@ export default function FacturaElectronicaModule() {
                             {item.quantity || item.cantidad || 1}
                           </td>
                           <td className="py-2.5 px-4 text-right font-mono">
-                            {fmt(item.price || item.precio || item.valor || 0)}
+                            {fmt(item.precioUnitario ?? item.precio_unitario ?? item.price ?? item.precio ?? item.valor ?? 0)}
                           </td>
                           <td className="py-2.5 px-4 text-right font-mono font-bold text-slate-900">
-                            {fmt(item.total || ((item.quantity || 1) * (item.price || item.precio || 0)))}
+                            {fmt(item.total ?? ((item.quantity ?? item.cantidad ?? 1) * (item.precioUnitario ?? item.precio_unitario ?? item.price ?? item.precio ?? item.valor ?? 0) - (item.descuento ?? 0)))}
                           </td>
                         </tr>
                       ))

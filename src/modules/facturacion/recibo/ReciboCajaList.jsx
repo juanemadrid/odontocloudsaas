@@ -17,6 +17,7 @@ import { consumeNextConsecutivo, CONSECUTIVO_TYPES } from "../../../services/con
 import FacturaElectronicaForm from "../electronica/FacturaElectronicaForm";
 import { getFactusCredentialsForTenant } from "../../../services/factusAdminService";
 import { createReceiptInvoiceDraft } from "../../../services/receiptInvoiceDraftService";
+import { receiptConceptAmounts } from "../../../services/receiptInvoiceItems.js";
 
 const fmt = (n) => {
   const num = Number(n || 0);
@@ -181,10 +182,7 @@ export default function ReciboCajaList({ onNew }) {
                         nombre: c.concepto || c.nombre || `Recibo #${r.consecutivoNumero}`,
                         concepto: c.concepto || c.nombre || `Recibo #${r.consecutivoNumero}`,
                         descripcion: c.descripcion || c.concepto || `RC #${r.consecutivoNumero} - ${r.pacienteNombre}`,
-                        precioUnitario: Number(c.valor || c.monto || c.precio || r.total || 0),
-                        cantidad: Number(c.cantidad || 1),
-                        descuento: Number(c.descuento || 0),
-                        total: Number(c.total || c.valor || r.total || 0)
+                        ...receiptConceptAmounts(c, r)
                     }));
                 }
                 const conceptoDesc = r.concepto || r.observaciones || `Recibo de caja #${r.consecutivoNumero}`;
@@ -202,6 +200,12 @@ export default function ReciboCajaList({ onNew }) {
             });
 
             const totalMonto = invoiceItems.reduce((acc, it) => acc + Number(it.total || 0), 0);
+            const subtotalMonto = invoiceItems.reduce((acc, it) => acc + it.precioUnitario * it.cantidad, 0);
+            const descuentoMonto = invoiceItems.reduce((acc, it) => acc + it.descuento, 0);
+            const totalRecibos = selectedList.reduce((acc, r) => acc + Number(r.total || 0), 0);
+            if (!Number.isFinite(totalMonto) || totalMonto <= 0 || Math.abs(totalMonto - totalRecibos) > 0.01) {
+                throw new Error("Los conceptos no coinciden con el importe de los recibos. Revise los valores antes de facturar.");
+            }
             const rcNumerosList = selectedList.map(r => r.consecutivoNumero);
             const rcNumerosText = rcNumerosList.map(n => `#${n}`).join(", ");
 
@@ -247,13 +251,14 @@ export default function ReciboCajaList({ onNew }) {
             // 7. Estructurar payload y guardar en la tabla "facturas"
             const dbDetalles = {
                 items: invoiceItems,
-                subtotal: totalMonto,
-                descuento: 0,
+                subtotal: subtotalMonto,
+                descuento: descuentoMonto,
                 total: totalMonto,
                 totalNeto: totalMonto,
                 medioPago: first.medioPago || "Efectivo",
                 medio_pago: first.medioPago || "Efectivo",
                 condicionPago: "1",
+                condicionPagoNombre: "Contado",
                 observaciones: `Factura generada automáticamente a partir del recibo de caja ${rcNumerosText}`,
                 profesional: first.profesionalNombre || "Sin asignar",
                 profesional_nombre: first.profesionalNombre || "Sin asignar",
@@ -301,7 +306,7 @@ export default function ReciboCajaList({ onNew }) {
                 tenant_id: inquilino,
                 paciente_id: (patientData.id && isUUID(patientData.id)) ? patientData.id : null,
                 numero: finalInvoiceNumber,
-                subtotal: totalMonto,
+                subtotal: subtotalMonto,
                 impuestos: 0,
                 total: totalMonto,
                 estado: "Pendiente",
