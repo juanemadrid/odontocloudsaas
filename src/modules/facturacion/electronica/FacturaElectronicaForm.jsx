@@ -69,7 +69,7 @@ const CIUDADES_COLOMBIA = [
 ];
 
 export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFactura = null }) {
-  const { userProfile } = useAuth();
+  const { user, userProfile } = useAuth();
   const toast = useToast();
   const inquilino = userProfile?.inquilino || "";
 
