@@ -1,6 +1,6 @@
 import supabase, { supabaseUrl, supabaseAnonKey } from './supabaseClient';
 
-// Each visible tab has a separate lease. No audit history is used as presence.
+// Each open tab has a separate lease (visible or minimized). No audit history is used as presence.
 export function startEcosystemPresence(userId, tenantId) {
   const tabId = crypto.randomUUID();
   let token = null;
@@ -14,10 +14,12 @@ export function startEcosystemPresence(userId, tenantId) {
       ...(offline ? {} : { body: JSON.stringify({ user_id: userId, tenant_id: tenantId, session_id: tabId }) }),
     }).catch(() => {});
   };
+  // La conexión sigue activa aunque la pantalla esté minimizada u oculta (igual que EduNexus).
+  // Solo se borra al cerrar sesión o cerrar la pestaña (pagehide).
   const beat = async () => {
     const { data } = await supabase.auth.getSession();
     token = data.session?.access_token;
-    if (!stopped) await send(document.visibilityState !== 'visible');
+    if (!stopped) await send(false);
   };
   const leave = () => send(true);
   void beat();
