@@ -15,6 +15,37 @@ assert.throws(() => receiptConceptAmounts({ precioUnitario:0, total:190000 }, re
 assert.throws(() => receiptConceptAmounts({ precioUnitario:100000, total:190000 }, receipt), /inconsistentes/);
 console.log('PASS: receipt unit prices, quantities, per-unit discounts and missing/inconsistent line amounts.');
 
+// Exercise the actual status handler with a deferred transport and rapid clicks.
+const moduleSource = await readFile(new URL('../src/modules/facturacion/electronica/FacturaElectronicaModule.jsx', import.meta.url), 'utf8');
+const statusHandler = moduleSource.slice(moduleSource.indexOf('  const handleCheckStatus ='), moduleSource.indexOf('  const handleStartCorrection ='));
+let finishStatusCheck;
+let checkCalls = 0, releaseCalls = 0, busyInvoice = null;
+const statusSandbox = vm.createContext({
+  statusChecksInFlight: { current: new Set() },
+  setStatusCheckingId: value => { busyInvoice = typeof value === 'function' ? value(busyInvoice) : value; },
+  acquireFevBackendLock: async () => ({lockToken:'owned'}),
+  releaseFevBackendLock: async () => { releaseCalls++; },
+  getOrGenerateAuthoritativeReferenceCode: () => 'stable',
+  checkFactusBillStatus: async () => { checkCalls++; return new Promise(resolve => { finishStatusCheck = resolve; }); },
+  supabase: { from: () => ({update: () => ({eq: () => ({eq: async () => ({error:null})})})}) },
+  inquilino:'clinic', userProfile:{}, FEV_LOCK_STATE:{CHECKING_STATUS:'CHECKING_STATUS'},
+  toast:{info(){},error(){},success(){},warning(){}}, console,
+  loadFacturas:async () => {}, reconcileFactusInvoice:async () => {},
+});
+vm.runInContext(statusHandler + '\nthis.runCheck = handleCheckStatus;', statusSandbox);
+const firstCheck = statusSandbox.runCheck({id:'invoice',detalles:{}});
+await Promise.resolve();
+await statusSandbox.runCheck({id:'invoice',detalles:{}});
+assert.equal(checkCalls,1);
+assert.equal(busyInvoice,'invoice');
+assert.equal(releaseCalls,0);
+finishStatusCheck({found:false});
+await firstCheck;
+assert.equal(releaseCalls,1);
+assert.equal(busyInvoice,null);
+assert.equal(statusSandbox.statusChecksInFlight.current.size,0);
+console.log('PASS: rapid status clicks issue one query, preserve busy state and release only the owned lock.');
+
 // Real service code, isolated transport: never sends invoices or accesses a DB.
 const context = vm.createContext({ console, Date, Set, crypto: globalThis.crypto,
   process: { exit: (code) => assert.equal(code, 0, 'Legacy regression suite failed') } });

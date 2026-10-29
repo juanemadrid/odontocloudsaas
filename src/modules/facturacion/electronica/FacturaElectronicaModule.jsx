@@ -86,6 +86,7 @@ export default function FacturaElectronicaModule() {
   const [linkingReceipt, setLinkingReceipt] = useState(false);
   const [editingFactura, setEditingFactura] = useState(null);
   const [statusCheckingId, setStatusCheckingId] = useState(null);
+  const statusChecksInFlight = useRef(new Set());
   const [creditNoteModalFactura, setCreditNoteModalFactura] = useState(null);
   const [viewingFacturaDetails, setViewingFacturaDetails] = useState(null);
 
@@ -401,6 +402,10 @@ export default function FacturaElectronicaModule() {
   };
 
   const handleCheckStatus = async (factura) => {
+    // Both the row and document modal can trigger this in the same render.
+    // A duplicate must not clear the first request's busy state or show an error.
+    if (statusChecksInFlight.current.has(factura.id)) return;
+    statusChecksInFlight.current.add(factura.id);
     setStatusCheckingId(factura.id);
     let lockToken = null;
     try {
@@ -448,13 +453,18 @@ export default function FacturaElectronicaModule() {
           ...currentDet,
           factusReferenceCode: refCode,
           factusExists: false,
+          factusIsValidated: false,
+          pending409: false,
           technicalError: false,
           dianStatus: "RECHAZADA",
+          lastError: null,
         };
-        await supabase
+        const { error: updateError } = await supabase
           .from("facturas")
           .update({ detalles: updatedDet })
-          .eq("id", factura.id);
+          .eq("id", factura.id)
+          .eq("tenant_id", inquilino);
+        if (updateError) throw updateError;
         toast.info("Factus confirmó que la factura no fue emitida. Ya puede proceder con 'Corregir y reintentar'.");
       }
       await loadFacturas();
@@ -472,7 +482,8 @@ export default function FacturaElectronicaModule() {
           lockToken,
         });
       }
-      setStatusCheckingId(null);
+      statusChecksInFlight.current.delete(factura.id);
+      setStatusCheckingId((current) => current === factura.id ? null : current);
     }
   };
 
@@ -1103,6 +1114,7 @@ export default function FacturaElectronicaModule() {
                       return (
                         <button
                           type="button"
+                          disabled={statusCheckingId === detailModalFactura.id}
                           onClick={() => {
                             const f = detailModalFactura;
                             setDetailModalFactura(null);
