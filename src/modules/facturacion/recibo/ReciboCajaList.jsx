@@ -268,7 +268,7 @@ export default function ReciboCajaList({ onNew }) {
                 medio_pago: first.medioPago || "Efectivo",
                 condicionPago: "1",
                 condicionPagoNombre: "Contado",
-                observaciones: `Factura generada automáticamente a partir del recibo de caja ${rcNumerosText}`,
+                observaciones: "", // la factura no lleva nota automática; el vínculo queda en recibos_asociados
                 profesional: first.profesionalNombre || "Sin asignar",
                 profesional_nombre: first.profesionalNombre || "Sin asignar",
                 fecha: new Date().toISOString().split("T")[0],

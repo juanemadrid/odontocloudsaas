@@ -363,7 +363,9 @@ export const generateElectronicInvoiceHtml = ({
     tenant?.tecnologicalProvider ||
     'Proveedor Tecnológico: Factus S.A.S. Nit:901.403.490-1 / www.factus.com.co';
 
-  const observacionesText = factura?.observaciones || '';
+  // Las facturas antiguas hechas desde Recibos de caja guardaban una nota automática: no se imprime.
+  const observacionesText = String(factura?.observaciones || '')
+    .replace(/Factura generada automáticamente a partir del recibo de caja[^\n]*/gi, '').trim();
 
   return `<!DOCTYPE html>
 <html lang="es">
