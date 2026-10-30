@@ -26,6 +26,9 @@ export function buildRecoveredInvoice(tenantId, expectedNumber, response) {
     return { ...line, cantidad, precioUnitario, descripcion: line.name, concepto: line.code_reference || line.name,
       code: line.code_reference, total: Number(line.total ?? cantidad * precioUnitario) };
   });
+  const rawOperation = detail.operation_type || bill.operation_type;
+  const isHealth = Boolean(detail.health || bill.health || rawOperation === 'SS-CUFE' || rawOperation?.code === 'SS-CUFE' ||
+    items.some(item => /^\d{6}$/.test(String(item.code || ''))));
   return {
     tenant_id: tenantId, numero: bill.number, total, subtotal: Number(bill.gross_value ?? total),
     impuestos: Number(bill.tax_amount ?? 0), estado: 'Emitido',
@@ -42,8 +45,8 @@ export function buildRecoveredInvoice(tenantId, expectedNumber, response) {
         direccion: customer.address, ciudad: customer.municipality?.name,
         tipoDocumento: ({13:'CC',22:'CE',31:'NIT',12:'TI',41:'PASAPORTE',48:'PPT',11:'RC'})[customer.identification_document_id] },
       healthData: detail.health || bill.health || null,
-      esSectorSalud: Boolean(detail.health || bill.health),
-      tipoOperacion: detail.health || bill.health ? 'SS-CUFE' : (bill.customization_id || null),
+      esSectorSalud: isHealth,
+      tipoOperacion: isHealth ? 'SS-CUFE' : null,
       tercero: customer, items, factusResponse: { data: detail },
       recoveredFromFactus: true, recoveredAt: new Date().toISOString(),
       // Recovering a fiscal document does not assert that money was received.
