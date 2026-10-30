@@ -325,7 +325,8 @@ export function buildFactusCreditNotePayload({
 
   const address = patientData.direccion || patientData.address || "Dirección no registrada";
   const cityName = patientData.ciudad || patientData.municipio || "Bogotá D.C.";
-  const municipalityCode = getMunicipalityCode(cityName);
+  const municipalityCode = /^\d{5}$/.test(String(patientData.municipality_code || ''))
+    ? String(patientData.municipality_code) : getMunicipalityCode(cityName);
 
   const fullName = [patientData.nombre, patientData.apellido]
     .filter(Boolean)

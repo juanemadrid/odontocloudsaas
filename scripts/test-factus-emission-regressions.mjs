@@ -100,6 +100,29 @@ assert.throws(() => recovery.buildRecoveredInvoice('clinic','FCEV1344',recoveryR
 assert.throws(() => recovery.buildRecoveredInvoice('clinic','FCEV1345',{...recoveryResponse,result:{...recoveryResponse.result,bill:{...recoveryResponse.result.bill,is_validated:false}}}),/validación/);
 assert.throws(() => recovery.buildRecoveredInvoice('clinic','FCEV1345',{...recoveryResponse,result:{bill:recoveryResponse.result.bill}}),/incompleta/);
 console.log('PASS: recovery checks identity, validation, complete detail and does not create a payment.');
+const v2Bill = { number:'FCEV1344', is_validated:true, cufe:'test-cufe',
+  created_at:'28-10-2026 03:50:49 PM', totals:{total:'150000.00',gross_amount:'150000.00',tax_amount:'0.00'},
+  operation_type:{code:'SS-CUFE'},
+  health:{provider_code:'test-provider',payment_method:{code:'04'},coverage:{code:'15'},without_contract:{code:'05'},contract_number:null},
+  customer:{names:'Cliente de prueba',identification:'123',identification_document:{code:'13'},municipality:{code:'70001',name:'Sincelejo'}},
+  items:[{quantity:'1.00',price:'150000.00',total:'150000.00',code_reference:'890304',name:'Servicio de prueba'}],
+  related_notes:{credit_notes:[],debit_notes:[]}, links:{qr:'https://example.test/qr'},
+};
+const v2Recovered = recovery.buildRecoveredInvoice('clinic','FCEV1344',{exists:true,result:{...v2Bill,bill:v2Bill}});
+assert.equal(v2Recovered.total,150000);
+assert.equal(v2Recovered.subtotal,150000);
+assert.equal(v2Recovered.impuestos,0);
+assert.equal(v2Recovered.fecha_emision,'2026-10-28T15:50:49-05:00');
+assert.equal(v2Recovered.detalles.health.payment_method_code,'04');
+assert.equal(v2Recovered.detalles.health.coverage_code,'15');
+assert.equal(v2Recovered.detalles.health.without_contract_code,'05');
+assert.equal(v2Recovered.detalles.paciente.tipoDocumento,'CC');
+assert.equal(v2Recovered.detalles.paciente.municipality_code,'70001');
+assert.equal(recovery.recoveredInvoiceDate('28-10-2026 12:00:00 AM'),'2026-10-28T00:00:00-05:00');
+assert.equal(recovery.recoveredInvoiceDate('28-10-2026 12:00:00 PM'),'2026-10-28T12:00:00-05:00');
+assert.throws(()=>recovery.recoveredInvoiceDate('31-02-2026 03:50:49 PM'),/válida/);
+assert.throws(()=>recovery.buildRecoveredInvoice('clinic','FCEV1344',{exists:true,result:{bill:{...v2Bill,totals:{total:'inválido'}}}}),/total/);
+console.log('PASS: anonymized V2 response with nested totals, Colombian dates, health codes and municipality.');
 const proxy = await moduleFrom('../src/services/factusProxyService.js', {
   '../lib/supabaseClient.js': { default: { functions: { invoke: async () => response } } },
 });

@@ -1,6 +1,23 @@
 import supabase from '../lib/supabaseClient.js';
 import { checkFactusBill } from './factusProxyService.js';
 
+export function recoveredInvoiceDate(raw) {
+  if (!raw) throw new Error('Factus no devolvió la fecha de emisión.');
+  const value = String(raw).trim();
+  const match = /^(\d{2})-(\d{2})-(\d{4})(?: (\d{2}):(\d{2}):(\d{2}) (AM|PM))?$/.exec(value);
+  if (match) {
+    const [,day,month,year,hour='12',minute='00',second='00',period='AM'] = match;
+    const h = Number(hour);
+    const calendar = new Date(Date.UTC(Number(year),Number(month)-1,Number(day)));
+    if (h < 1 || h > 12 || Number(minute)>59 || Number(second)>59 || calendar.getUTCDate()!==Number(day) || calendar.getUTCMonth()+1!==Number(month)) {
+      throw new Error('La fecha de emisión de Factus no es válida.');
+    }
+    return `${year}-${month}-${day}T${String(h % 12 + (period==='PM' ? 12 : 0)).padStart(2,'0')}:${minute}:${second}-05:00`;
+  }
+  if (/^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isFinite(Date.parse(value))) return value;
+  throw new Error('El formato de fecha de emisión de Factus no es válido.');
+}
+
 export function buildRecoveredInvoice(tenantId, expectedNumber, response) {
   const detail = response?.result;
   const bill = detail?.bill;
@@ -15,8 +32,12 @@ export function buildRecoveredInvoice(tenantId, expectedNumber, response) {
   if (!customer?.identification || !Array.isArray(lines) || !lines.length) {
     throw new Error('La respuesta no contiene el cliente y los conceptos completos. No se puede recuperar una factura incompleta.');
   }
-  const total = Number(bill.total);
+  const totals = detail?.totals || bill?.totals || {};
+  const total = Number(totals.total ?? bill.total);
   if (!Number.isFinite(total) || total <= 0) throw new Error('El total de Factus no es válido.');
+  const subtotal = Number(totals.gross_amount ?? bill.gross_value ?? total);
+  const tax = Number(totals.tax_amount ?? bill.tax_amount ?? 0);
+  if (![subtotal,tax].every(Number.isFinite)) throw new Error('Los subtotales de Factus no son válidos.');
   const items = lines.map((line) => {
     const cantidad = Number(line.quantity);
     const precioUnitario = Number(line.price);
@@ -27,12 +48,18 @@ export function buildRecoveredInvoice(tenantId, expectedNumber, response) {
       code: line.code_reference, total: Number(line.total ?? cantidad * precioUnitario) };
   });
   const rawOperation = detail.operation_type || bill.operation_type;
+  const rawHealth = detail.health || bill.health;
+  const health = rawHealth ? { ...rawHealth,
+    payment_method_code: rawHealth.payment_method_code || rawHealth.payment_method?.code,
+    coverage_code: rawHealth.coverage_code || rawHealth.coverage?.code,
+    without_contract_code: rawHealth.without_contract_code || rawHealth.without_contract?.code,
+  } : null;
   const isHealth = Boolean(detail.health || bill.health || rawOperation === 'SS-CUFE' || rawOperation?.code === 'SS-CUFE' ||
     items.some(item => /^\d{6}$/.test(String(item.code || ''))));
   return {
-    tenant_id: tenantId, numero: bill.number, total, subtotal: Number(bill.gross_value ?? total),
-    impuestos: Number(bill.tax_amount ?? 0), estado: 'Emitido',
-    fecha_emision: bill.created_at || bill.validated || null,
+    tenant_id: tenantId, numero: bill.number, total, subtotal,
+    impuestos: tax, estado: 'Emitido',
+    fecha_emision: recoveredInvoiceDate(bill.created_at || bill.validated_at || bill.validated),
     detalles: {
       dianStatus: 'ACEPTADA', cufe: bill.cufe, factusInvoiceNumber: bill.number,
       factusReferenceCode: bill.reference_code || null, factusBillId: bill.id,
@@ -42,9 +69,14 @@ export function buildRecoveredInvoice(tenantId, expectedNumber, response) {
       pacienteEmail: customer.email, pacienteTelefono: customer.phone,
       paciente: { nombre: customer.names || customer.company || customer.trade_name || customer.name,
         documento: String(customer.identification), email: customer.email, telefono: customer.phone,
-        direccion: customer.address, ciudad: customer.municipality?.name,
-        tipoDocumento: ({13:'CC',22:'CE',31:'NIT',12:'TI',41:'PASAPORTE',48:'PPT',11:'RC'})[customer.identification_document_id] },
-      healthData: detail.health || bill.health || null,
+        direccion: customer.address, ciudad: customer.municipality?.name, municipality_code: customer.municipality?.code,
+        tipoDocumento: ({13:'CC',22:'CE',31:'NIT',12:'TI',41:'PASAPORTE',48:'PPT',11:'RC'})[customer.identification_document?.code || customer.identification_document_id] },
+      healthData: health, health,
+      qrCode: bill.links?.qr || detail.links?.qr || null,
+      billing_period: detail.billing_period || bill.billing_period || null,
+      factusRelatedNotes: detail.related_notes || bill.related_notes || null,
+      factusWarnings: bill.errors || detail.errors || null,
+      observaciones: bill.observation || detail.observation || '',
       esSectorSalud: isHealth,
       tipoOperacion: isHealth ? 'SS-CUFE' : null,
       tercero: customer, items, factusResponse: { data: detail },
