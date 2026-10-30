@@ -48,3 +48,7 @@ export const invoiceDisplayNumber = (invoice) => {
   if (isDraftInvoiceNumber(raw)) return raw;
   return NO_FISCAL_NUMBER_LABEL;
 };
+
+// Código interno que OdontoCloud pone a un concepto escrito a mano (ITEM-<hora> antiguo, o 001, 002…).
+// No es un código CUPS: nunca debe convertir la factura en factura de salud al corregirla.
+export const isGeneratedItemCode = (value) => /^(ITEM-[a-z0-9]+|\d{3})$/i.test(clean(value));

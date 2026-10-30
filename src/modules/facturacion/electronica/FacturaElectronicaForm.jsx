@@ -15,7 +15,7 @@ import { computePaymentStatus } from "../../../services/billingReceiptLinkServic
 import { getDoctorsList } from "../../../services/supabaseServices";
 import { getConfigItems, getConfigSection, saveConfigSection } from "../../../services/configPersistenceService";
 import { validateTerceroForDian, formatTerceroNombre, splitIdentificationForDian } from "../../../utils/dian/dianHelpers";
-import { fiscalInvoiceNumber, invoiceDisplayNumber, newProvisionalInvoiceNumber } from "../../../utils/invoiceNumbering.js";
+import { fiscalInvoiceNumber, invoiceDisplayNumber, isGeneratedItemCode, newProvisionalInvoiceNumber } from "../../../utils/invoiceNumbering.js";
 import { CUPS_DENTAL_CODES } from "../../../data/cupsCodes";
 
 import {
@@ -162,8 +162,10 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
         cantidad: Number(it.cantidad || it.qty || 1),
         descuento: Number(it.descuento || it.discount || 0),
         total: Number(it.total || 0) || Math.max(0, (Number(it.precioUnitario || 0) * Number(it.cantidad || 1)) - Number(it.descuento || 0)),
-        cups: it.cups || it.code || "",
-        code: it.cups || it.code || "",
+        // Un código interno (ITEM-…, 001) no es CUPS: si se tomara como tal, al corregir la factura
+        // comercial se volvía factura de salud (así quedó la FCEV1347).
+        cups: isGeneratedItemCode(it.cups || it.code) ? "" : (it.cups || it.code || ""),
+        code: isGeneratedItemCode(it.cups || it.code) ? "" : (it.cups || it.code || ""),
         clinicalSourceId: it.clinicalSourceId || it.planItemId || it.id || null,
         clinicalSourceType: it.clinicalSourceType || (it.planItemId ? "PLAN_ITEM" : null),
         planId: it.planId || null,
@@ -870,7 +872,7 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
             clinicalSourceType: sourceType,
             code: cups,
             code_reference: cups,
-            cups,
+            cups: (rawCode || isSalud) ? cups : null,
             nombre: fullLineName,
             name: fullLineName,
             descripcion: fullLineName,

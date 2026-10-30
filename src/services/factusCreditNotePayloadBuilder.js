@@ -89,6 +89,21 @@ export function readBilledCustomerId(invoice) {
   return { identification, dv, docCode };
 }
 
+// Datos de salud tal como Factus los devolvió al validar la factura (respaldo si no se guardó healthData).
+export function readBilledHealth(invoice) {
+  const response = invoice?.detalles?.factusResponse || invoice?.factusResponse || {};
+  const health = response?.data?.bill?.health || response?.data?.health || response?.bill?.health || null;
+  if (!health || typeof health !== "object" || !health.provider_code) return null;
+  return {
+    provider_code: health.provider_code,
+    payment_method_code: health.payment_method?.code ?? health.payment_method_code,
+    coverage_code: health.coverage?.code ?? health.coverage_code,
+    contract_number: health.contract_number ?? null,
+    without_contract_code: health.without_contract?.code ?? health.without_contract_code ?? null,
+    policy_number: health.policy_number ?? null,
+  };
+}
+
 export function validateInvoiceCreditEligibility(invoice, saldoFiscalDisponible = null) {
   if (!invoice) {
     const err = new Error("Factura original no proporcionada.");
@@ -403,9 +418,14 @@ export function buildFactusCreditNotePayload({
     payload.operation_type = "SS-CUFE";
 
     // Extraer configuración real de salud previa o de tenantConfig
+    // La factura guarda los datos de salud enviados en detalles.healthData (antes solo se buscaba
+    // detalles.health y la nota fallaba con "provider_code es obligatorio").
     const rawHealth =
       invoice.detalles?.health ||
+      invoice.detalles?.healthData ||
       invoice.health ||
+      invoice.healthData ||
+      readBilledHealth(invoice) ||
       healthConfig ||
       {};
 

@@ -62,3 +62,39 @@ assert.equal(normalized.category, 'PRE_VALIDATION_ERROR');
 assert.match(normalized.friendlyMessage, /debería ser 8/);
 assert.ok(form.includes('splitIdentificationForDian(pacienteData.documento, "31")'), 'el formulario valida antes de enviar');
 console.log('PASS: un NIT con DV inválido se detiene antes de enviar y no deja la factura "en duda".');
+
+// 5. Nota crédito de una factura de salud (SS-CUFE): toma los datos de salud guardados en la factura.
+const { readBilledHealth } = await import('../src/services/factusCreditNotePayloadBuilder.js');
+const healthInvoice = structuredClone(fcev1347);
+healthInvoice.detalles.tipoOperacion = 'SS-CUFE';
+healthInvoice.detalles.esSectorSalud = true;
+healthInvoice.detalles.healthData = { coverage_code: '15', provider_code: '7000101658', payment_method_code: '04', without_contract_code: '05' };
+const ncHealth = buildFactusCreditNotePayload({ invoice: healthInvoice, patient, numberingRangeId: 9, referenceCode: 'NC-OC-3', correctionConceptCode: '2' });
+assert.equal(ncHealth.operation_type, 'SS-CUFE');
+assert.deepEqual(ncHealth.health, { provider_code: '7000101658', payment_method_code: '04', coverage_code: '15', without_contract_code: '05' });
+// Sin healthData guardado: se usa lo que devolvió Factus al validar.
+const onlyResponse = structuredClone(healthInvoice);
+delete onlyResponse.detalles.healthData;
+onlyResponse.detalles.factusResponse.data.health = { coverage: { code: '15', name: 'Particular' }, policy_number: null,
+  provider_code: '7000101658', payment_method: { code: '04', name: 'Pago por evento' }, contract_number: null, without_contract: { code: '05' } };
+assert.equal(readBilledHealth(onlyResponse).payment_method_code, '04');
+const ncHealth2 = buildFactusCreditNotePayload({ invoice: onlyResponse, patient, numberingRangeId: 9, referenceCode: 'NC-OC-4', correctionConceptCode: '2' });
+assert.equal(ncHealth2.health.provider_code, '7000101658');
+assert.equal(ncHealth2.health.without_contract_code, '05');
+// Factura comercial: sigue sin bloque de salud.
+assert.equal(nc.operation_type, undefined);
+assert.equal(nc.health, undefined);
+console.log('PASS: la nota crédito de una factura de salud reutiliza sus datos de salud (REPS, modalidad, cobertura).');
+
+// 6. Un código interno no convierte la factura en "de salud" al corregirla (caso FCEV1347).
+const { isGeneratedItemCode } = await import('../src/utils/invoiceNumbering.js');
+const { isClinicalStructuredItem } = await import('../src/services/factusHealthPayloadBuilder.js');
+for (const c of ['ITEM-mvuyvywp', '001', '012']) assert.ok(isGeneratedItemCode(c), c);
+for (const c of ['890304', 'SERV-0001', '', '9902']) assert.ok(!isGeneratedItemCode(c), c);
+const form2 = await readFile(new URL('../src/modules/facturacion/electronica/FacturaElectronicaForm.jsx', import.meta.url), 'utf8');
+assert.ok(form2.includes('cups: isGeneratedItemCode(it.cups || it.code) ? "" : (it.cups || it.code || "")'));
+assert.ok(form2.includes('cups: (rawCode || isSalud) ? cups : null,'));
+// Un ítem recargado con código interno ya no es clínico; uno con CUPS real sí.
+assert.equal(isClinicalStructuredItem({ concepto: 'ARRIENDO', cups: '' }), false);
+assert.equal(isClinicalStructuredItem({ concepto: 'CONTROL', cups: '890304' }), true);
+console.log('PASS: los códigos internos (ITEM-…, 001) no vuelven "de salud" una factura comercial al corregirla.');
