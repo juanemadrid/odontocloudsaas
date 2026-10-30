@@ -751,7 +751,7 @@ Deno.serve(async (request) => {
 
       let path = "";
       if (billNumber) {
-        path = "/v2/bills/show/" + encodeURIComponent(billNumber);
+        path = "/v2/bills/" + encodeURIComponent(billNumber);
       } else {
         path = "/v2/bills?filter[reference_code]=" + encodeURIComponent(referenceCode!);
       }
@@ -779,7 +779,7 @@ Deno.serve(async (request) => {
         success: true,
         exists,
         not_found: !exists,
-        result: billData ? { ...(billNumber && data?.data?.bill ? data.data : {}), bill: billData } : null,
+        result: billData ? { ...(billNumber && data?.data && typeof data.data === 'object' ? data.data : {}), bill: billData } : null,
       });
     }
 

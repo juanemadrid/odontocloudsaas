@@ -62,6 +62,25 @@ async function moduleFrom(path, mocks) {
   return mod.namespace;
 }
 let response;
+const proxySource = await readFile(new URL('../supabase/functions/factus-proxy/index.ts', import.meta.url), 'utf8');
+const checkBillSource = proxySource.slice(proxySource.indexOf('    if (action === "check_bill")'), proxySource.indexOf('    if (action === "delete_unvalidated_bill")')).replaceAll('referenceCode!', 'referenceCode');
+let requestedBillPath;
+let providerBody;
+const proxyCheckContext = vm.createContext({
+  action:'check_bill', body:{billNumber:'FCEV1344'}, config:{}, encodeURIComponent,
+  json: value => value, HttpError:Error, factusError: () => 'Provider error',
+  factusRequest:async (_config,path) => { requestedBillPath=path; return {status:200,ok:true,json:async()=>providerBody}; },
+});
+for (const nested of [false,true]) {
+  const originalBill={number:'FCEV1344',is_validated:true,cufe:'verified',total:150000};
+  providerBody={data:{...(nested ? {bill:originalBill} : originalBill),customer:{identification:'123'},items:[{quantity:1,price:150000}]}};
+  const checked=await vm.runInContext('(async () => {'+checkBillSource+'})()',proxyCheckContext);
+  assert.equal(requestedBillPath,'/v2/bills/FCEV1344');
+  assert.equal(checked.result.bill.number,'FCEV1344');
+  assert.equal(checked.result.customer.identification,'123');
+  assert.equal(checked.result.items.length,1);
+}
+console.log('PASS: actual proxy uses the V2 bill detail route and preserves nested/flat customer and items.');
 const recovery = await moduleFrom('../src/services/factusInvoiceRecovery.js', {
   '../lib/supabaseClient.js': { default:{} },
   './factusProxyService.js': { checkFactusBill:async () => response },
