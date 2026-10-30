@@ -71,7 +71,10 @@ const CIUDADES_COLOMBIA = [
   "Neiva", "Pasto", "Popayán", "Tunja", "Riohacha", "Florencia", "Yopal"
 ];
 
-export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFactura = null }) {
+// autoEmit: viene de "Generar factura" en Recibos de caja. Emite sola apenas carga los datos del
+// tercero y los conceptos (el mismo proceso que "Guardar y Emitir"); si algo falla, queda el formulario
+// con el error para corregir.
+export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFactura = null, autoEmit = false }) {
   const { user, userProfile } = useAuth();
   const toast = useToast();
   const inquilino = userProfile?.inquilino || "";
@@ -108,6 +111,10 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
     return initialFactura?.profesional || initialDetalles?.profesional || "";
   });
   const [profesionales, setProfesionales] = useState([]);
+  const [initialDataReady, setInitialDataReady] = useState(false);
+  const [billingCfgReady, setBillingCfgReady] = useState(false);
+  const [autoEmitPending, setAutoEmitPending] = useState(Boolean(autoEmit && initialFactura));
+  const autoEmitStarted = useRef(false);
 
   // CARD 2: Datos tercero
   const [terceros, setTerceros] = useState([]);
@@ -241,6 +248,8 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
         }
       } catch (err) {
         console.warn("No se pudo cargar la configuración de facturación:", err?.message);
+      } finally {
+        setBillingCfgReady(true);
       }
     };
     loadBillingCfg();
@@ -488,6 +497,8 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
         setProcedimientosCatalogo(catalogo);
       } catch (err) {
         console.error("Error cargando catálogos iniciales:", err);
+      } finally {
+        setInitialDataReady(true);
       }
     };
     loadInitialData();
@@ -1291,6 +1302,24 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
       }
     }
   };
+
+  // Emisión automática desde "Generar factura" (Recibos de caja): una sola vez, cuando ya están
+  // cargados el tercero, los conceptos y la configuración. Usa exactamente handleSaveFactura.
+  useEffect(() => {
+    if (!autoEmit || !initialFactura || autoEmitStarted.current || !initialDataReady || !billingCfgReady) return;
+    autoEmitStarted.current = true;
+    Promise.resolve(handleSaveFactura()).finally(() => setAutoEmitPending(false));
+  }); // sin dependencias a propósito: debe usar el handleSaveFactura del render ya cargado
+
+  if (autoEmitPending && !successData) {
+    return (
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-md p-10 animate-fadeIn text-center max-w-2xl mx-auto my-8">
+        <div className="w-12 h-12 border-4 border-[#8dc63f] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+        <h2 className="text-lg font-bold text-slate-800 mb-1">Generando la factura electrónica…</h2>
+        <p className="text-xs text-slate-500">Enviando a la DIAN con los datos del tercero y los conceptos del recibo. No cierre esta ventana.</p>
+      </div>
+    );
+  }
 
   // ─── Vista de Éxito ───
   if (successData) {

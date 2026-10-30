@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { 
     FiPlus, FiCalendar, FiSearch, FiPrinter, FiEdit2, FiTrash2, 
     FiEye, FiChevronDown, FiChevronRight, FiFileText, FiDollarSign, 
-    FiCreditCard, FiX, FiCheck, FiDownload
+    FiCreditCard, FiX, FiCheck, FiDownload, FiLock
 } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 import supabase from "../../../lib/supabaseClient";
@@ -99,6 +99,14 @@ export default function ReciboCajaList({ onNew }) {
             else next.add(id);
             return next;
         });
+    };
+
+    // Número de la factura a la que ya está ligado el recibo (o vacío si está libre para facturar).
+    const receiptInvoiceNumber = (r) => {
+        const invoice = r?.associatedDoc?.rawFactura;
+        // Un borrador cuya emisión falló y se canceló libera sus recibos.
+        if (invoice && String(invoice.estado || "").toLowerCase() === "cancelado") return "";
+        return String(r?.fevNumero?.numero || r?.docRefNumber || r?.associatedDoc?.numero || (typeof r?.fevNumero === "string" ? r.fevNumero : "") || "").trim();
     };
 
     const isUUID = (str) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(str || ""));
@@ -323,7 +331,8 @@ export default function ReciboCajaList({ onNew }) {
             await loadData();
 
             if (hasCredentials) {
-                toast.info("Borrador guardado. Revise los datos fiscales y de salud antes de emitir.");
+                // Un solo clic: se emite enseguida con el mismo proceso de "Facturas de venta".
+                // Si la DIAN/Factus rechaza algo, se abre el formulario con el error para corregir.
                 setInvoiceToReview(savedFactura);
                 return;
             }
@@ -1378,7 +1387,7 @@ export default function ReciboCajaList({ onNew }) {
     }, [filteredRecibos, currentPage]);
 
     const selectableCurrentPage = useMemo(() => {
-        return paginatedRecibos.filter(r => !(String(r.estado || "").toLowerCase() === "anulado" || Boolean(r.anulado)));
+        return paginatedRecibos.filter(r => !(String(r.estado || "").toLowerCase() === "anulado" || Boolean(r.anulado)) && !receiptInvoiceNumber(r));
     }, [paginatedRecibos]);
 
     const isCurrentPageAllSelected = selectableCurrentPage.length > 0 && selectableCurrentPage.every(r => selectedReciboIds.has(r.id));
@@ -1414,6 +1423,7 @@ export default function ReciboCajaList({ onNew }) {
     if (invoiceToReview) {
         return <FacturaElectronicaForm
             initialFactura={invoiceToReview}
+            autoEmit
             onCancel={() => { setInvoiceToReview(null); loadData(); }}
             onSuccess={() => { setInvoiceToReview(null); loadData(); }}
         />;
@@ -1635,6 +1645,11 @@ export default function ReciboCajaList({ onNew }) {
                                             >
                                                 {/* Checkbox de selección para facturar */}
                                                 <td className="py-2.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                                    {receiptInvoiceNumber(r) ? (
+                                                        <span className="inline-flex text-slate-400" title={`Ya facturado (${receiptInvoiceNumber(r)}): no se puede volver a facturar`}>
+                                                            <FiLock size={12} />
+                                                        </span>
+                                                    ) : (
                                                     <input 
                                                         type="checkbox"
                                                         checked={isSelected}
@@ -1643,6 +1658,7 @@ export default function ReciboCajaList({ onNew }) {
                                                         className="w-3.5 h-3.5 rounded border border-slate-300 text-[#8CC63F] accent-[#8CC63F] cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed focus:ring-0 focus:outline-none transition-all"
                                                         title={isAnulado ? "No se puede facturar un recibo anulado" : "Palomear para generar factura"}
                                                     />
+                                                    )}
                                                 </td>
 
                                                 {/* Expander Icon */}
