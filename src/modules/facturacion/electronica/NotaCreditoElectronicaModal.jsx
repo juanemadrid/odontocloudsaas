@@ -68,6 +68,7 @@ export default function NotaCreditoElectronicaModal({
   const billNumber =
     factura.detalles?.factusInvoiceNumber ||
     factura.detalles?.bill_number ||
+    factura.factusInvoiceNumber || factura.numero ||
     factura.nro_consecutivo ||
     "—";
 
@@ -78,11 +79,13 @@ export default function NotaCreditoElectronicaModal({
     "—";
 
   const pacienteNombre =
+    factura.pacienteNombre || factura.detalles?.pacienteNombre ||
     factura.paciente?.nombre ||
     factura.detalles?.paciente?.nombre ||
     "Consumidor Final";
 
   const pacienteDoc =
+    factura.pacienteDocumento || factura.detalles?.pacienteDocumento ||
     factura.paciente?.identificacion ||
     factura.detalles?.paciente?.identificacion ||
     factura.detalles?.paciente?.documento ||

@@ -13,6 +13,7 @@
  */
 
 import supabase from "../lib/supabaseClient.js";
+import { acquireFevBackendLock, releaseFevBackendLock, FEV_LOCK_STATE } from './factusRetryService.js';
 import {
   sendFactusCreditNote,
   checkFactusCreditNote,
@@ -36,18 +37,12 @@ import {
  */
 async function acquireLock(tenantId, facturaId, operationType = "CREDIT_NOTE", timeoutSeconds = 60) {
   try {
-    const { data, error } = await supabase.rpc("acquire_fev_operation_lock", {
-      p_tenant_id: tenantId,
-      p_factura_id: facturaId,
-      p_operation_type: operationType,
-      p_timeout_seconds: timeoutSeconds,
-    });
-
-    if (error) {
-      console.warn("Error invocando acquire_fev_operation_lock:", error.message);
-      return false;
+    const lock = await acquireFevBackendLock({ tenantId, facturaId, state: FEV_LOCK_STATE.RETRYING, lockedBy: operationType, timeoutSeconds });
+    if (lock.fallback) {
+      await releaseFevBackendLock({tenantId,facturaId,lockToken:lock.lockToken});
+      throw new Error('No se pudo asegurar el bloqueo fiscal de la nota crédito.');
     }
-    return Boolean(data);
+    return lock.lockToken;
   } catch (err) {
     console.warn("Excepción adquiriendo lock FEV:", err.message);
     return false;
@@ -57,12 +52,9 @@ async function acquireLock(tenantId, facturaId, operationType = "CREDIT_NOTE", t
 /**
  * Libera el lock de operación concurrente.
  */
-async function releaseLock(tenantId, facturaId) {
+async function releaseLock(tenantId, facturaId, lockToken) {
   try {
-    await supabase.rpc("release_fev_operation_lock", {
-      p_tenant_id: tenantId,
-      p_factura_id: facturaId,
-    });
+    await releaseFevBackendLock({ tenantId, facturaId, lockToken });
   } catch (err) {
     console.warn("Error liberando lock FEV:", err.message);
   }
@@ -215,7 +207,7 @@ export async function createCreditNoteDraft({
 
     return updatedNC;
   } finally {
-    await releaseLock(tenantId, facturaId);
+    await releaseLock(tenantId, facturaId, locked);
   }
 }
 
@@ -302,7 +294,11 @@ export async function emitCreditNote({
     // 5. Construir payload Factus
     const payload = buildFactusCreditNotePayload({
       invoice: factura,
-      patient: patient || nc.paciente_id || factura.paciente_id,
+      patient: patient || factura.paciente || factura.detalles?.paciente || (factura.detalles?.tercero ? {
+        ...factura.detalles.tercero,
+        documento: factura.detalles.pacienteDocumento || factura.detalles.tercero.documento,
+        nombre: factura.detalles.pacienteNombre || factura.detalles.tercero.nombre,
+      } : null),
       numberingRangeId,
       referenceCode: stableRef,
       correctionConceptCode: nc.correction_concept_code || "2",
@@ -489,7 +485,7 @@ export async function emitCreditNote({
       cude: ncCude,
     };
   } finally {
-    await releaseLock(tenantId, factura.id);
+    await releaseLock(tenantId, factura.id, locked);
   }
 }
 

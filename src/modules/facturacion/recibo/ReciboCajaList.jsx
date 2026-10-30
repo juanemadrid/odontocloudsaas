@@ -18,6 +18,7 @@ import FacturaElectronicaForm from "../electronica/FacturaElectronicaForm";
 import { getFactusCredentialsForTenant } from "../../../services/factusAdminService";
 import { createReceiptInvoiceDraft } from "../../../services/receiptInvoiceDraftService";
 import { receiptConceptAmounts } from "../../../services/receiptInvoiceItems.js";
+import { queryOptionalBillingTable } from "../../../services/optionalBillingTables.js";
 
 const fmt = (n) => {
   const num = Number(n || 0);
@@ -542,7 +543,8 @@ export default function ReciboCajaList({ onNew }) {
                         if (foundFac) {
                             rawFac = foundFac;
                         } else {
-                            let qElec = supabase.from("facturas_electronicas").select("*").eq("tenant_id", inquilino);
+                            const { data: foundElec } = await queryOptionalBillingTable('facturas_electronicas', (table) => {
+                            let qElec = table.select("*").eq("tenant_id", inquilino);
                             if (targetId && targetNum) {
                                 qElec = qElec.or(`id.eq.${targetId},numero.eq.${targetNum}`);
                             } else if (targetId) {
@@ -550,7 +552,8 @@ export default function ReciboCajaList({ onNew }) {
                             } else {
                                 qElec = qElec.eq("numero", targetNum);
                             }
-                            const { data: foundElec } = await qElec.maybeSingle();
+                            return qElec.maybeSingle();
+                            });
                             if (foundElec) rawFac = foundElec;
                         }
                     } catch (e) {
@@ -993,7 +996,7 @@ export default function ReciboCajaList({ onNew }) {
             try {
                 const [factsRes, fevRes] = await Promise.all([
                     Promise.resolve(supabase.from("facturas").select("*").eq("tenant_id", inquilino)).catch(() => ({ data: [] })),
-                    Promise.resolve(supabase.from("facturas_electronicas").select("*").eq("tenant_id", inquilino)).catch(() => ({ data: [] }))
+                    queryOptionalBillingTable('facturas_electronicas', (table) => table.select("*").eq("tenant_id", inquilino)).catch(() => ({ data: [] }))
                 ]);
                 const allInvoices = [...(factsRes?.data || []), ...(fevRes?.data || [])];
                 allInvoices.forEach((f) => {

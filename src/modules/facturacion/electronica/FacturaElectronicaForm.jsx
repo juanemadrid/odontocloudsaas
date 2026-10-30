@@ -5,13 +5,14 @@ import {
   FiAlertCircle, FiCheckCircle, FiX, FiInfo
 } from "react-icons/fi";
 import supabase from "../../../lib/supabaseClient";
+import { hasOptionalBillingTable, queryOptionalBillingTable } from "../../../services/optionalBillingTables.js";
 import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
 import { emitirFacturaDian } from "../../../services/DianService";
 import { factusPaymentCode } from "../../../services/factusPayment.js";
 import { computePaymentStatus } from "../../../services/billingReceiptLinkService";
 import { getDoctorsList } from "../../../services/supabaseServices";
-import { getConfigItems, getConfigSection } from "../../../services/configPersistenceService";
+import { getConfigItems, getConfigSection, saveConfigSection } from "../../../services/configPersistenceService";
 import { validateTerceroForDian, formatTerceroNombre } from "../../../utils/dian/dianHelpers";
 import { CUPS_DENTAL_CODES } from "../../../data/cupsCodes";
 
@@ -263,10 +264,9 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
         // 2. Cargar Terceros y Pacientes unificados
         let tercerosList = [];
         try {
-          const { data: tDb } = await supabase
-            .from("terceros")
+          const { data: tDb } = await queryOptionalBillingTable("terceros", (table) => table
             .select("*")
-            .eq("tenant_id", inquilino);
+            .eq("tenant_id", inquilino));
           if (tDb && tDb.length > 0) {
             tercerosList = tDb.map((t) => ({
               ...t,
@@ -301,8 +301,8 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
               nombre: formatTerceroNombre(t),
               apellidos: t.apellidos || t.apellido || "",
               razonSocial: t.razon_social || t.razonSocial || "",
-              documento: t.documento || t.nit || t.nroDocumento || "",
-              tipoDocumento: t.tipoDocumento || "NIT",
+              documento: t.numero_documento || t.nro_documento || t.documento || t.nit || t.nroDocumento || "",
+              tipoDocumento: t.tipo_documento || t.tipoDocumento || "NIT",
               telefono: t.telefono || "",
               email: t.email || "",
               direccion: t.direccion || "",
@@ -316,7 +316,7 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
         // Cargar Pacientes
         let pacientesList = [];
         try {
-          const { data: pDb } = await supabase.from("pacientes").select("*");
+          const { data: pDb } = await supabase.from("pacientes").select("*").eq("tenant_id", inquilino);
           const tenantMatches = (pDb || []).filter((p) =>
             !p.tenant_id ||
             p.tenant_id === inquilino ||
@@ -687,9 +687,15 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
         created_at: new Date().toISOString(),
       };
 
-      try {
-        await supabase.from("terceros").insert([nuevoTerceroObj]);
-      } catch (e) {}
+      if (await hasOptionalBillingTable('terceros')) {
+        const { numero_documento, ...storedTercero } = nuevoTerceroObj;
+        const { error: saveError } = await supabase.from('terceros').insert([{ ...storedTercero, nro_documento: numero_documento }]);
+        if (saveError) throw saveError;
+      } else {
+        const existing = await getConfigSection(inquilino, 'terceros', []);
+        if (!Array.isArray(existing)) throw new Error('El catálogo de terceros no tiene un formato válido.');
+        await saveConfigSection(inquilino, 'terceros', [...existing, nuevoTerceroObj]);
+      }
 
       const fullName = formatTerceroNombre(nuevoTerceroObj) || `${nuevoTerceroObj.nombre} ${nuevoTerceroObj.apellidos}`.trim() || nuevoTerceroObj.razon_social;
       const formattedNew = {

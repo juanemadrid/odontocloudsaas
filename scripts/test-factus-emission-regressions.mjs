@@ -62,6 +62,25 @@ async function moduleFrom(path, mocks) {
   return mod.namespace;
 }
 let response;
+const recovery = await moduleFrom('../src/services/factusInvoiceRecovery.js', {
+  '../lib/supabaseClient.js': { default:{} },
+  './factusProxyService.js': { checkFactusBill:async () => response },
+});
+const recoveryResponse = {exists:true,result:{
+  bill:{number:'FCEV1345',id:1345,is_validated:true,cufe:'verified-cufe',total:'150000',created_at:'2026-10-28T15:51:30-05:00'},
+  customer:{names:'Cliente de prueba',identification:'123'},
+  items:[{code_reference:'890304',name:'Servicio de prueba',price:'150000',quantity:1,total:150000}],
+}};
+const recovered = recovery.buildRecoveredInvoice('clinic','FCEV1345',recoveryResponse);
+assert.equal(recovered.numero,'FCEV1345');
+assert.equal(recovered.detalles.items[0].precioUnitario,150000);
+assert.equal(recovered.detalles.monto_pagado,0);
+assert.equal(recovered.detalles.recibos_asociados.length,0);
+assert.equal(recovered.detalles.dianStatus,'ACEPTADA');
+assert.throws(() => recovery.buildRecoveredInvoice('clinic','FCEV1344',recoveryResponse),/solicitada/);
+assert.throws(() => recovery.buildRecoveredInvoice('clinic','FCEV1345',{...recoveryResponse,result:{...recoveryResponse.result,bill:{...recoveryResponse.result.bill,is_validated:false}}}),/validación/);
+assert.throws(() => recovery.buildRecoveredInvoice('clinic','FCEV1345',{...recoveryResponse,result:{bill:recoveryResponse.result.bill}}),/incompleta/);
+console.log('PASS: recovery checks identity, validation, complete detail and does not create a payment.');
 const proxy = await moduleFrom('../src/services/factusProxyService.js', {
   '../lib/supabaseClient.js': { default: { functions: { invoke: async () => response } } },
 });

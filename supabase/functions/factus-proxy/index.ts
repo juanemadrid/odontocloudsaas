@@ -779,7 +779,7 @@ Deno.serve(async (request) => {
         success: true,
         exists,
         not_found: !exists,
-        result: billData ? { bill: billData } : null,
+        result: billData ? { ...(billNumber && data?.data?.bill ? data.data : {}), bill: billData } : null,
       });
     }
 

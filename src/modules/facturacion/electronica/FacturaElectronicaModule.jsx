@@ -6,12 +6,14 @@ import {
   FiMail, FiX, FiCopy, FiInfo, FiMoreHorizontal
 } from "react-icons/fi";
 import supabase from "../../../lib/supabaseClient";
+import { queryOptionalBillingTable } from "../../../services/optionalBillingTables.js";
 import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
 import { getDianStatusLabel } from "../../../services/DianService";
 import factusService from "../../../services/factusService";
 import FacturaElectronicaForm from "./FacturaElectronicaForm";
 import NotaCreditoElectronicaModal from "./NotaCreditoElectronicaModal";
+import RecuperarFacturaModal from "./RecuperarFacturaModal";
 import { printElectronicInvoice, printReciboCaja } from "../../../utils/electronicInvoiceTemplate";
 import { getConfigSection } from "../../../services/configPersistenceService";
 import { linkReceiptToInvoice, computePaymentStatus } from "../../../services/billingReceiptLinkService";
@@ -69,6 +71,7 @@ export default function FacturaElectronicaModule() {
   const [loading, setLoading] = useState(true);
   const [tenant, setTenant] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [showRecovery, setShowRecovery] = useState(false);
   const [search, setSearch] = useState("");
   const [desde, setDesde] = useState(firstOfMonth);
   const [hasta, setHasta] = useState(todayStr);
@@ -132,11 +135,10 @@ export default function FacturaElectronicaModule() {
 
       // 1. Load from facturas_electronicas
       try {
-        const { data: feData } = await supabase
-          .from("facturas_electronicas")
+        const { data: feData } = await queryOptionalBillingTable("facturas_electronicas", (table) => table
           .select("*")
           .eq("tenant_id", inquilino)
-          .order("created_at", { ascending: false });
+          .order("created_at", { ascending: false }));
         if (feData && feData.length > 0) {
           const normalizedFe = feData.map((fe) => {
             let det = fe.detalles;
@@ -522,6 +524,8 @@ export default function FacturaElectronicaModule() {
           </span>
         </div>
 
+        <div className="flex gap-2">
+        <button onClick={() => setShowRecovery(true)} className="border border-blue-300 text-blue-700 rounded-lg px-3 py-2 text-xs font-bold">Recuperar de Factus</button>
         <button
           onClick={() => setShowForm(true)}
           className="bg-[#8CC63F] hover:bg-[#7bb335] text-white px-4 py-2 rounded-lg font-bold text-[12px] shadow-sm flex items-center justify-center gap-1.5 transition-all cursor-pointer border-0 shrink-0"
@@ -529,8 +533,10 @@ export default function FacturaElectronicaModule() {
           <FiPlus size={16} />
           <span>Nueva factura</span>
         </button>
+        </div>
       </div>
 
+      {showRecovery && <RecuperarFacturaModal tenantId={inquilino} onClose={() => setShowRecovery(false)} onRecovered={async () => { await loadFacturas(); setShowRecovery(false); toast.success('Factura recuperada en OdontoCloud.'); }} />}
       {/* Date Range Search Bar */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
         <div className="flex flex-wrap items-center gap-4">
