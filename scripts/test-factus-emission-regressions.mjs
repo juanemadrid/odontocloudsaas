@@ -6,6 +6,7 @@ import { receiptConceptAmounts } from '../src/services/receiptInvoiceItems.js';
 import { billingFullName, billingItemDescription, billingPatient } from '../src/utils/billingPresentation.js';
 import { generateElectronicInvoiceHtml } from '../src/utils/electronicInvoiceTemplate.js';
 import { readValidatedCreditNote } from '../src/services/factusCreditNoteResponse.js';
+import { resolveInvoiceCustomer } from '../src/services/invoiceCustomerResolver.js';
 
 const validatedNote = {number:'NC1',cude:'a'.repeat(96),reference_code:'NC-OC-TEST',is_validated:true,
   validated_at:'30-10-2026 06:44:33 AM',
@@ -103,6 +104,7 @@ const creditDb = {
 const creditService = await moduleFrom('../src/services/factusCreditNoteService.js', {
   '../lib/supabaseClient.js':{default:creditDb},
   './factusCreditNoteResponse.js':{readValidatedCreditNote},
+  './invoiceCustomerResolver.js':{resolveInvoiceCustomer},
   './factusRetryService.js':{acquireFevBackendLock:()=>{},releaseFevBackendLock:()=>{},FEV_LOCK_STATE:{}},
   './factusProxyService.js':{
     sendFactusCreditNote:()=>{throw new Error('Reconciliation must never emit');},

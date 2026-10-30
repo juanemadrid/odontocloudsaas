@@ -14,6 +14,7 @@
 
 import supabase from "../lib/supabaseClient.js";
 import { readValidatedCreditNote } from './factusCreditNoteResponse.js';
+import { resolveInvoiceCustomer } from './invoiceCustomerResolver.js';
 import { acquireFevBackendLock, releaseFevBackendLock, FEV_LOCK_STATE } from './factusRetryService.js';
 import {
   sendFactusCreditNote,
@@ -293,13 +294,10 @@ export async function emitCreditNote({
     }
 
     // 5. Construir payload Factus
+    const currentCustomer = await resolveInvoiceCustomer({client:supabase,tenantId,invoice:factura,patient});
     const payload = buildFactusCreditNotePayload({
       invoice: factura,
-      patient: patient || factura.paciente || factura.detalles?.paciente || (factura.detalles?.tercero ? {
-        ...factura.detalles.tercero,
-        documento: factura.detalles.pacienteDocumento || factura.detalles.tercero.documento,
-        nombre: factura.detalles.pacienteNombre || factura.detalles.tercero.nombre,
-      } : null),
+      patient: currentCustomer,
       numberingRangeId,
       referenceCode: stableRef,
       correctionConceptCode: nc.correction_concept_code || "2",
