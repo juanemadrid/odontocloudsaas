@@ -8,10 +8,7 @@ import ReciboCajaList from "../../facturacion/recibo/ReciboCajaList";
 import ReciboCajaForm from "../../facturacion/recibo/ReciboCajaForm";
 import SaldoFavorList from "../../facturacion/saldo/SaldoFavorList";
 import SaldoFavorForm from "../../facturacion/saldo/SaldoFavorForm";
-import NotaCreditoList from "../../facturacion/nota/NotaCreditoList";
-import NotaCreditoForm from "../../facturacion/nota/NotaCreditoForm";
-import NotaDebitoList from "../../facturacion/nota/NotaDebitoList";
-import NotaDebitoForm from "../../facturacion/nota/NotaDebitoForm";
+import BillingNotesModule from "../../facturacion/nota/BillingNotesModule";
 import Liquidaciones from "../../facturacion/liquidacion/Liquidaciones";
 import TrasladosList from "../../facturacion/traslados/TrasladosList";
 import PagosList from "../../facturacion/pagos/PagosList";
@@ -26,6 +23,8 @@ const FACT_OPTIONS = [
   { id: "liq",     label: "Liquidaciones",        icon: <FiLayers />,      color: "text-purple-600",  bg: "bg-purple-50",    desc: "Cierre de tratamientos y presupuestos", perm: "Liquidaciones" },
   { id: "pagos",   label: "Egresos",              icon: <FiCreditCard />,  color: "text-indigo-600",  bg: "bg-indigo-50",    desc: "Comprobantes de egreso, gastos y proveedores", perm: "Pagos a proveedores" },
   { id: "fv",      label: "Factura de venta",     icon: <FiDollarSign />,  color: "text-emerald-700", bg: "bg-emerald-100",  desc: "Facturación principal y electrónica", perm: "Factura de venta" },
+  { id: "nc",      label: "Nota crédito",         icon: <FiMinusCircle />, color: "text-rose-600", bg: "bg-rose-50", desc: "Historial y ajustes electrónicos de facturas", perm: "Factura de venta" },
+  { id: "nd",      label: "Nota débito",          icon: <FiPlusCircle />, color: "text-orange-600", bg: "bg-orange-50", desc: "Consulta de notas débito registradas", perm: "Factura de venta" },
   { id: "fc",      label: "Facturas de compra",   icon: <FiTruck />,       color: "text-amber-600",   bg: "bg-amber-50",     desc: "Registro de facturas recibidas", perm: "Facturas de compra" },
   { id: "traslados", label: "Traslados",          icon: <FiRepeat />,      color: "text-blue-600",    bg: "bg-blue-50",      desc: "Movimiento de fondos entre cajas y bancos", perm: "Traslados" },
 ];
@@ -51,7 +50,7 @@ export default function FacturacionHub() {
   const clinicName = userProfile?.tenant?.nombre || userProfile?.tenant_nombre || userProfile?.clinica || "Clínica Dental Sincelejo";
   const hasFE = hasElectronicInvoicingAccess(userProfile);
   const visibleOptions = FACT_OPTIONS.filter(opt => {
-    if (opt.id === "fv" && !hasFE) return false;
+    if (["fv","nc","nd"].includes(opt.id) && !hasFE) return false;
     if (opt.perm && !can("Administración", opt.perm, "consultar")) return false;
     return true;
   });
@@ -126,6 +125,10 @@ export default function FacturacionHub() {
         );
         title = "Facturación de Venta";
       }
+    } else if (["nc","nc_form","nd","nd_form"].includes(activeSubView)) {
+      const credit = activeSubView.startsWith('nc');
+      content = hasFE ? <BillingNotesModule kind={credit ? 'credit' : 'debit'} initialCreate={activeSubView === 'nc_form'} /> : <p className="p-6">El plan actual no incluye facturación electrónica.</p>;
+      title = credit ? 'Notas Crédito' : 'Notas Débito';
     } else if (activeSubView === "recibo") {
       content = <ReciboCajaList onNew={() => setActiveSubView("recibo_form")} />;
       title = "Recibo de Caja";
