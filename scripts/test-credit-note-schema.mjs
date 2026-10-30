@@ -1,0 +1,37 @@
+// Run with a local PostgreSQL-compatible PGlite module path; never contacts production.
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {pathToFileURL} from 'node:url';
+const {PGlite} = await import(pathToFileURL(process.argv[2]).href);
+const db = new PGlite();
+const tenant='10000000-0000-4000-8000-000000000001';
+const other='20000000-0000-4000-8000-000000000002';
+const invoice='30000000-0000-4000-8000-000000000003';
+await db.exec(`CREATE ROLE authenticated; CREATE ROLE service_role; CREATE ROLE anon;
+CREATE TABLE facturas(id uuid PRIMARY KEY,tenant_id uuid,total numeric);
+CREATE TABLE notas_credito(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),tenant_id uuid,factura_id uuid REFERENCES facturas(id),numero text NOT NULL,monto numeric NOT NULL,motivo text,fecha timestamptz DEFAULT now());
+ALTER TABLE facturas ENABLE ROW LEVEL SECURITY; ALTER TABLE notas_credito ENABLE ROW LEVEL SECURITY;
+CREATE POLICY clinic ON facturas TO authenticated USING(tenant_id=current_setting('test.tenant')::uuid);
+CREATE POLICY clinic ON notas_credito TO authenticated USING(tenant_id=current_setting('test.tenant')::uuid) WITH CHECK(tenant_id=current_setting('test.tenant')::uuid);
+GRANT SELECT ON facturas TO authenticated;
+INSERT INTO facturas VALUES('${invoice}','${tenant}',150000);
+INSERT INTO notas_credito(tenant_id,factura_id,numero,monto,motivo) VALUES('${tenant}','${invoice}','LEGACY-1',25000,'Preserved');`);
+const repair=await readFile(new URL('./sql/repair-credit-note-schema.sql',import.meta.url),'utf8');
+await db.exec(repair);
+await db.exec(repair); // Idempotent, no duplicate schema or data.
+assert.equal((await db.query("SELECT motivo FROM notas_credito WHERE numero='LEGACY-1'")).rows[0].motivo,'Preserved');
+await db.exec(`SET ROLE authenticated; SET test.tenant='${tenant}';`);
+const balance=async t=>(await db.query('SELECT * FROM get_factura_credited_balance($1,$2)',[t,invoice])).rows[0];
+assert.equal(Number((await balance(tenant)).saldo_disponible),150000);
+await db.exec(`INSERT INTO notas_credito(tenant_id,factura_id,monto,monto_acreditado,dian_status) VALUES('${tenant}','${invoice}',50000,50000,'ACCEPTED');`);
+assert.equal(Number((await balance(tenant)).saldo_disponible),100000);
+assert.equal((await balance(tenant)).nc_count,1);
+assert.equal((await balance(tenant)).fiscal_status,'PARTIALLY_CREDITED');
+assert.ok((await db.query("SELECT numero FROM notas_credito WHERE dian_status='ACCEPTED'")).rows[0].numero.startsWith('BORRADOR-NC-'));
+await assert.rejects(()=>balance(other),/Factura no encontrada/);
+await db.exec(`SET test.tenant='${other}';`);
+await assert.rejects(()=>balance(tenant),/Factura no encontrada/);
+await db.exec('RESET ROLE; SET ROLE anon;');
+await assert.rejects(()=>balance(tenant),/permission denied/);
+await db.close();
+console.log('PASS: schema repair twice; legacy data preserved; draft number; accepted-only balance; clinic RLS and anonymous access blocked.');
