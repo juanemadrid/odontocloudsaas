@@ -318,7 +318,7 @@ export const sendInvoice = async (invoiceData, patientData, tenantCredentials) =
   // ── Legal organization & tribute based on document type ──
   const isNIT = tipoDoc === "31";
   const legalOrgCode = isNIT ? "1" : "2";
-  const tributeCode = isNIT ? "O-13" : "ZZ";
+  const tributeCode = "ZZ"; // Tributo del cliente (DIAN): "01" = IVA o "ZZ" = no aplica. "O-13" es una responsabilidad fiscal, no un tributo (Factus lo rechaza).
 
 
   // ── Items ──

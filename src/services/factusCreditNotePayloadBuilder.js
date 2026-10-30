@@ -315,7 +315,7 @@ export function buildFactusCreditNotePayload({
   const tipoDoc = getDocTypeCode(patientData.tipoDocumento || patientData.tipo_documento);
   const isNIT = tipoDoc === "31";
   const legalOrgCode = isNIT ? "1" : "2";
-  const tributeCode = isNIT ? "O-13" : "ZZ";
+  const tributeCode = "ZZ"; // Tributo del cliente (DIAN): "01" = IVA o "ZZ" = no aplica. "O-13" es una responsabilidad fiscal, no un tributo (Factus lo rechaza).
   const responsibilities = isNIT ? ["O-13", "O-47"] : ["R-99-PN"];
 
   const rawEmail = String(patientData.email || patientData.correo || "").trim();
