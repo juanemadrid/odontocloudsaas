@@ -97,10 +97,10 @@ export default function AdministracionRouter() {
   const activeItem = filteredModules.find(m => m.id === selectedModule);
 
   return (
-    <div className="p-4 max-w-6xl mx-auto space-y-4">
+    <div className="p-0 sm:p-4 max-w-6xl mx-auto space-y-3 sm:space-y-4">
       {/* ─── CASO 1: VISTA DE MÓDULO SELECCIONADO ─── */}
       {selectedModule && activeItem ? (
-        <div className="space-y-4 animate-in fade-in duration-200">
+        <div className="space-y-3 sm:space-y-4 animate-in fade-in duration-200">
           {/* Toolbar Superior de Navegación del Módulo */}
           <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -110,7 +110,8 @@ export default function AdministracionRouter() {
                 title="Volver al menú de administración"
               >
                 <FiArrowLeft size={14} />
-                <span>Menú de Administración</span>
+                <span className="hidden sm:inline">Menú de Administración</span>
+                <span className="sm:hidden">Menú</span>
               </button>
 
               <div className="h-4 w-px bg-slate-200" />
@@ -128,8 +129,8 @@ export default function AdministracionRouter() {
             </div>
           </div>
 
-          {/* Renderizado de la Sub-Vista */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 min-h-[600px]">
+          {/* Renderizado de la Sub-Vista (en teléfono sin marco extra, para ganar ancho) */}
+          <div className="sm:bg-white sm:rounded-xl sm:border sm:border-slate-200 sm:shadow-sm p-0 sm:p-4 min-h-[600px]">
             {selectedModule === "facturacion" && <FacturacionHub />}
             {selectedModule === "rips" && <RipsGenerator />}
             {selectedModule === "agenda" && <GestionAgenda />}

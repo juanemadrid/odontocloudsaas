@@ -647,7 +647,7 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
                     onOpenRenewalModal={() => setRenewalModalOpen(true)}
                 />
 
-                <main className="flex-1 p-4 sm:p-6 lg:p-8">
+                <main className="flex-1 p-2 sm:p-6 lg:p-8">
                     <div className="max-w-[1600px] mx-auto">
                         {(title || subtitle) && (
                             <div className="mb-10 space-y-1">

@@ -170,8 +170,8 @@ export default function FacturacionHub() {
       return (
         <div className="h-full flex flex-col animate-slideUp">
           {/* Sub-view Toolbar */}
-          <div className="px-4 py-3 bg-white border-b border-slate-200 flex items-center justify-between sticky top-0 z-50">
-            <div className="flex items-center gap-3">
+          <div className="px-3 sm:px-4 py-3 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 sticky top-0 z-50">
+            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
               <button 
                 onClick={() => {
                   if (parentOfForm) setActiveSubView(parentOfForm);
@@ -184,14 +184,14 @@ export default function FacturacionHub() {
                 <span>Volver</span>
               </button>
               <div className="h-4 w-px bg-slate-200" />
-              <div className="flex flex-col">
-                <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Módulo de Facturación</span>
+              <div className="flex flex-col min-w-0">
+                <span className="hidden sm:block text-[10px] font-bold text-blue-600 uppercase tracking-wider">Módulo de Facturación</span>
                 <h2 className="text-[13px] font-bold text-slate-800 uppercase tracking-tight">{title}</h2>
               </div>
             </div>
 
             {/* Header Action Buttons */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 ml-auto">
               {(() => {
                 if (!NEW_BUTTON_LABELS[activeSubView]) return null;
                 const base = activeSubView.replace("_form", "");
@@ -200,7 +200,7 @@ export default function FacturacionHub() {
                 return (
                   <button 
                     onClick={() => setActiveSubView(`${activeSubView}_form`)}
-                    className="bg-[#8dc63f] hover:bg-[#7cb035] text-white px-4 py-2 rounded-full text-[12px] font-bold shadow-sm flex items-center gap-1.5 transition-all cursor-pointer border-0 active:scale-95"
+                    className="bg-[#8dc63f] hover:bg-[#7cb035] text-white px-3 sm:px-4 py-1.5 sm:py-2 rounded-full text-[11px] sm:text-[12px] font-bold shadow-sm flex items-center gap-1.5 whitespace-nowrap transition-all cursor-pointer border-0 active:scale-95"
                   >
                     <FiPlus size={15} />
                     <span>{NEW_BUTTON_LABELS[activeSubView]}</span>
