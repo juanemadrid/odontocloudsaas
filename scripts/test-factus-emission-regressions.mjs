@@ -8,6 +8,7 @@ import { generateElectronicInvoiceHtml } from '../src/utils/electronicInvoiceTem
 import { readValidatedCreditNote } from '../src/services/factusCreditNoteResponse.js';
 import { resolveInvoiceCustomer } from '../src/services/invoiceCustomerResolver.js';
 import * as invoiceNumbering from '../src/utils/invoiceNumbering.js';
+import * as dianHelpers from '../src/utils/dian/dianHelpers.js';
 const { fiscalInvoiceNumber } = invoiceNumbering;
 
 const validatedNote = {number:'NC1',cude:'a'.repeat(96),reference_code:'NC-OC-TEST',is_validated:true,
@@ -140,7 +141,7 @@ transportMocks.downloadFactusCreditNotePdf = async () => creditPdfResponse;
 const invoiceService = await moduleFrom('../src/services/factusService.js', {
   './factusProxyService.js': transportMocks,
   './factusHealthPayloadBuilder.js': {isFacturaSectorSalud:()=>false,buildFactusHealthInvoicePayload:payload=>payload},
-  '../utils/dian/dianHelpers.js': {calculateNIT_DV:()=>0},
+  '../utils/dian/dianHelpers.js': dianHelpers,
   './factusPayment.js': {factusPaymentCode},
   '../utils/billingPresentation.js': {billingFullName,billingItemDescription},
 });
@@ -162,6 +163,24 @@ assert.equal(sentInvoice.customer.municipality_code,'70001');
 assert.equal(sentInvoice.items[0].code_reference,'890304');
 assert.equal(sentInvoice.items[0].name,'CONTROL SOBRE PLANO');
 console.log('PASS: actual invoice payload sends full name, address, city and separate service code/description.');
+// Caso real FCEV1347: NIT con DV "900371476-8" se enviaba como 9003714768 (otro NIT, DV 1).
+await invoiceService.sendInvoice({numbering_range_id:1,items:[printItem],medioPago:'Efectivo'},
+  {nombre:'INSTITUCION EDUCATIVA BOSQUES DE LEON S.A.S',documento:'900371476-8',tipoDocumento:'NIT',direccion:'CR 23 No 18 57',ciudad:'Sincelejo'},
+  {serverManaged:true,factusTestMode:false});
+assert.equal(sentInvoice.customer.identification_document_code,'31');
+assert.equal(sentInvoice.customer.identification,'900371476');
+assert.equal(sentInvoice.customer.dv,'8');
+sentInvoice = null;
+await assert.rejects(invoiceService.sendInvoice({numbering_range_id:1,items:[printItem],medioPago:'Efectivo'},
+  {nombre:'EMPRESA',documento:'900371476-3',tipoDocumento:'NIT',direccion:'x',ciudad:'Sincelejo'},
+  {serverManaged:true,factusTestMode:false}), /dígito de verificación debería ser 8/);
+assert.equal(sentInvoice, null, 'con DV inválido no se envía nada a Factus');
+await invoiceService.sendInvoice({numbering_range_id:1,items:[printItem],medioPago:'Efectivo'},
+  {nombre:'ANA',documento:'1.102.345.678',tipoDocumento:'CC',direccion:'x',ciudad:'Sincelejo'},
+  {serverManaged:true,factusTestMode:false});
+assert.equal(sentInvoice.customer.identification,'1102345678');
+assert.equal(sentInvoice.customer.dv,undefined);
+console.log('PASS: NIT con DV se envía separado (900371476 + DV 8); DV inválido no se emite; cédulas sin cambios.');
 let response;
 const proxySource = await readFile(new URL('../supabase/functions/factus-proxy/index.ts', import.meta.url), 'utf8');
 const checkBillSource = proxySource.slice(proxySource.indexOf('    if (action === "check_bill")'), proxySource.indexOf('    if (action === "delete_unvalidated_bill")')).replaceAll('referenceCode!', 'referenceCode');

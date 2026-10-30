@@ -16,6 +16,7 @@ import {
   isPartialCreditNoteConcept,
 } from "../utils/dian/creditNoteCatalogs.js";
 import { billingFullName, billingItemDescription } from '../utils/billingPresentation.js';
+import { splitIdentificationForDian } from "../utils/dian/dianHelpers.js";
 import {
   validateHealthData,
   isFacturaSectorSalud,
@@ -75,6 +76,19 @@ const getDocTypeCode = (type) => {
  * - Factura no debe estar INDETERMINATE ni REJECTED ni DRAFT ni PENDING
  * - Saldo fiscal acreditable debe ser > 0
  */
+// Adquiriente tal como quedó en la factura validada por la DIAN (respuesta de Factus).
+// La nota crédito debe referirse al mismo adquiriente que la factura, aunque la ficha haya cambiado.
+export function readBilledCustomerId(invoice) {
+  const response = invoice?.detalles?.factusResponse || invoice?.factusResponse || {};
+  const customer = response?.data?.bill?.customer || response?.bill?.customer || response?.data?.customer || null;
+  if (!customer || typeof customer !== "object") return null;
+  const identification = String(customer.identification ?? "").replace(/\D/g, "");
+  if (!identification) return null;
+  const docCode = String(customer.identification_document?.code ?? customer.identification_document_code ?? "").trim() || null;
+  const dv = customer.dv !== undefined && customer.dv !== null && String(customer.dv).trim() !== "" ? String(customer.dv).trim() : null;
+  return { identification, dv, docCode };
+}
+
 export function validateInvoiceCreditEligibility(invoice, saldoFiscalDisponible = null) {
   if (!invoice) {
     const err = new Error("Factura original no proporcionada.");
@@ -304,15 +318,24 @@ export function buildFactusCreditNotePayload({
 
   // 7. Datos del cliente (customer)
   const patientData = patient || invoice.paciente || invoice.detalles?.paciente || {};
-  let docNum = String(
-    patientData.documento ||
-    patientData.identificacion ||
-    patientData.cedula ||
-    "222222222222"
-  ).replace(/\D/g, "");
-  if (!docNum || docNum.length < 3) docNum = "222222222222";
-
-  const tipoDoc = getDocTypeCode(patientData.tipoDocumento || patientData.tipo_documento);
+  const billed = readBilledCustomerId(invoice);
+  let tipoDoc = getDocTypeCode(patientData.tipoDocumento || patientData.tipo_documento);
+  let docNum;
+  let customerDv = null;
+  if (billed) {
+    docNum = billed.identification;
+    tipoDoc = billed.docCode || tipoDoc;
+    customerDv = billed.dv;
+  } else {
+    const split = splitIdentificationForDian(
+      patientData.documento || patientData.identificacion || patientData.cedula || "",
+      tipoDoc,
+      patientData.dv ?? null
+    );
+    docNum = split.identification;
+    customerDv = split.dv;
+  }
+  if (!docNum || docNum.length < 3) { docNum = "222222222222"; customerDv = null; }
   const isNIT = tipoDoc === "31";
   const legalOrgCode = isNIT ? "1" : "2";
   const tributeCode = "ZZ"; // Tributo del cliente (DIAN): "01" = IVA o "ZZ" = no aplica. "O-13" es una responsabilidad fiscal, no un tributo (Factus lo rechaza).
@@ -335,6 +358,7 @@ export function buildFactusCreditNotePayload({
   const customerObj = {
     identification_document_code: tipoDoc,
     identification: docNum,
+    ...(isNIT && customerDv ? { dv: customerDv } : {}),
     names: fullName,
     ...(isNIT ? { company: fullName, trade_name: fullName } : {}),
     address: address,

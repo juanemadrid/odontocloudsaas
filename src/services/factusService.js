@@ -18,7 +18,7 @@ import {
   buildFactusHealthInvoicePayload,
   isFacturaSectorSalud,
 } from "./factusHealthPayloadBuilder.js";
-import { calculateNIT_DV } from "../utils/dian/dianHelpers.js";
+import { calculateNIT_DV, splitIdentificationForDian } from "../utils/dian/dianHelpers.js";
 import { factusPaymentCode } from "./factusPayment.js";
 import { billingFullName, billingItemDescription } from '../utils/billingPresentation.js';
 
@@ -287,17 +287,18 @@ export const sendInvoice = async (invoiceData, patientData, tenantCredentials) =
   }
 
   // ── Patient / customer data ──
-  let docNum = String(
-    patientData.documento ||
-      patientData.identificacion ||
-      patientData.cedula ||
-      "222222222222"
-  ).replace(/\D/g, "");
-  if (!docNum || docNum.length < 3) docNum = "222222222222";
-
   const tipoDoc = getDocTypeCode(
     patientData.tipoDocumento || patientData.tipo_documento
   );
+  // NIT "900371476-8" → número 900371476 + DV 8 (antes se enviaba 9003714768: otro NIT).
+  const customerId = splitIdentificationForDian(
+    patientData.documento || patientData.identificacion || patientData.cedula || "",
+    tipoDoc,
+    patientData.dv ?? null
+  );
+  let docNum = customerId.identification;
+  const customerDv = docNum && docNum.length >= 3 ? customerId.dv : null;
+  if (!docNum || docNum.length < 3) docNum = "222222222222";
 
   const rawEmail = String(patientData.email || patientData.correo || "").trim();
   const email = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) ? rawEmail : "facturacion@odontocloud.com";
@@ -394,6 +395,7 @@ export const sendInvoice = async (invoiceData, patientData, tenantCredentials) =
     customer: {
       identification_document_code: tipoDoc,
       identification: docNum,
+      ...(isNIT && customerDv ? { dv: customerDv } : {}),
       names: fullName,
       ...(isNIT ? { company: fullName, trade_name: fullName } : {}),
       address: address,

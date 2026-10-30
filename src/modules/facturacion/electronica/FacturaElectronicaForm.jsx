@@ -14,7 +14,7 @@ import { billingPatient } from '../../../utils/billingPresentation.js';
 import { computePaymentStatus } from "../../../services/billingReceiptLinkService";
 import { getDoctorsList } from "../../../services/supabaseServices";
 import { getConfigItems, getConfigSection, saveConfigSection } from "../../../services/configPersistenceService";
-import { validateTerceroForDian, formatTerceroNombre } from "../../../utils/dian/dianHelpers";
+import { validateTerceroForDian, formatTerceroNombre, splitIdentificationForDian } from "../../../utils/dian/dianHelpers";
 import { fiscalInvoiceNumber, invoiceDisplayNumber, newProvisionalInvoiceNumber } from "../../../utils/invoiceNumbering.js";
 import { CUPS_DENTAL_CODES } from "../../../data/cupsCodes";
 
@@ -847,7 +847,9 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
         profesional_nombre: profNombreSelected,
         items: items.map((it, idx) => {
           const rawCode = it.codigo_cups || it.cups || (typeof it.concepto === "string" ? it.concepto.match(/^(\d{4,8})/)?.[1] : null);
-          const cups = rawCode || (isSalud ? "SERV-0001" : `ITEM-${Date.now().toString(36)}`);
+          // Concepto escrito a mano (sin código de la lista de precios): código interno ordenado
+          // por línea (001, 002…), válido ante la DIAN como código propio del facturador.
+          const cups = rawCode || (isSalud ? "SERV-0001" : String(idx + 1).padStart(3, "0"));
           const lineId = it.invoiceLineId || (crypto?.randomUUID ? crypto.randomUUID() : `line-${idx + 1}-${Date.now()}`);
           const sourceId = it.clinicalSourceId || it.planItemId || (it.planId && it.id ? it.id : null);
           const sourceType = it.clinicalSourceType || (it.planItemId || it.planId ? "PLAN_ITEM" : null);
@@ -941,6 +943,10 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
       }
 
       // Emisión oficial ante la DIAN vía Factus API
+      // NIT con DV inválido: se avisa aquí y no se envía nada (ni se marca la factura como "en emisión").
+      if (String(pacienteData.tipoDocumento || "").toUpperCase() === "NIT") {
+        splitIdentificationForDian(pacienteData.documento, "31");
+      }
       const { getFactusCredentialsForTenant } = await import("../../../services/factusAdminService");
       const tenantData = (await getFactusCredentialsForTenant(inquilino, { throwOnError: true })) || {};
       const hasCredentials = Boolean(tenantData.factusClientId && tenantData.factusClientSecret);

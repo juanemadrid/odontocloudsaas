@@ -37,6 +37,37 @@ export function calculateNIT_DV(nit) {
 }
 
 /**
+ * Separa el número y el DV de un documento para enviarlo a la DIAN / Factus.
+ * "900371476-8" (NIT) → { identification: "900371476", dv: "8" }. Nunca pega el DV al número.
+ * Si el DV escrito no corresponde al NIT se lanza un error: es mejor no emitir que reportar otro NIT.
+ * @param {string|number} rawDocument
+ * @param {string} docTypeCode - Código DIAN del tipo de documento ("31" = NIT)
+ * @param {string|number|null} [explicitDv]
+ * @returns {{ identification: string, dv: string|null }}
+ */
+export function splitIdentificationForDian(rawDocument, docTypeCode, explicitDv = null) {
+  const raw = String(rawDocument ?? "").trim();
+  if (String(docTypeCode) !== "31") return { identification: raw.replace(/\D/g, ""), dv: null };
+  let number = raw;
+  let dv = explicitDv !== null && explicitDv !== undefined && String(explicitDv).trim() !== ""
+    ? String(explicitDv).replace(/\D/g, "").slice(0, 1) : null;
+  const withDv = raw.match(/^([\d.\s]+)-\s*(\d)$/);
+  if (withDv) {
+    number = withDv[1];
+    if (!dv) dv = withDv[2];
+  }
+  number = number.replace(/\D/g, "");
+  const computed = calculateNIT_DV(number);
+  if (!dv) return { identification: number, dv: computed === null ? null : String(computed) };
+  if (computed !== null && String(computed) !== dv) {
+    const error = new Error(`El NIT ${number}-${dv} no es válido: el dígito de verificación debería ser ${computed}. Corrija el documento del cliente antes de facturar.`);
+    error.code = "INVALID_NIT_DV";
+    throw error;
+  }
+  return { identification: number, dv };
+}
+
+/**
  * Formatea un NIT con su guion y dígito de verificación.
  * @param {string|number} nit
  * @returns {string} Ejemplo: "900123456-7"

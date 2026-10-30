@@ -261,6 +261,12 @@ export const normalizeFactusError = (error, rawResponse = null) => {
   const status = error?.status || rawResponse?.status || 0;
   const lowerMsg = rawMsg.toLowerCase();
 
+  // 0. Dato del cliente inválido detectado localmente: nunca llegó a Factus.
+  if (error?.code === "INVALID_NIT_DV") {
+    return { category: FEV_STAGE.PRE_VALIDATION_ERROR, code: "INVALID_NIT_DV",
+      friendlyMessage: rawMsg, errorFields: ["customer.identification"], rawMessage: rawMsg };
+  }
+
   // A. Timeout / Network error
   const isNetworkTimeout =
     lowerMsg.includes("timeout") ||

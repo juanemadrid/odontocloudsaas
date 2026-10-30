@@ -32,6 +32,12 @@ import {
 import { fiscalInvoiceNumber, invoiceDisplayNumber, isDiscardedInvoice } from "../../../utils/invoiceNumbering.js";
 import { canDiscardInvoice, discardBlockReason, discardRejectedInvoice } from "../../../services/invoiceDiscardService.js";
 
+// Código DIAN del documento del adquiriente según la respuesta validada de Factus.
+const billedDocumentCode = (det) => {
+  const customer = det?.factusResponse?.data?.bill?.customer || det?.factusResponse?.bill?.customer || det?.factusResponse?.data?.customer;
+  return customer?.identification_document?.code ? String(customer.identification_document.code) : null;
+};
+
 const fmt = (n) => {
   const num = Number(n || 0);
   return num.toLocaleString("es-CO", {
@@ -205,7 +211,11 @@ export default function FacturaElectronicaModule() {
                 pacienteDocumento: f.pacienteDocumento || f.paciente_documento || det.pacienteDocumento || "",
                 pacienteDireccion: f.pacienteDireccion || det.pacienteDireccion || "",
                 pacienteCiudad: f.pacienteCiudad || det.pacienteCiudad || "",
-                pacienteTipoDocumento: f.pacienteTipoDocumento || det.pacienteTipoDocumento || "CC",
+                // Tipo de documento real del cliente (antes caía en "CC" y la impresión decía "Cédula" a un NIT).
+                pacienteTipoDocumento: f.pacienteTipoDocumento || det.pacienteTipoDocumento
+                  || det.tercero?.tipoDocumento || det.tercero?.tipo_documento
+                  || det.paciente?.tipoDocumento || det.paciente?.tipo_documento
+                  || (billedDocumentCode(det) === "31" ? "NIT" : billedDocumentCode(det)) || "CC",
                 // Solo números fiscales reales; las etiquetas internas (FE-xxxx, SIN-DIAN-…) no lo son.
                 factusInvoiceNumber: fiscalInvoiceNumber({ ...f, detalles: det }),
                 factusCufe: f.factusCufe || det.cufe || det.factusCufe,
