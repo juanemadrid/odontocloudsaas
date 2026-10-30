@@ -153,7 +153,7 @@ export default function PatientListView({
     const hasSearchTerm = Boolean(searchTerm && searchTerm.trim());
 
     return (
-        <div className="p-4 md:p-6 w-full max-w-[1800px] mx-auto space-y-4">
+        <div className="p-1.5 sm:p-4 md:p-6 w-full max-w-[1800px] mx-auto space-y-4">
 
             {/* Header Toolbar */}
             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-3">

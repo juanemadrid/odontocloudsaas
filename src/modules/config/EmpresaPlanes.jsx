@@ -148,7 +148,7 @@ export default function EmpresaPlanes() {
     // RENDER: LISTA DE PLANES
     // ==========================================
     return (
-        <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto animate-fadeIn">
+        <div className="p-1.5 sm:p-4 md:p-6 space-y-4 max-w-6xl mx-auto animate-fadeIn">
             {/* Header */}
             <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
@@ -276,7 +276,7 @@ export default function EmpresaPlanes() {
                             <button onClick={() => setShowNewModal(false)} className="w-8 h-8 rounded-full bg-slate-200/60 flex items-center justify-center text-slate-500 font-bold hover:bg-rose-100 hover:text-rose-600 transition-colors">&times;</button>
                         </div>
 
-                        <div className="p-6 space-y-4">
+                        <div className="p-4 sm:p-6 space-y-4">
                             <div className="space-y-1">
                                 <label className="text-[10px] font-black uppercase tracking-wider text-slate-500">Nombre del Plan *</label>
                                 <input
@@ -421,7 +421,7 @@ function PlanPriceListEditor({ plan, listas, inquilino, onBack }) {
     }, 0);
 
     return (
-        <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto animate-fadeIn">
+        <div className="p-1.5 sm:p-4 md:p-6 space-y-4 max-w-6xl mx-auto animate-fadeIn">
             {/* Top Toolbar Card */}
             <div className="bg-white rounded-2xl p-4 md:px-6 md:py-4 border border-slate-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
                 {/* Left Side: Back button + Title */}

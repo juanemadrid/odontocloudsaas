@@ -1427,7 +1427,7 @@ export default function TenantsPanelV2() {
                             </div>
                             <button onClick={()=>setShowPlan(false)} className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"><FiX size={16}/></button>
                         </div>
-                        <form onSubmit={handleUpdatePlan} className="p-6 space-y-4">
+                        <form onSubmit={handleUpdatePlan} className="p-4 sm:p-6 space-y-4">
                             <div>
                                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Plan</label>
                                 <select required className={inp} value={newPlanId} onChange={e=>setNewPlanId(e.target.value)}>
@@ -1493,7 +1493,7 @@ export default function TenantsPanelV2() {
                             </button>
                         </div>
 
-                        <div className="p-6 space-y-4">
+                        <div className="p-4 sm:p-6 space-y-4">
                             {/* Información de la clínica */}
                             <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/70 space-y-1.5">
                                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Clínica a Renovar</span>
@@ -1591,7 +1591,7 @@ export default function TenantsPanelV2() {
                             <h3 className="text-base font-bold text-slate-800">Solicitudes pendientes ({requests.length})</h3>
                             <button onClick={()=>setShowRequests(false)} className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100"><FiX size={16}/></button>
                         </div>
-                        <div className="p-6 space-y-3 max-h-[60vh] overflow-y-auto">
+                        <div className="p-4 sm:p-6 space-y-3 max-h-[60vh] overflow-y-auto">
                             {requests.length === 0 ? (
                                 <p className="text-center text-slate-300 text-sm py-8">No hay solicitudes pendientes.</p>
                             ) : requests.map(req=>(
@@ -1650,7 +1650,7 @@ export default function TenantsPanelV2() {
                         </div>
 
                         {/* Body */}
-                        <form onSubmit={handleSaveExtraUsers} className="p-6 space-y-5">
+                        <form onSubmit={handleSaveExtraUsers} className="p-4 sm:p-6 space-y-5">
                             {/* Resumen del Plan Base */}
                             <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 space-y-2">
                                 <div className="flex justify-between items-center text-xs">
@@ -1767,7 +1767,7 @@ export default function TenantsPanelV2() {
                             <button onClick={() => setShowEditTenant(null)} className="w-8 h-8 rounded-full bg-slate-200/60 hover:bg-slate-200 flex items-center justify-center text-slate-500 font-bold transition-all">&times;</button>
                         </div>
                         <form onSubmit={handleSaveEdit} className="flex flex-col flex-1 overflow-hidden">
-                            <div className="p-6 space-y-4 overflow-y-auto custom-scrollbar flex-1">
+                            <div className="p-4 sm:p-6 space-y-4 overflow-y-auto custom-scrollbar flex-1">
                                 <div>
                                     <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Nombre de la Clínica *</label>
                                     <input
@@ -1947,7 +1947,7 @@ export default function TenantsPanelV2() {
                             <button onClick={()=>setShowChangePwd(null)} className="w-8 h-8 rounded-full bg-slate-200/60 hover:bg-slate-200 flex items-center justify-center text-slate-500 font-bold transition-all">&times;</button>
                         </div>
 
-                        <form onSubmit={handleChangePassword} className="p-6 space-y-4">
+                        <form onSubmit={handleChangePassword} className="p-4 sm:p-6 space-y-4">
                             <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 text-xs text-slate-600">
                                 <p className="font-bold text-slate-700">Administrador de la clínica:</p>
                                 <p className="font-mono text-blue-600 font-bold mt-0.5">{showChangePwd.adminEmail || showChangePwd.contactEmail || "Sin email registrado"}</p>

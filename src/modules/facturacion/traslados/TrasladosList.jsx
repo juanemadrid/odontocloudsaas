@@ -200,7 +200,7 @@ export default function TrasladosList({ onNew }) {
   );
 
   return (
-    <div className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-6 animate-in fade-in duration-500">
+    <div className="p-1.5 sm:p-4 md:p-6 max-w-[1400px] mx-auto space-y-6 animate-in fade-in duration-500">
 
       {/* Filter Card */}
       <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm">
@@ -323,7 +323,7 @@ export default function TrasladosList({ onNew }) {
               </button>
             </div>
 
-            <form onSubmit={handleSaveTraslado} className="p-6 space-y-4">
+            <form onSubmit={handleSaveTraslado} className="p-4 sm:p-6 space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-1.5">Cuenta / Caja Origen *</label>

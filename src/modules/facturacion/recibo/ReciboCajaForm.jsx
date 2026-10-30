@@ -638,7 +638,7 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
     );
 
     return (
-        <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4 animate-in fade-in duration-300">
+        <div className="p-1.5 sm:p-4 md:p-6 max-w-4xl mx-auto space-y-4 animate-in fade-in duration-300">
 
             {/* Form Fields Stack */}
             <div className="space-y-4">

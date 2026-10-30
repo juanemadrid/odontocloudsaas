@@ -348,7 +348,7 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
             {/* Mobile Sidebar Overlay */}
             {sidebarOpen && (
                 <div
-                    className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-40 lg:hidden transition-opacity duration-500"
+                    className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-[90] lg:hidden transition-opacity duration-500"
                     onClick={() => setSidebarOpen(false)}
                 />
             )}
@@ -367,7 +367,7 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
             {/* Sidebar - Slender Pro v3.0 (Advanced Glassmorphism) */}
             <aside
                 className={`
-          fixed inset-y-0 left-0 z-50 bg-white/95 lg:bg-white/40 backdrop-blur-[40px] border-r border-slate-200/40 shadow-[10px_0_50px_rgba(0,0,0,0.06)]
+          fixed inset-y-0 left-0 z-[100] lg:z-50 bg-white/95 lg:bg-white/40 backdrop-blur-[40px] border-r border-slate-200/40 shadow-[10px_0_50px_rgba(0,0,0,0.06)]
           ${sidebarOpen ? "translate-x-0 w-64" : "-translate-x-full lg:translate-x-0"}
           ${collapsedDesktop ? "lg:w-20" : "lg:w-64"} w-64
           transition-all duration-500 cubic-bezier(0.16, 1, 0.3, 1)
@@ -647,7 +647,7 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
                     onOpenRenewalModal={() => setRenewalModalOpen(true)}
                 />
 
-                <main className="flex-1 p-2 sm:p-6 lg:p-8">
+                <main className="flex-1 px-1 py-2 sm:p-6 lg:p-8">
                     <div className="max-w-[1600px] mx-auto">
                         {(title || subtitle) && (
                             <div className="mb-10 space-y-1">

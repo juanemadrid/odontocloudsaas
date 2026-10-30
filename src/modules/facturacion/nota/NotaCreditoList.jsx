@@ -471,7 +471,7 @@ export default function NotaCreditoList({ onNew }) {
     };
 
     return (
-        <div className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-6 animate-in fade-in duration-500">
+        <div className="p-1.5 sm:p-4 md:p-6 max-w-[1400px] mx-auto space-y-6 animate-in fade-in duration-500">
 
             {/* Filter Bar — unified single card */}
             <div className="bg-white p-5 rounded-[28px] border border-slate-100 shadow-sm">
@@ -803,7 +803,7 @@ export default function NotaCreditoList({ onNew }) {
                                 <FiX size={18} />
                             </button>
                         </div>
-                        <div className="p-6 space-y-4">
+                        <div className="p-4 sm:p-6 space-y-4">
                             <p className="text-xs font-bold text-slate-500 leading-relaxed">
                                 ¿Estás seguro de que deseas anular esta Nota de Crédito? Si generó un saldo a favor, el saldo a favor también se anulará. Esta acción no se puede deshacer.
                             </p>

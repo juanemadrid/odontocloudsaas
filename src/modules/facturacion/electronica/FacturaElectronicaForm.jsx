@@ -1463,7 +1463,7 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
             <h2 className="text-sm font-semibold text-slate-800">Datos generales</h2>
           </div>
 
-          <div className="p-6 space-y-4 max-w-4xl">
+          <div className="p-4 sm:p-6 space-y-4 max-w-4xl">
             {/* Fecha */}
             <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
               <label className="md:col-span-3 text-right text-xs font-medium text-slate-600">
@@ -1513,7 +1513,7 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
             <h2 className="text-sm font-semibold text-slate-800">Datos tercero</h2>
           </div>
 
-          <div className="p-6 space-y-4 max-w-4xl">
+          <div className="p-4 sm:p-6 space-y-4 max-w-4xl">
             {/* Tercero con Buscador Interactivo */}
             <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
               <label className="md:col-span-3 text-right text-xs font-medium text-slate-600 pt-2">
@@ -2096,7 +2096,7 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
             </div>
 
             {/* Formulario en rejilla horizontal como en OralDrive */}
-            <form onSubmit={handleSaveNewTercero} className="p-6 space-y-3.5 text-xs max-h-[80vh] overflow-y-auto">
+            <form onSubmit={handleSaveNewTercero} className="p-4 sm:p-6 space-y-3.5 text-xs max-h-[80vh] overflow-y-auto">
               
               {/* Nombre * */}
               <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">

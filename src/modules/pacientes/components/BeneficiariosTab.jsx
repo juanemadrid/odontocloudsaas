@@ -209,7 +209,7 @@ export default function BeneficiariosTab({ patient, onUpdate, onSwitchTab }) {
             <div className="bg-white rounded-[24px] border border-slate-100 shadow-sm overflow-hidden flex flex-col min-h-0 flex-1">
                 
                 {/* TOOLBAR */}
-                <div className="p-4 md:p-6 border-b border-slate-100 flex flex-col md:flex-row gap-4 justify-between items-center bg-slate-50/50 shrink-0">
+                <div className="p-1.5 sm:p-4 md:p-6 border-b border-slate-100 flex flex-col md:flex-row gap-4 justify-between items-center bg-slate-50/50 shrink-0">
                     <div ref={dropdownRef} className="relative w-full md:w-96">
                         <input 
                             type="text" 

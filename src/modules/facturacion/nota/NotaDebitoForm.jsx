@@ -236,7 +236,7 @@ export default function NotaDebitoForm({ onCancel, onSuccess }) {
     };
 
     return (
-        <div className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-6 animate-in fade-in duration-500">
+        <div className="p-1.5 sm:p-4 md:p-6 max-w-[1400px] mx-auto space-y-6 animate-in fade-in duration-500">
             {/* Header */}
             <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all">
                 <div className="flex items-center gap-4">
@@ -519,7 +519,7 @@ export default function NotaDebitoForm({ onCancel, onSuccess }) {
 
                         {/* Form Content */}
                         <form onSubmit={handleAddConcept} className="flex flex-col">
-                            <div className="p-6 space-y-4">
+                            <div className="p-4 sm:p-6 space-y-4">
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider ml-1">Concepto *</label>
                                     <input 

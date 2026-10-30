@@ -298,7 +298,7 @@ export default function EmpresaListaPrecios() {
     }
 
     return (
-        <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
+        <div className="p-1.5 sm:p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
             {/* Top Toolbar */}
             <div className="bg-white rounded-2xl border border-slate-200 p-3 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 {/* Tabs */}
@@ -549,7 +549,7 @@ export default function EmpresaListaPrecios() {
                             <button onClick={() => setShowModal(false)} className="w-8 h-8 rounded-full bg-slate-200/60 flex items-center justify-center text-slate-500 font-bold">&times;</button>
                         </div>
 
-                        <div className="p-6 space-y-4">
+                        <div className="p-4 sm:p-6 space-y-4">
                             <div className="space-y-1">
                                 <label className="text-[11px] font-bold text-slate-600">Nombre Descriptivo *</label>
                                 <input

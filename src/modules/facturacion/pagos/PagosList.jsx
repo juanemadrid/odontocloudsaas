@@ -858,7 +858,7 @@ export default function PagosList({ onNew }) {
             </div>
 
             {/* Modal Body */}
-            <div className="p-6 space-y-4 text-xs text-slate-700">
+            <div className="p-4 sm:p-6 space-y-4 text-xs text-slate-700">
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-amber-800 leading-relaxed">
                 <p className="font-semibold text-amber-900 mb-1">
                   ⚠️ ¿Está seguro de anular este egreso?

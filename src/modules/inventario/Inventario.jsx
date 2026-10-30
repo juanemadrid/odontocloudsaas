@@ -207,7 +207,7 @@ export default function Inventario() {
   }, [items, searchTerm]);
 
   return (
-    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-5 font-sans text-slate-800 animate-in fade-in duration-300">
+    <div className="p-1.5 sm:p-4 md:p-6 max-w-7xl mx-auto space-y-5 font-sans text-slate-800 animate-in fade-in duration-300">
       
       {/* Header & Breadcrumb */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">

@@ -1141,7 +1141,7 @@ export default function FacturasCompraList({ onNew }) {
   };
 
   return (
-    <div className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-6 animate-fadeIn font-sans text-slate-700">
+    <div className="p-1.5 sm:p-4 md:p-6 max-w-[1400px] mx-auto space-y-6 animate-fadeIn font-sans text-slate-700">
       
       {/* Header & Breadcrumb OralDrive */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-2">
@@ -1472,7 +1472,7 @@ export default function FacturasCompraList({ onNew }) {
               </button>
             </div>
 
-            <div className="p-6 space-y-4 text-xs">
+            <div className="p-4 sm:p-6 space-y-4 text-xs">
               {/* Pendiente factura */}
               <div className="grid grid-cols-12 gap-3 items-center">
                 <label className="col-span-4 text-right font-medium text-slate-600">
@@ -1689,7 +1689,7 @@ export default function FacturasCompraList({ onNew }) {
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="p-4 sm:p-6 space-y-4">
               {/* Información General */}
               <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
                 <div className="flex justify-between items-center">
@@ -1938,7 +1938,7 @@ export default function FacturasCompraList({ onNew }) {
               </button>
             </div>
 
-            <div className="p-6 space-y-4 text-xs max-h-[75vh] overflow-y-auto">
+            <div className="p-4 sm:p-6 space-y-4 text-xs max-h-[75vh] overflow-y-auto">
               <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
                 <div>
                   <span className="text-slate-400 font-medium block">Tercero / Proveedor</span>
@@ -2062,7 +2062,7 @@ export default function FacturasCompraList({ onNew }) {
               </button>
             </div>
 
-            <div className="p-6 space-y-4 text-xs">
+            <div className="p-4 sm:p-6 space-y-4 text-xs">
               <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1 text-slate-600">
                 <div><strong>Documento:</strong> {anularModal.factura.nroFactura || anularModal.factura.documentoNumero || anularModal.factura.id}</div>
                 <div><strong>Tercero / Proveedor:</strong> {anularModal.factura.proveedor || anularModal.factura.tercero || "—"}</div>

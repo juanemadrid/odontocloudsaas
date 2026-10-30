@@ -275,7 +275,7 @@ export default function IhceSuperAdminPanel() {
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="p-4 sm:p-6 space-y-4">
               <div className="grid grid-cols-2 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-100 text-xs">
                 <div>
                   <span className="text-slate-400 block text-[10px] font-bold uppercase">Código REPS</span>

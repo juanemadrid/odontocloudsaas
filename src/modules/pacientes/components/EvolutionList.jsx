@@ -518,7 +518,7 @@ function CloseEvolutionModal({ isOpen, onClose, evolution, onConfirm, isClosing 
                     </button>
                 </div>
 
-                <div className="p-6 space-y-4 text-xs text-slate-700">
+                <div className="p-4 sm:p-6 space-y-4 text-xs text-slate-700">
                     <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 text-amber-900 leading-relaxed font-semibold">
                         ⚠️ Después de cerrar esta evolución clínica no podrá modificarla ni eliminarla. Cualquier corrección posterior deberá realizarse mediante una nota aclaratoria.
                     </div>
@@ -574,7 +574,7 @@ function AddendumModal({ isOpen, onClose, evolution, onSave, isSaving }) {
                     </button>
                 </div>
 
-                <div className="p-6 space-y-4 text-xs">
+                <div className="p-4 sm:p-6 space-y-4 text-xs">
                     <p className="text-slate-600 font-medium">
                         La nota aclaratoria se anexará de forma inalterable a la evolución clínica original. Se registrará su usuario, registro médico y fecha/hora exacta.
                     </p>
@@ -1124,7 +1124,7 @@ function SendChannelModal({ isOpen, onClose, patient, evolution, clinicInfo }) {
                 </div>
 
                 {/* Body */}
-                <div className="p-6 space-y-4 text-xs text-slate-600">
+                <div className="p-4 sm:p-6 space-y-4 text-xs text-slate-600">
                     <p className="leading-relaxed font-medium">
                         Seleccione el medio por el que desea que se envíe el link para que el paciente ingrese su firma
                     </p>

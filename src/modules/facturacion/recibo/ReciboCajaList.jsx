@@ -1430,7 +1430,7 @@ export default function ReciboCajaList({ onNew }) {
     }
 
     return (
-        <div className="p-4 md:p-6 max-w-[1700px] mx-auto space-y-4 animate-fadeIn">
+        <div className="p-1.5 sm:p-4 md:p-6 max-w-[1700px] mx-auto space-y-4 animate-fadeIn">
 
             {/* Top Toolbar */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
@@ -2013,7 +2013,7 @@ export default function ReciboCajaList({ onNew }) {
                         </div>
 
                         {/* Content */}
-                        <div className="p-6 space-y-4">
+                        <div className="p-4 sm:p-6 space-y-4">
                             <div>
                                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">Operador / Usuario</label>
                                 <input 
@@ -2095,7 +2095,7 @@ export default function ReciboCajaList({ onNew }) {
                             </button>
                         </div>
 
-                        <div className="p-6 space-y-4">
+                        <div className="p-4 sm:p-6 space-y-4">
                             <div>
                                 <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Paciente</span>
                                 <span className="text-xs font-bold text-slate-800 uppercase">{viewVoidModal.recibo.pacienteNombre}</span>
@@ -2164,7 +2164,7 @@ export default function ReciboCajaList({ onNew }) {
                         </div>
 
                         {/* Contenido con detalles resumidos */}
-                        <div className="p-6 space-y-4">
+                        <div className="p-4 sm:p-6 space-y-4">
                             <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 flex items-center justify-between">
                                 <div>
                                     <span className="text-[11px] font-semibold text-slate-500 block">Número de factura:</span>

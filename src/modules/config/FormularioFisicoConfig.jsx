@@ -108,7 +108,7 @@ export default function FormularioFisicoConfig({ isViewOnly = false, onBack, inq
   const rightFields = fields.filter(f => f.col === "right");
 
   return (
-    <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-4">
+    <div className="p-1.5 sm:p-4 md:p-6 max-w-5xl mx-auto space-y-4">
       {/* Header & Breadcrumb */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-slate-700">
         <div className="flex items-center gap-3">

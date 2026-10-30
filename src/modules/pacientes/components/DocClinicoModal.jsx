@@ -3633,7 +3633,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                         </div>
                         
                         {/* Body Content */}
-                        <div className="p-6 space-y-4 overflow-y-auto custom-scrollbar flex-1 text-left">
+                        <div className="p-4 sm:p-6 space-y-4 overflow-y-auto custom-scrollbar flex-1 text-left">
                             
                             {/* Tipo, Código, Principio Activo */}
                             <div className="grid grid-cols-3 gap-3">
@@ -3872,7 +3872,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                         </div>
                         
                         {/* Body */}
-                        <div className="p-6 space-y-4 overflow-y-auto custom-scrollbar flex-1 text-left relative">
+                        <div className="p-4 sm:p-6 space-y-4 overflow-y-auto custom-scrollbar flex-1 text-left relative">
                             {/* Search field */}
                             <div className="space-y-1">
                                 <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Procedimiento o Código (CUPS) *</label>
@@ -3957,7 +3957,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                         </div>
                         
                         {/* Body */}
-                        <div className="p-6 space-y-4 overflow-y-auto custom-scrollbar flex-1 text-left">
+                        <div className="p-4 sm:p-6 space-y-4 overflow-y-auto custom-scrollbar flex-1 text-left">
                             {/* Tipo* */}
                             <div className="space-y-1">
                                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider pl-0.5">Tipo *</label>

@@ -144,7 +144,7 @@ export default function ConfigRecursosFisicos() {
     );
 
     return (
-        <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
+        <div className="p-1.5 sm:p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
             <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold shrink-0">
@@ -265,7 +265,7 @@ export default function ConfigRecursosFisicos() {
                             <button onClick={handleCloseModal} className="w-8 h-8 rounded-full bg-slate-200/60 flex items-center justify-center text-slate-500 font-bold">&times;</button>
                         </div>
 
-                        <form onSubmit={handleSave} className="p-6 space-y-4">
+                        <form onSubmit={handleSave} className="p-4 sm:p-6 space-y-4">
                             <div className="space-y-1">
                                 <label className="text-[11px] font-bold text-slate-600">Nombre del Sillón / Espacio *</label>
                                 <input

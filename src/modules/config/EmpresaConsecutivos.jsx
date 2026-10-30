@@ -86,7 +86,7 @@ function ConsecutivoEditor({ item, onBack, inquilino }) {
                 </div>
             </div>
 
-            <form onSubmit={handleSave} className="p-6 space-y-4">
+            <form onSubmit={handleSave} className="p-4 sm:p-6 space-y-4">
                 <div className="space-y-1">
                     <label className="text-[11px] font-bold text-slate-600">Nombre del Consecutivo *</label>
                     <input
@@ -186,7 +186,7 @@ export default function EmpresaConsecutivos() {
     );
 
     return (
-        <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
+        <div className="p-1.5 sm:p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
             <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold shrink-0">

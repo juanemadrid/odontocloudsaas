@@ -364,7 +364,7 @@ export default function PlanManagement({ hideTitle }) {
                                 <h3 className="text-lg font-bold text-slate-800">{editingId ? "Editar Plan" : "Nuevo Plan de Suscripción"}</h3>
                                 <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
                             </div>
-                            <form onSubmit={handleCreate} className="p-6 space-y-5 bg-white max-h-[85vh] overflow-y-auto" style={{ backgroundColor: '#ffffff' }}>
+                            <form onSubmit={handleCreate} className="p-4 sm:p-6 space-y-5 bg-white max-h-[85vh] overflow-y-auto" style={{ backgroundColor: '#ffffff' }}>
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">Nombre del Plan</label>
                                     <input

@@ -156,7 +156,7 @@ export default function ConfigTarifasCopago() {
     }, [tarifas, searchTerm]);
 
     return (
-        <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-6">
+        <div className="p-1.5 sm:p-4 md:p-6 max-w-5xl mx-auto space-y-6">
             {/* === VIEW 1: FORM (NUEVA TARIFA / EDITAR TARIFA) === */}
             {viewMode === "form" ? (
                 <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden animate-fade-in">

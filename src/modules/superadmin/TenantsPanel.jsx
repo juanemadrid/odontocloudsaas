@@ -382,7 +382,7 @@ export default function TenantsPanel({ hideTitle }) {
                                 <h3 className="text-lg font-bold text-slate-800">Registrar Nueva Clínica</h3>
                                 <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
                             </div>
-                            <form onSubmit={handleCreate} className="p-6 space-y-5">
+                            <form onSubmit={handleCreate} className="p-4 sm:p-6 space-y-5">
                                 {/* Clinic Info */}
                                 <div className="space-y-4">
                                     <h4 className="text-xs font-bold text-indigo-500 uppercase tracking-wide">Datos de la Empresa</h4>
@@ -548,7 +548,7 @@ export default function TenantsPanel({ hideTitle }) {
                                 <h3 className="text-lg font-bold text-slate-800">Ajustar Plan de {selectedTenant?.name}</h3>
                                 <button onClick={() => setShowPlanModal(false)} className="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
                             </div>
-                            <form onSubmit={handleUpdatePlan} className="p-6 space-y-4">
+                            <form onSubmit={handleUpdatePlan} className="p-4 sm:p-6 space-y-4">
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">Nuevo Plan</label>
                                     <select className="w-full input-premium" required

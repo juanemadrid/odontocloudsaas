@@ -181,7 +181,7 @@ export default function ConfigConsecutivos() {
     }
 
     return (
-        <div className="p-4 md:p-6 space-y-5 max-w-5xl mx-auto animate-fade-in">
+        <div className="p-1.5 sm:p-4 md:p-6 space-y-5 max-w-5xl mx-auto animate-fade-in">
             {/* Header Corporativo */}
             <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">

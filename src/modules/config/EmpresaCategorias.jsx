@@ -100,7 +100,7 @@ export default function EmpresaCategorias() {
 
     if (view === "editor") {
         return (
-            <div className="p-4 md:p-6 max-w-lg mx-auto">
+            <div className="p-1.5 sm:p-4 md:p-6 max-w-lg mx-auto">
                 <div className="bg-white rounded-2xl border border-slate-200 shadow-md overflow-hidden animate-fade-in">
                     <div className="px-5 py-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
                         <div className="flex items-center gap-2.5">
@@ -119,7 +119,7 @@ export default function EmpresaCategorias() {
                         </div>
                     </div>
 
-                    <form onSubmit={handleSubmit(onSubmit)} className="p-6 space-y-4">
+                    <form onSubmit={handleSubmit(onSubmit)} className="p-4 sm:p-6 space-y-4">
                         <div className="space-y-1">
                             <label className="text-[11px] font-bold text-slate-600">Nombre *</label>
                             <input
@@ -164,7 +164,7 @@ export default function EmpresaCategorias() {
     }
 
     return (
-        <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
+        <div className="p-1.5 sm:p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
             <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold shrink-0">

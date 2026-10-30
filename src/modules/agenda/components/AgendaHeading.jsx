@@ -2,7 +2,7 @@ import React from "react";
 import { FiHome, FiPieChart, FiPrinter, FiDownload, FiPlus } from "react-icons/fi";
 export default function AgendaHeading({occupancyPercentage, can, handleDownload, setEditingApt, setSlotData, setModalOpen}) {
 return (
-            <div className="px-3 md:px-6 lg:px-8 pt-2 pb-4 shrink-0 no-print">
+            <div className="px-1.5 sm:px-3 md:px-6 lg:px-8 pt-2 pb-4 shrink-0 no-print">
                 <div className="flex flex-col gap-6">
                     <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-8">
                         <div className="space-y-2">

@@ -1679,7 +1679,7 @@ export default function SaldoFavorList({ onNew }) {
     };
 
     return (
-        <div className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-4 animate-in fade-in duration-300">
+        <div className="p-1.5 sm:p-4 md:p-6 max-w-[1400px] mx-auto space-y-4 animate-in fade-in duration-300">
 
             {/* Top Bar: Header & Main Action */}
             <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
@@ -2051,7 +2051,7 @@ export default function SaldoFavorList({ onNew }) {
                         </div>
 
                         {/* Form */}
-                        <form onSubmit={handleSaveDevolucion} className="p-6 space-y-4">
+                        <form onSubmit={handleSaveDevolucion} className="p-4 sm:p-6 space-y-4">
                             {/* Valor disponible */}
                             <div className="flex items-center gap-4">
                                 <label className="w-36 text-right text-xs font-semibold text-slate-600">Valor disponible</label>
@@ -2188,7 +2188,7 @@ export default function SaldoFavorList({ onNew }) {
                         </div>
 
                         {/* Content */}
-                        <div className="p-6 space-y-4">
+                        <div className="p-4 sm:p-6 space-y-4">
                             <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs space-y-1.5 font-medium">
                                 <div className="flex justify-between">
                                     <span className="text-slate-500">Tipo de movimiento:</span>

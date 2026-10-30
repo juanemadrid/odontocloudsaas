@@ -485,7 +485,7 @@ export default function Agenda() {
               setSlotData={setSlotData} setModalOpen={setModalOpen} />
 
             {/* CONTENT ROW (Sidebar + View) */}
-            <div className="flex flex-1 min-h-0 px-3 md:px-6 lg:px-8 pb-8 relative gap-6">
+            <div className="flex flex-1 min-h-0 px-1.5 sm:px-3 md:px-6 lg:px-8 pb-8 relative gap-6">
                 {/* 1. SIDEBAR (Collapsible Desktop with shrink-0) */}
                 <div className={`
                     transition-all duration-500 ease-in-out overflow-hidden no-print shrink-0

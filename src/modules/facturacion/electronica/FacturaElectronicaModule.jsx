@@ -1027,7 +1027,7 @@ export default function FacturaElectronicaModule() {
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="p-4 sm:p-6 space-y-4">
               {/* Información General */}
               <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
                 <div className="flex justify-between items-center">
@@ -1447,7 +1447,7 @@ export default function FacturaElectronicaModule() {
               </button>
             </div>
 
-            <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+            <div className="p-4 sm:p-6 space-y-4 max-h-[70vh] overflow-y-auto">
               {getFevRetryDecision(viewingFacturaDetails).lastErrorMessage && (
                 <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900 whitespace-pre-wrap break-words">
                   <strong>Último error de emisión: </strong>
@@ -1522,7 +1522,7 @@ export default function FacturaElectronicaModule() {
                 {discardTarget.pacienteNombre || "—"} · {fmt(discardTarget.total)} · {fmtDate(discardTarget.createdAt || discardTarget.created_at)}
               </p>
             </div>
-            <div className="p-6 space-y-3 text-[12px] text-slate-600">
+            <div className="p-4 sm:p-6 space-y-3 text-[12px] text-slate-600">
               <p>
                 Este intento <strong>nunca fue aceptado por la DIAN</strong> y no tiene número fiscal.
                 Al descartarlo deja de aparecer en la lista y en cartera, y ya no se podrá reenviar.
@@ -1581,7 +1581,7 @@ export default function FacturaElectronicaModule() {
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className="p-4 sm:p-6 space-y-4">
               <p className="text-[12px] text-slate-600">
                 Selecciona un recibo de caja emitido para este paciente para asociarlo formalmente a la factura:
               </p>
@@ -1677,7 +1677,7 @@ export default function FacturaElectronicaModule() {
               </button>
             </div>
 
-            <div className="p-6 space-y-4 max-h-96 overflow-y-auto">
+            <div className="p-4 sm:p-6 space-y-4 max-h-96 overflow-y-auto">
               {(!attemptsModalFactura.detalles?.fevAttempts || attemptsModalFactura.detalles.fevAttempts.length === 0) ? (
                 <p className="text-center text-slate-400 py-6">No hay registro de intentos previos.</p>
               ) : (

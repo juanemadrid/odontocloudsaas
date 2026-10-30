@@ -304,7 +304,7 @@ export default function PlanFormulacionForm({ id, onCancel, onSuccess }) {
                     <h3 className="text-xs font-bold text-slate-700">Información básica</h3>
                 </div>
 
-                <div className="p-6 space-y-6">
+                <div className="p-4 sm:p-6 space-y-6">
                     {/* Fila 1: Nombre + Ingrese el medicamento a añadir + Botón Añadir */}
                     <div className="flex flex-col lg:flex-row items-center gap-4">
                         {/* Nombre */}

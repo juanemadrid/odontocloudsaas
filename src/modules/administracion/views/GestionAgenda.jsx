@@ -1082,7 +1082,7 @@ export default function GestionAgenda() {
 
           {/* Form Body */}
           <form onSubmit={handleSaveDoctorSettings}>
-            <div className="p-6 space-y-4 max-h-[75vh] overflow-y-auto">
+            <div className="p-4 sm:p-6 space-y-4 max-h-[75vh] overflow-y-auto">
               {/* Tiempo de atención */}
               <div className="grid grid-cols-1 sm:grid-cols-3 items-center gap-2 sm:gap-4">
                 <label className="text-xs font-semibold text-slate-600">
@@ -1861,7 +1861,7 @@ export default function GestionAgenda() {
                 </button>
               </div>
 
-              <form onSubmit={handleSavePred} className="p-6 space-y-4">
+              <form onSubmit={handleSavePred} className="p-4 sm:p-6 space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1 col-span-2">
                     <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Días de la semana</label>
@@ -1969,7 +1969,7 @@ export default function GestionAgenda() {
                 </button>
               </div>
 
-              <form onSubmit={handleSaveOpen} className="p-6 space-y-4">
+              <form onSubmit={handleSaveOpen} className="p-4 sm:p-6 space-y-4">
                 <div className="space-y-1">
                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Fecha *</label>
                   <input
@@ -2047,7 +2047,7 @@ export default function GestionAgenda() {
                 </button>
               </div>
 
-              <form onSubmit={handleSaveUnavail} className="p-6 space-y-4">
+              <form onSubmit={handleSaveUnavail} className="p-4 sm:p-6 space-y-4">
                 <div className="space-y-1">
                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Fecha *</label>
                   <input
@@ -2134,7 +2134,7 @@ export default function GestionAgenda() {
                 </button>
               </div>
 
-              <form onSubmit={handleSaveProf} className="p-6 space-y-4">
+              <form onSubmit={handleSaveProf} className="p-4 sm:p-6 space-y-4">
                 <div className="space-y-1">
                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nombres</label>
                   <input

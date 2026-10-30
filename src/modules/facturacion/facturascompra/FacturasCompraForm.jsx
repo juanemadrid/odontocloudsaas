@@ -732,7 +732,7 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                         <h2 className="text-sm font-semibold text-slate-800">Información empresa</h2>
                     </div>
 
-                    <div className="p-6 space-y-4 max-w-4xl">
+                    <div className="p-4 sm:p-6 space-y-4 max-w-4xl">
                         {/* Pagador */}
                         <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
                             <label className="md:col-span-3 text-right text-xs font-medium text-slate-600">
@@ -854,7 +854,7 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                         <h2 className="text-sm font-semibold text-slate-800">Datos tercero</h2>
                     </div>
 
-                    <div className="p-6 space-y-4 max-w-4xl">
+                    <div className="p-4 sm:p-6 space-y-4 max-w-4xl">
                         {/* Tercero / Paciente con Buscador Interactivo */}
                         <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
                             <label className="md:col-span-3 text-right text-xs font-medium text-slate-600 pt-2">
@@ -1333,7 +1333,7 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                             </button>
                         </div>
 
-                        <form onSubmit={handleSaveNewTercero} className="p-6 space-y-4 text-xs">
+                        <form onSubmit={handleSaveNewTercero} className="p-4 sm:p-6 space-y-4 text-xs">
                             <div>
                                 <label className="block text-slate-600 font-medium mb-1">Nombre o Razón Social *</label>
                                 <input

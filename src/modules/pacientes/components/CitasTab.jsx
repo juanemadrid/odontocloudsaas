@@ -429,7 +429,7 @@ export default function CitasTab({ patient }) {
     };
 
     return (
-        <div className="p-4 md:p-6 space-y-4 max-w-7xl mx-auto animate-fadeIn">
+        <div className="p-1.5 sm:p-4 md:p-6 space-y-4 max-w-7xl mx-auto animate-fadeIn">
             {/* Top Toolbar Card */}
             <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">

@@ -515,7 +515,7 @@ export default function SaldoFavorForm({ onCancel, onSuccess }) {
     );
 
     return (
-        <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-6 animate-in fade-in duration-300">
+        <div className="p-1.5 sm:p-4 md:p-6 max-w-4xl mx-auto space-y-6 animate-in fade-in duration-300">
             {/* Header + Title */}
             <div className="flex items-center justify-between bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
                 <div className="flex items-center gap-3">

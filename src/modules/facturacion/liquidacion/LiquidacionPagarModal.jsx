@@ -62,7 +62,7 @@ export default function LiquidacionPagarModal({ liquidacion, tenantId, onClose, 
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-4">
+        <div className="p-4 sm:p-6 space-y-4">
           <div className="p-4 bg-purple-50/50 rounded-2xl border border-purple-100/50 flex justify-between items-center">
             <div>
               <span className="text-[10px] font-black text-purple-400 uppercase tracking-wider block">Doctor / Profesional</span>

@@ -787,7 +787,7 @@ export default function PlanList({ patient, refreshKey, onEdit, onNew, setEditin
                                 <FiX size={20} />
                             </button>
                         </div>
-                        <div className="p-6 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
+                        <div className="p-4 sm:p-6 space-y-4 overflow-y-auto flex-1 custom-scrollbar">
                             <div>
                                 <label className="block text-[11px] font-black text-slate-500 uppercase tracking-widest mb-1">Nombre *</label>
                                 <input 

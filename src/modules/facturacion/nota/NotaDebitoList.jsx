@@ -450,7 +450,7 @@ export default function NotaDebitoList({ onNew }) {
     };
 
     return (
-        <div className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-6 animate-in fade-in duration-500">
+        <div className="p-1.5 sm:p-4 md:p-6 max-w-[1400px] mx-auto space-y-6 animate-in fade-in duration-500">
             {/* Header */}
             <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all">
                 <div className="flex items-center gap-4">
@@ -747,7 +747,7 @@ export default function NotaDebitoList({ onNew }) {
                                 <FiX size={18} />
                             </button>
                         </div>
-                        <div className="p-6 space-y-4">
+                        <div className="p-4 sm:p-6 space-y-4">
                             <p className="text-xs font-bold text-slate-500 leading-relaxed">
                                 ¿Estás seguro de que deseas anular esta Nota de Débito? Al anularla se restará este cargo del estado financiero del paciente. Esta acción no se puede deshacer.
                             </p>

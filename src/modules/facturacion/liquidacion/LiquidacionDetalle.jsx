@@ -291,7 +291,7 @@ export default function LiquidacionDetalle({ doctor, dateRange, preloadedItems =
     };
 
     return (
-        <div className="p-4 md:p-6 max-w-[1400px] mx-auto space-y-6 animate-in fade-in duration-300">
+        <div className="p-1.5 sm:p-4 md:p-6 max-w-[1400px] mx-auto space-y-6 animate-in fade-in duration-300">
             
             {/* Header / Nav */}
             <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all">

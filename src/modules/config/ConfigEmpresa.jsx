@@ -305,7 +305,7 @@ export default function ConfigEmpresa() {
     }
 
     return (
-        <div className="p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
+        <div className="p-1.5 sm:p-4 md:p-6 space-y-4 max-w-6xl mx-auto">
             {/* Header & Bar Acciones */}
             <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-3">

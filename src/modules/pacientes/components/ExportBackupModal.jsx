@@ -91,7 +91,7 @@ export default function ExportBackupModal({ isOpen, onClose }) {
                 </div>
 
                 {/* Body */}
-                <div className="p-6 space-y-6">
+                <div className="p-4 sm:p-6 space-y-6">
 
                     {/* Explicación de la estructura */}
                     <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4">
