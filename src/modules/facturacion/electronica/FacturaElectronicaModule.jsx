@@ -29,7 +29,7 @@ import {
   FEV_STAGE,
   FEV_LOCK_STATE,
 } from "../../../services/factusRetryService";
-import { fiscalInvoiceNumber, invoiceDisplayNumber, isDiscardedInvoice } from "../../../utils/invoiceNumbering.js";
+import { creditAdjustment, fiscalInvoiceNumber, invoiceDisplayNumber, isDiscardedInvoice } from "../../../utils/invoiceNumbering.js";
 import { canDiscardInvoice, discardBlockReason, discardRejectedInvoice } from "../../../services/invoiceDiscardService.js";
 
 // Código DIAN del documento del adquiriente según la respuesta validada de Factus.
@@ -726,10 +726,12 @@ export default function FacturaElectronicaModule() {
                 {filtered.map((f) => {
                   const docNum = invoiceDisplayNumber(f);
                   const discarded = isDiscardedInvoice(f);
+                  const credit = creditAdjustment(f);
                   const isExpanded = expandedId === f.id;
                   const totalNum = Number(f.total || 0);
                   const montoPagadoNum = Number(f.montoPagado || 0);
-                  const saldoPendienteNum = Number(f.saldoPendiente !== undefined ? f.saldoPendiente : Math.max(0, totalNum - montoPagadoNum));
+                  // Anulada con nota crédito: ya no se cobra.
+                  const saldoPendienteNum = credit.annulled ? 0 : Number(f.saldoPendiente !== undefined ? f.saldoPendiente : Math.max(0, totalNum - montoPagadoNum));
                   const retryDecision = getFevRetryDecision(f);
 
                   return (
@@ -749,13 +751,19 @@ export default function FacturaElectronicaModule() {
                         <td className="py-2.5 px-3 text-center">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
                             discarded ? "bg-slate-200 text-slate-600" :
+                            credit.annulled ? "bg-slate-700 text-white" :
                             String(f.dianStatus).toUpperCase() === "ACEPTADA" ? "bg-emerald-100 text-emerald-800" :
                             String(f.dianStatus).toUpperCase() === "RECHAZADA" ? "bg-rose-100 text-rose-800" :
                             (f.detalles?.technicalError || String(f.dianStatus).toUpperCase() === "INDETERMINADO") ? "bg-amber-100 text-amber-800" :
                             "bg-amber-100 text-amber-800"
                           }`}>
-                            {discarded ? "DESCARTADA" : f.detalles?.technicalError ? "TIMEOUT" : (f.dianStatus || "PENDIENTE")}
+                            {discarded ? "DESCARTADA" : credit.annulled ? "ANULADA" : f.detalles?.technicalError ? "TIMEOUT" : (f.dianStatus || "PENDIENTE")}
                           </span>
+                          {(credit.annulled || credit.partial) && credit.label && (
+                            <div className="text-[10px] text-slate-500 mt-0.5" title={credit.annulled ? "Factura anulada con nota crédito ante la DIAN" : "Factura ajustada parcialmente con nota crédito"}>
+                              {credit.annulled ? "con" : "ajustada ·"} {credit.label}
+                            </div>
+                          )}
                         </td>
                         <td className="py-2.5 px-3">
                           {f.recibosAsociados && f.recibosAsociados.length > 0 ? (
@@ -770,7 +778,7 @@ export default function FacturaElectronicaModule() {
                           ) : (
                             <div className="flex items-center gap-1.5">
                               <span className="text-slate-400 italic">No hay recibo de caja asociado</span>
-                              {!discarded && <button
+                              {!discarded && !credit.annulled && <button
                                 onClick={() => { setTargetInvoiceForLink(f); setShowAsociarReciboModal(true); }}
                                 className="text-[10px] text-blue-600 hover:text-blue-800 font-bold underline cursor-pointer bg-transparent border-0"
                               >
@@ -949,20 +957,20 @@ export default function FacturaElectronicaModule() {
                                     <button
                                       onClick={() => setCreditNoteModalFactura(f)}
                                       className={`px-2 h-7 rounded flex items-center gap-1 text-[10px] font-bold cursor-pointer border-0 transition-all shadow-sm ${
-                                        f.detalles?.fiscal_adjustment_status === "FULLY_CREDITED"
-                                          ? "bg-slate-200 text-slate-500 hover:bg-slate-300"
+                                        credit.annulled
+                                          ? "bg-slate-200 text-slate-600 hover:bg-slate-300"
                                           : "bg-amber-600 hover:bg-amber-700 text-white"
                                       }`}
                                       title={
-                                        f.detalles?.fiscal_adjustment_status === "FULLY_CREDITED"
-                                          ? "Factura totalmente acreditada con Nota Crédito"
+                                        credit.annulled
+                                          ? "Factura anulada con nota crédito: ver la nota"
                                           : "Emitir Nota Crédito Electrónica (Anulación total o ajuste parcial)"
                                       }
                                     >
                                       <FiFileText size={12} />
                                       <span>
-                                        {f.detalles?.fiscal_adjustment_status === "FULLY_CREDITED"
-                                          ? "Totalmente Acreditada"
+                                        {credit.annulled
+                                          ? `Ver ${credit.label || "nota crédito"} (anulada)`
                                           : f.detalles?.fiscal_adjustment_status === "PARTIALLY_CREDITED"
                                           ? "Ajustar con NC"
                                           : "Nota Crédito"}
@@ -1045,7 +1053,9 @@ export default function FacturaElectronicaModule() {
                           ? "bg-amber-100 text-amber-800 border border-amber-200"
                           : "bg-slate-200 text-slate-700 border border-slate-300"
                   }`}>
-                    {detailModalFactura.dianStatus === "ACEPTADA"
+                    {creditAdjustment(detailModalFactura).annulled
+                      ? `Anulada con ${creditAdjustment(detailModalFactura).label || "nota crédito"}`
+                      : detailModalFactura.dianStatus === "ACEPTADA"
                       ? "Transmitido y Validado"
                       : detailModalFactura.detalles?.technicalError
                         ? "Timeout / Indeterminado"
@@ -1070,7 +1080,7 @@ export default function FacturaElectronicaModule() {
                   ? asocs.reduce((sum, r) => sum + Number(r.monto || r.valor || 0), 0)
                   : (detailModalFactura.montoPagado !== undefined ? Number(detailModalFactura.montoPagado) : (String(detailModalFactura.estadoPago).toUpperCase() === "PAGADO" ? totalDoc : 0));
                 const pagadoFinal = String(detailModalFactura.estadoPago).toUpperCase() === "PAGADO" ? totalDoc : Math.min(totalDoc, pagadoCalculado);
-                const porPagarFinal = String(detailModalFactura.estadoPago).toUpperCase() === "PAGADO" ? 0 : Math.max(0, totalDoc - pagadoFinal);
+                const porPagarFinal = (creditAdjustment(detailModalFactura).annulled || String(detailModalFactura.estadoPago).toUpperCase() === "PAGADO") ? 0 : Math.max(0, totalDoc - pagadoFinal);
 
                 return (
                   <div className="grid grid-cols-3 gap-2 bg-slate-50/80 p-3 rounded-xl border border-slate-100 text-center">
@@ -1214,8 +1224,12 @@ export default function FacturaElectronicaModule() {
                         <FiFileText size={14} />
                       </div>
                       <div className="text-left">
-                        <div className="font-bold text-amber-900">Nota Crédito</div>
-                        <div className="text-[10px] text-amber-600">Generar Nota Crédito</div>
+                        <div className="font-bold text-amber-900">
+                          {creditAdjustment(detailModalFactura).annulled ? `Ver ${creditAdjustment(detailModalFactura).label || "nota crédito"}` : "Nota Crédito"}
+                        </div>
+                        <div className="text-[10px] text-amber-600">
+                          {creditAdjustment(detailModalFactura).annulled ? "Factura anulada con nota crédito" : "Generar Nota Crédito"}
+                        </div>
                       </div>
                     </button>
                   )}

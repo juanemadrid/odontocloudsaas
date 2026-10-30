@@ -52,3 +52,13 @@ export const invoiceDisplayNumber = (invoice) => {
 // Código interno que OdontoCloud pone a un concepto escrito a mano (ITEM-<hora> antiguo, o 001, 002…).
 // No es un código CUPS: nunca debe convertir la factura en factura de salud al corregirla.
 export const isGeneratedItemCode = (value) => /^(ITEM-[a-z0-9]+|\d{3})$/i.test(clean(value));
+
+// Estado fiscal por notas crédito: "anulada" (100 % acreditada) o "ajustada" (parcial), con sus notas.
+export const creditAdjustment = (invoice) => {
+  const d = details(invoice);
+  const notes = (Array.isArray(d.notasCredito) ? d.notasCredito : []).map((n) => clean(n?.numero)).filter(Boolean);
+  const status = clean(d.fiscal_adjustment_status).toUpperCase();
+  const annulled = status === "FULLY_CREDITED" || clean(invoice?.estado).toLowerCase() === "anulado";
+  return { annulled, partial: !annulled && status === "PARTIALLY_CREDITED", notes, label: notes.join(", ") };
+};
+
