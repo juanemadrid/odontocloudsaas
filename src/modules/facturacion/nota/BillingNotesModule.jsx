@@ -15,6 +15,22 @@ export function billingNoteStatus(note) {
   return ({ACCEPTED:'Aceptada',DRAFT:'Borrador',PENDING:'En proceso',INDETERMINATE:'Por verificar',REJECTED:'Rechazada'})[note.dian_status] || 'Por verificar';
 }
 
+// Borradores de nota que quedaron de un intento que no salió y que ya fueron reemplazados por una
+// nota ACEPTADA de la misma factura emitida después. Se ocultan de la vista; no se borran.
+const noteTime = note => {
+  const t = new Date(note?.created_at || note?.fecha || '').getTime();
+  return Number.isFinite(t) ? t : null;
+};
+export function supersededDraftIds(notes = []) {
+  const accepted = notes.filter(note => note?.dian_status === 'ACCEPTED' && note.factura_id);
+  return new Set(notes.filter(note => note?.dian_status === 'DRAFT' && !note.cude && note.factura_id
+    && accepted.some(ok => {
+      if (ok.factura_id !== note.factura_id || ok.id === note.id) return false;
+      const a = noteTime(ok), d = noteTime(note);
+      return a === null || d === null || a >= d;
+    })).map(note => note.id));
+}
+
 export default function BillingNotesModule({kind = 'credit', initialCreate = false}) {
   const credit = kind === 'credit';
   const label = credit ? 'Notas crédito' : 'Notas débito';
@@ -33,6 +49,7 @@ export default function BillingNotesModule({kind = 'credit', initialCreate = fal
   const [selected,setSelected] = useState(null);
   const [viewed,setViewed] = useState(null);
   const [busy,setBusy] = useState(false);
+  const [showReplaced,setShowReplaced] = useState(false);
   const generation = useRef(0);
 
   const load = useCallback(async () => {
@@ -54,11 +71,13 @@ export default function BillingNotesModule({kind = 'credit', initialCreate = fal
   useEffect(()=>{setSelected(null);setViewed(null);setChoosing(initialCreate && credit && mayCreate);load();return ()=>{generation.current++;};},[load,initialCreate,credit,mayCreate]);
 
   const billsById = useMemo(()=>new Map(invoices.map(invoice=>[invoice.id,invoice])),[invoices]);
+  const replaced = useMemo(()=>supersededDraftIds(notes),[notes]);
   const matches = useMemo(()=>notes.filter(note=>{
+    if (!showReplaced && replaced.has(note.id)) return false;
     const bill=billsById.get(note.factura_id);
     return [note.numero,note.nro_consecutivo,note.nroConsecutivo,note.concepto,note.motivo,note.pacienteNombre,patientName(bill),invoiceNumber(bill),billingNoteStatus(note)]
       .some(value=>String(value || '').toLocaleLowerCase().includes(search.toLocaleLowerCase().trim()));
-  }),[notes,billsById,search]);
+  }),[notes,billsById,search,replaced,showReplaced]);
   const eligible = useMemo(()=>invoices.filter(invoice=>{
     if (invoice.estado === 'Anulado' || invoice.detalles?.fiscal_adjustment_status === 'FULLY_CREDITED') return false;
     try {validateInvoiceCreditEligibility(invoice);return true;} catch {return false;}
@@ -89,6 +108,10 @@ export default function BillingNotesModule({kind = 'credit', initialCreate = fal
     {!credit && <p className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm">Este acceso permite consultar las notas débito existentes. La emisión electrónica de nuevas notas débito no está habilitada aquí; un registro interno no equivale a un documento validado por la DIAN.</p>}
     {error && <p role="alert" className="p-3 bg-red-50 text-red-700 rounded-xl">{error}</p>}
     <input aria-label="Buscar notas" placeholder="Buscar por nota, factura, paciente o estado" value={search} onChange={e=>setSearch(e.target.value)} className="border rounded-lg px-3 py-2 w-full" />
+    {replaced.size > 0 && <label className="flex items-center gap-2 text-xs text-slate-500 select-none">
+      <input type="checkbox" checked={showReplaced} onChange={e=>setShowReplaced(e.target.checked)} />
+      Mostrar borradores de intentos que ya fueron reemplazados por una nota aceptada ({replaced.size})
+    </label>}
     <div className="overflow-x-auto border rounded-xl bg-white">
       <table className="w-full text-sm text-left"><thead className="bg-slate-50"><tr>{['Nota','Fecha','Factura','Paciente / tercero','Valor','Estado','Acciones'].map(title=><th key={title} className="p-3">{title}</th>)}</tr></thead>
       <tbody>{loading ? <tr><td colSpan={7} className="p-6">Cargando historial…</td></tr> : matches.length===0 ? <tr><td colSpan={7} className="p-6 text-slate-500">No se encontraron registros.</td></tr> : matches.map(note=>{
