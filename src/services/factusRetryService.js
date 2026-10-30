@@ -17,6 +17,7 @@ import {
   checkFactusBill,
   deleteUnvalidatedFactusBill as proxyDeleteUnvalidated,
 } from "./factusProxyService.js";
+import { isDiscardedInvoice } from "../utils/invoiceNumbering.js";
 
 export const FEV_STAGE = {
   PRE_VALIDATION_ERROR: "PRE_VALIDATION_ERROR",
@@ -410,6 +411,15 @@ export const getFevRetryDecision = (factura) => {
 
   const attempts = Array.isArray(detalles.fevAttempts) ? detalles.fevAttempts : [];
   const lastAttempt = attempts.length > 0 ? attempts[attempts.length - 1] : null;
+
+  // RULE 0: intento rechazado que el usuario descartó. Nunca se vuelve a enviar.
+  if (isDiscardedInvoice(factura)) {
+    return { decision: RETRY_DECISION.NOT_RETRYABLE, canRetry: false,
+      requiresStatusCheck: false, requiresCorrection: false, requiresDeletion: false,
+      reason: 'DISCARDED_ATTEMPT', lastAttempt, errorCategory: null, errorFields: null,
+      lastErrorMessage: null,
+      friendlyMessage: 'Este intento rechazado fue descartado y no se puede volver a enviar a la DIAN.' };
+  }
 
   if (detalles.receiptLinkState && detalles.receiptLinkState !== 'COMPLETE') {
     return { decision: RETRY_DECISION.NOT_RETRYABLE, canRetry: false,

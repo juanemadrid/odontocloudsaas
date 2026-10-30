@@ -29,6 +29,8 @@ import {
   FEV_STAGE,
   FEV_LOCK_STATE,
 } from "../../../services/factusRetryService";
+import { fiscalInvoiceNumber, invoiceDisplayNumber, isDiscardedInvoice } from "../../../utils/invoiceNumbering.js";
+import { canDiscardInvoice, discardBlockReason, discardRejectedInvoice } from "../../../services/invoiceDiscardService.js";
 
 const fmt = (n) => {
   const num = Number(n || 0);
@@ -93,6 +95,10 @@ export default function FacturaElectronicaModule() {
   const statusChecksInFlight = useRef(new Set());
   const [creditNoteModalFactura, setCreditNoteModalFactura] = useState(null);
   const [viewingFacturaDetails, setViewingFacturaDetails] = useState(null);
+  const [showDiscarded, setShowDiscarded] = useState(false);
+  const [discardTarget, setDiscardTarget] = useState(null);
+  const [discardReason, setDiscardReason] = useState("");
+  const [discarding, setDiscarding] = useState(false);
 
   useEffect(() => {
     if (!inquilino) return;
@@ -200,7 +206,8 @@ export default function FacturaElectronicaModule() {
                 pacienteDireccion: f.pacienteDireccion || det.pacienteDireccion || "",
                 pacienteCiudad: f.pacienteCiudad || det.pacienteCiudad || "",
                 pacienteTipoDocumento: f.pacienteTipoDocumento || det.pacienteTipoDocumento || "CC",
-                factusInvoiceNumber: det.factusInvoiceNumber || (String(f.numero || "").startsWith("BORRADOR-") ? null : (f.numero || f.factusNumero || f.nroFactura)),
+                // Solo números fiscales reales; las etiquetas internas (FE-xxxx, SIN-DIAN-…) no lo son.
+                factusInvoiceNumber: fiscalInvoiceNumber({ ...f, detalles: det }),
                 factusCufe: f.factusCufe || det.cufe || det.factusCufe,
                 factusQr: f.factusQr || det.qrCode || det.factusQr,
                 factusPdfUrl: f.factusPdfUrl || det.factusPdfUrl,
@@ -311,7 +318,8 @@ export default function FacturaElectronicaModule() {
 
   const filtered = useMemo(() => {
     return facturas.filter((f) => {
-      const numStr = String(f.factusInvoiceNumber || f.numero || f.id || "");
+      if (!showDiscarded && isDiscardedInvoice(f)) return false;
+      const numStr = `${invoiceDisplayNumber(f)} ${f.numero || ""} ${f.id || ""}`;
       const pacStr = String(f.pacienteNombre || "");
       const matchSearch = !search ||
         pacStr.toLowerCase().includes(search.toLowerCase()) ||
@@ -321,7 +329,37 @@ export default function FacturaElectronicaModule() {
       const matchHasta = !hasta || createdDate <= new Date(hasta + "T23:59:59");
       return matchSearch && matchDesde && matchHasta;
     });
-  }, [facturas, search, desde, hasta]);
+  }, [facturas, search, desde, hasta, showDiscarded]);
+
+  const discardedCount = useMemo(() => facturas.filter(isDiscardedInvoice).length, [facturas]);
+
+  const openDiscard = (factura) => {
+    const blocked = discardBlockReason(factura);
+    if (blocked) { toast.error(blocked); return; }
+    setDiscardReason("");
+    setDiscardTarget(factura);
+  };
+
+  const handleConfirmDiscard = async () => {
+    if (!discardTarget || discarding) return;
+    setDiscarding(true);
+    try {
+      await discardRejectedInvoice({
+        invoiceId: discardTarget.id,
+        tenantId: inquilino,
+        reason: discardReason,
+        userProfile,
+      });
+      toast.success("Intento descartado. No tiene valor fiscal y ya no cuenta como cartera.");
+      setDiscardTarget(null);
+      setDiscardReason("");
+      await loadFacturas();
+    } catch (err) {
+      toast.error(err.message || "No se pudo descartar el intento.");
+    } finally {
+      setDiscarding(false);
+    }
+  };
 
   const handlePrint = (factura) => {
     printElectronicInvoice({
@@ -384,9 +422,9 @@ export default function FacturaElectronicaModule() {
   };
 
   const handleDownloadPDF = async (factura) => {
-    const num = factura.factusInvoiceNumber || factura.numero;
+    const num = fiscalInvoiceNumber(factura);
     if (!num) {
-      toast.error("Esta factura no tiene número de Factus asignado.");
+      toast.error("Esta factura no tiene número DIAN asignado: no existe PDF oficial.");
       return;
     }
     setDownloadingId(factura.id);
@@ -454,7 +492,7 @@ export default function FacturaElectronicaModule() {
       const res = await checkFactusBillStatus({
         tenantId: inquilino,
         referenceCode: refCode,
-        invoiceNumber: factura.factusInvoiceNumber || factura.numero,
+        invoiceNumber: fiscalInvoiceNumber(factura),
       });
 
       if (res.found && (res.isValidated || res.cufe)) {
@@ -616,6 +654,12 @@ export default function FacturaElectronicaModule() {
         </button>
 
         <div className="flex items-center gap-3 self-end sm:self-auto">
+          {discardedCount > 0 && (
+            <label className="flex items-center gap-1.5 text-[11px] text-slate-500 cursor-pointer select-none">
+              <input type="checkbox" checked={showDiscarded} onChange={(e) => setShowDiscarded(e.target.checked)} />
+              Mostrar intentos descartados ({discardedCount})
+            </label>
+          )}
           <div className="relative w-64">
             <input
               type="text"
@@ -670,7 +714,8 @@ export default function FacturaElectronicaModule() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filtered.map((f) => {
-                  const docNum = f.factusInvoiceNumber || f.numero || `FCEV${f.id?.slice(-4).toUpperCase() || "1333"}`;
+                  const docNum = invoiceDisplayNumber(f);
+                  const discarded = isDiscardedInvoice(f);
                   const isExpanded = expandedId === f.id;
                   const totalNum = Number(f.total || 0);
                   const montoPagadoNum = Number(f.montoPagado || 0);
@@ -685,7 +730,7 @@ export default function FacturaElectronicaModule() {
                             {isExpanded ? "▼" : "▶"}
                           </span>
                         </td>
-                        <td className="py-2.5 px-3 font-semibold text-slate-800">
+                        <td className={`py-2.5 px-3 font-semibold ${fiscalInvoiceNumber(f) ? "text-slate-800" : "text-slate-400 italic"}`}>
                           {docNum}
                         </td>
                         <td className="py-2.5 px-3 font-medium text-slate-700">
@@ -693,12 +738,13 @@ export default function FacturaElectronicaModule() {
                         </td>
                         <td className="py-2.5 px-3 text-center">
                           <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
+                            discarded ? "bg-slate-200 text-slate-600" :
                             String(f.dianStatus).toUpperCase() === "ACEPTADA" ? "bg-emerald-100 text-emerald-800" :
                             String(f.dianStatus).toUpperCase() === "RECHAZADA" ? "bg-rose-100 text-rose-800" :
                             (f.detalles?.technicalError || String(f.dianStatus).toUpperCase() === "INDETERMINADO") ? "bg-amber-100 text-amber-800" :
                             "bg-amber-100 text-amber-800"
                           }`}>
-                            {f.detalles?.technicalError ? "TIMEOUT" : (f.dianStatus || "PENDIENTE")}
+                            {discarded ? "DESCARTADA" : f.detalles?.technicalError ? "TIMEOUT" : (f.dianStatus || "PENDIENTE")}
                           </span>
                         </td>
                         <td className="py-2.5 px-3">
@@ -714,12 +760,12 @@ export default function FacturaElectronicaModule() {
                           ) : (
                             <div className="flex items-center gap-1.5">
                               <span className="text-slate-400 italic">No hay recibo de caja asociado</span>
-                              <button
+                              {!discarded && <button
                                 onClick={() => { setTargetInvoiceForLink(f); setShowAsociarReciboModal(true); }}
                                 className="text-[10px] text-blue-600 hover:text-blue-800 font-bold underline cursor-pointer bg-transparent border-0"
                               >
                                 + Asociar
-                              </button>
+                              </button>}
                             </div>
                           )}
                         </td>
@@ -856,6 +902,27 @@ export default function FacturaElectronicaModule() {
                                     </button>
                                   )}
 
+                                  {canDiscardInvoice(f) && (
+                                    <button
+                                      onClick={() => openDiscard(f)}
+                                      className="px-2 h-7 bg-white hover:bg-rose-50 text-rose-700 rounded flex items-center gap-1 text-[10px] font-bold cursor-pointer border border-rose-300 transition-all"
+                                      title="Retirar este intento rechazado: nunca llegó a la DIAN y no tiene número fiscal"
+                                    >
+                                      <FiX size={12} />
+                                      <span>Descartar intento</span>
+                                    </button>
+                                  )}
+
+                                  {discarded && (
+                                    <span
+                                      className="px-2 h-7 bg-slate-100 text-slate-500 rounded flex items-center gap-1 text-[10px] font-medium border border-slate-200 select-none"
+                                      title={`Motivo: ${f.detalles?.descarte?.motivo || "—"}`}
+                                    >
+                                      <FiLock size={12} />
+                                      <span>Descartada por {f.detalles?.descarte?.usuario || "—"} el {fmtDate(f.detalles?.descarte?.fecha)}</span>
+                                    </span>
+                                  )}
+
                                   {/* Lock indicator if already accepted */}
                                   {retryDecision.decision === RETRY_DECISION.ALREADY_ACCEPTED && (
                                     <span
@@ -930,7 +997,7 @@ export default function FacturaElectronicaModule() {
                   Opciones del documento
                 </h3>
                 <p className="text-[11px] text-slate-500 font-medium">
-                  Factura de venta — {detailModalFactura.factusInvoiceNumber || detailModalFactura.numero || detailModalFactura.id?.slice(0, 10)}
+                  Factura de venta — {invoiceDisplayNumber(detailModalFactura)}
                 </p>
               </div>
               <button
@@ -1192,6 +1259,26 @@ export default function FacturaElectronicaModule() {
                     return null;
                   })()}
 
+                  {canDiscardInvoice(detailModalFactura) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const f = detailModalFactura;
+                        setDetailModalFactura(null);
+                        openDiscard(f);
+                      }}
+                      className="p-2.5 rounded-xl border border-rose-200 hover:border-rose-400 hover:bg-rose-50 text-slate-700 text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer bg-white"
+                    >
+                      <div className="w-7 h-7 rounded-lg bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                        <FiX size={14} />
+                      </div>
+                      <div className="text-left">
+                        <div className="font-bold text-rose-900">Descartar intento</div>
+                        <div className="text-[10px] text-rose-600">Nunca llegó a la DIAN</div>
+                      </div>
+                    </button>
+                  )}
+
                   {/* Historial de Intentos si tiene fevAttempts */}
                   {Array.isArray(detailModalFactura.detalles?.fevAttempts) && detailModalFactura.detalles.fevAttempts.length > 0 && (
                     <button
@@ -1401,6 +1488,56 @@ export default function FacturaElectronicaModule() {
         </div>
       )}
 
+      {/* MODAL: DESCARTAR INTENTO RECHAZADO */}
+      {discardTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fadeIn p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-200">
+            <div className="px-6 py-4 border-b border-slate-100 bg-rose-50/60">
+              <h3 className="text-[14px] font-bold text-rose-900">Descartar intento rechazado</h3>
+              <p className="text-[11px] text-rose-700">
+                {discardTarget.pacienteNombre || "—"} · {fmt(discardTarget.total)} · {fmtDate(discardTarget.createdAt || discardTarget.created_at)}
+              </p>
+            </div>
+            <div className="p-6 space-y-3 text-[12px] text-slate-600">
+              <p>
+                Este intento <strong>nunca fue aceptado por la DIAN</strong> y no tiene número fiscal.
+                Al descartarlo deja de aparecer en la lista y en cartera, y ya no se podrá reenviar.
+                El registro se conserva para auditoría.
+              </p>
+              <label className="block">
+                <span className="font-semibold text-slate-700">Motivo</span>
+                <textarea
+                  value={discardReason}
+                  onChange={(e) => setDiscardReason(e.target.value)}
+                  rows={3}
+                  maxLength={300}
+                  placeholder="Ej.: Intento duplicado; la venta se facturó con otro intento."
+                  className="mt-1 w-full border border-slate-300 rounded-lg p-2 text-[12px] outline-none focus:border-rose-400"
+                />
+              </label>
+            </div>
+            <div className="flex items-center justify-end gap-2 px-6 py-3 border-t border-slate-100 bg-slate-50/60">
+              <button
+                type="button"
+                disabled={discarding}
+                onClick={() => { setDiscardTarget(null); setDiscardReason(""); }}
+                className="px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-xs font-bold hover:bg-slate-100 cursor-pointer bg-white disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={discarding || discardReason.trim().length < 5}
+                onClick={handleConfirmDiscard}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold cursor-pointer border-0 disabled:opacity-50"
+              >
+                {discarding ? "Descartando..." : "Descartar intento"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL 3: ASOCIAR RECIBO */}
       {showAsociarReciboModal && targetInvoiceForLink && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fadeIn">
@@ -1409,7 +1546,7 @@ export default function FacturaElectronicaModule() {
               <div>
                 <h3 className="text-[14px] font-bold text-slate-800">Asociar recibo de caja</h3>
                 <p className="text-[11px] text-slate-500">
-                  Factura {targetInvoiceForLink.factusInvoiceNumber || targetInvoiceForLink.numero} — Paciente: {targetInvoiceForLink.pacienteNombre}
+                  Factura {invoiceDisplayNumber(targetInvoiceForLink)} — Paciente: {targetInvoiceForLink.pacienteNombre}
                 </p>
               </div>
               <button

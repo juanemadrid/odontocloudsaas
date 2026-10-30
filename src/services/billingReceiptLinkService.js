@@ -161,6 +161,16 @@ export const linkReceiptToInvoice = async ({
 
   const userIdentifier = userProfile?.nombreCompleto || userProfile?.email || "Usuario";
 
+  // Un intento rechazado y descartado no es un documento de cobro: no admite recibos.
+  let guardRow = null;
+  try {
+    ({ data: guardRow } = await supabase.from("facturas").select("detalles")
+      .eq("id", facturaId).eq("tenant_id", tenantId).maybeSingle());
+  } catch { guardRow = null; } // sin lectura previa sigue la validación normal de abajo
+  if (guardRow?.detalles?.descartada === true) {
+    throw new Error("Esta factura es un intento rechazado que fue descartado; no se le pueden asociar recibos.");
+  }
+
   // 1. Intento prioritario: RPC transaccional PostgreSQL (ACID atómico)
   try {
     const { data: rpcData, error: rpcErr } = await supabase.rpc("associate_receipt_to_invoice", {

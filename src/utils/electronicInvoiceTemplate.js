@@ -5,6 +5,7 @@
  */
 
 import { billingItemDescription } from './billingPresentation.js';
+import { fiscalInvoiceNumber, invoiceDisplayNumber } from './invoiceNumbering.js';
 
 const formatCOP = (val) => {
   const num = Number(val || 0);
@@ -176,12 +177,8 @@ export const generateElectronicInvoiceHtml = ({
   const fechaVencFormatted = formatDateSlash(dueDate);
 
   // Invoice Number
-  const facturaNumero =
-    factura?.factusNumero ||
-    factura?.factusInvoiceNumber ||
-    factura?.numero ||
-    factura?.nroFactura ||
-    (factura?.id ? `FCEV${factura.id.slice(-4).toUpperCase()}` : '—');
+  // Nunca imprimir un consecutivo inventado: sin número DIAN se dice claramente.
+  const facturaNumero = factura ? (fiscalInvoiceNumber(factura) || invoiceDisplayNumber(factura).toUpperCase()) : '—';
 
   // CUFE
   const cufe =

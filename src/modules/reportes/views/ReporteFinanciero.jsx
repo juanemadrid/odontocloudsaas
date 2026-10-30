@@ -9,6 +9,7 @@ import { printReciboCaja, printElectronicInvoice, printDocumentoSoporte } from "
 import { FiDollarSign, FiSearch, FiFileText, FiFilter, FiDownload, FiCheck, FiX, FiEye, FiPrinter, FiRefreshCw } from "react-icons/fi";
 import { format } from "date-fns";
 import XLSX from "xlsx-js-style";
+import { NO_FISCAL_NUMBER_LABEL, isDiscardedInvoice, isProvisionalInvoiceNumber } from "../../../utils/invoiceNumbering.js";
 
 const cleanObservaciones = (rawVal) => {
   if (!rawVal) return "";
@@ -1072,9 +1073,11 @@ export default function ReporteFinanciero() {
         const descNum = Number(f.descuento || 0);
 
         const storedCons = f.factusInvoiceNumber || f.nro_factura || f.numero_factura || f.nroConsecutivo || f.numero;
-        const nroDoc = storedCons ? storedCons : `FCEV-${1201 + fIdx}`;
+        // Nunca inventar un consecutivo: sin número DIAN se informa tal cual.
+        const nroDoc = storedCons && !isProvisionalInvoiceNumber(storedCons) ? storedCons : NO_FISCAL_NUMBER_LABEL;
 
-        const isAnulado = (f.estado || "").toLowerCase() === "anulado";
+        // Un intento rechazado que se descartó no es venta: se excluye de los totales como un anulado.
+        const isAnulado = (f.estado || "").toLowerCase() === "anulado" || isDiscardedInvoice(f);
         const rawObs = f.notas || f.observaciones || "";
         const cleanObs = cleanObservaciones(rawObs);
         const refClean = cleanDocReferencia(f.resolucion || f.cufe, String(nroDoc));

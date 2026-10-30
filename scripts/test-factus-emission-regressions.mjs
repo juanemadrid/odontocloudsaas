@@ -7,6 +7,8 @@ import { billingFullName, billingItemDescription, billingPatient } from '../src/
 import { generateElectronicInvoiceHtml } from '../src/utils/electronicInvoiceTemplate.js';
 import { readValidatedCreditNote } from '../src/services/factusCreditNoteResponse.js';
 import { resolveInvoiceCustomer } from '../src/services/invoiceCustomerResolver.js';
+import * as invoiceNumbering from '../src/utils/invoiceNumbering.js';
+const { fiscalInvoiceNumber } = invoiceNumbering;
 
 const validatedNote = {number:'NC1',cude:'a'.repeat(96),reference_code:'NC-OC-TEST',is_validated:true,
   validated_at:'30-10-2026 06:44:33 AM',
@@ -55,7 +57,7 @@ const statusSandbox = vm.createContext({
   supabase: { from: () => ({update: () => ({eq: () => ({eq: async () => ({error:null})})})}) },
   inquilino:'clinic', userProfile:{}, FEV_LOCK_STATE:{CHECKING_STATUS:'CHECKING_STATUS'},
   toast:{info(){},error(){},success(){},warning(){}}, console,
-  loadFacturas:async () => {}, reconcileFactusInvoice:async () => {},
+  loadFacturas:async () => {}, reconcileFactusInvoice:async () => {}, fiscalInvoiceNumber,
 });
 vm.runInContext(statusHandler + '\nthis.runCheck = handleCheckStatus;', statusSandbox);
 const firstCheck = statusSandbox.runCheck({id:'invoice',detalles:{}});
@@ -228,6 +230,7 @@ const proxy = await moduleFrom('../src/services/factusProxyService.js', {
 const retry = await moduleFrom('../src/services/factusRetryService.js', {
   '../lib/supabaseClient.js': { default: {} },
   './factusProxyService.js': { checkFactusBill: async (args) => { response = args; return { exists: false }; }, deleteUnvalidatedFactusBill: async () => {} },
+  '../utils/invoiceNumbering.js': invoiceNumbering,
 });
 let sendResult;
 const dian = await moduleFrom('../src/services/DianService.js', {

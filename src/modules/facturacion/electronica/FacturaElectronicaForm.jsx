@@ -15,6 +15,7 @@ import { computePaymentStatus } from "../../../services/billingReceiptLinkServic
 import { getDoctorsList } from "../../../services/supabaseServices";
 import { getConfigItems, getConfigSection, saveConfigSection } from "../../../services/configPersistenceService";
 import { validateTerceroForDian, formatTerceroNombre } from "../../../utils/dian/dianHelpers";
+import { fiscalInvoiceNumber, invoiceDisplayNumber, newProvisionalInvoiceNumber } from "../../../utils/invoiceNumbering.js";
 import { CUPS_DENTAL_CODES } from "../../../data/cupsCodes";
 
 import {
@@ -1110,7 +1111,8 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
         hasCredentials ? tenantData : null
       );
 
-      const finalNumero = result.factusInvoiceNumber || initialFactura?.numero || `FE-${Date.now().toString().slice(-4)}`;
+      // Sin número fiscal de la DIAN se guarda una etiqueta interna (SIN-DIAN-…): nunca un falso consecutivo.
+      const finalNumero = result.factusInvoiceNumber || fiscalInvoiceNumber(initialFactura) || initialFactura?.numero || newProvisionalInvoiceNumber();
       const keepsOriginalReceipts = selectedRecibo?.id === initialDetalles.recibo_asociado?.id
         && Array.isArray(initialDetalles.recibos_asociados) && initialDetalles.recibos_asociados.length > 0;
       const linkedReceiptsList = keepsOriginalReceipts ? initialDetalles.recibos_asociados : (selectedRecibo ? [selectedRecibo] : []);
@@ -1340,7 +1342,7 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
                 Factura de venta • Nueva factura
               </span>
               <h1 className="text-base font-bold text-slate-800 tracking-tight">
-                {isCorrectionMode ? `Corregir Factura #${initialFactura.numero || initialFactura.id}` : "Nueva factura"}
+                {isCorrectionMode ? `Corregir factura — ${invoiceDisplayNumber(initialFactura)}` : "Nueva factura"}
               </h1>
             </div>
           </div>
@@ -1384,7 +1386,7 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
           <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 animate-fadeIn space-y-1">
             <div className="flex items-center gap-2 font-bold text-xs uppercase tracking-wider">
               <FiAlertCircle className="text-amber-600 shrink-0" size={17} />
-              <span>Modo Corrección y Reintento — Factura #{initialFactura.numero || initialFactura.id}</span>
+              <span>Modo Corrección y Reintento — {invoiceDisplayNumber(initialFactura)}</span>
             </div>
             {retryDecision?.lastErrorMessage && (
               <p className="text-xs text-amber-800 ml-6">
@@ -1393,6 +1395,7 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
             )}
             <p className="text-[11px] text-amber-700 ml-6 italic">
               Ajuste los datos requeridos y guarde para reenviar ante la DIAN sin duplicar números fiscales.
+              {!fiscalInvoiceNumber(initialFactura) && " Este intento aún no tiene número DIAN: al ser aceptada recibirá el siguiente consecutivo de su resolución."}
             </p>
           </div>
         )}
