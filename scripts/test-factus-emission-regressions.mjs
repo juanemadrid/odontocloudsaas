@@ -5,6 +5,16 @@ import { factusPaymentCode } from '../src/services/factusPayment.js';
 import { receiptConceptAmounts } from '../src/services/receiptInvoiceItems.js';
 import { billingFullName, billingItemDescription, billingPatient } from '../src/utils/billingPresentation.js';
 import { generateElectronicInvoiceHtml } from '../src/utils/electronicInvoiceTemplate.js';
+import { readValidatedCreditNote } from '../src/services/factusCreditNoteResponse.js';
+
+const validatedNote = {number:'NC1',cude:'a'.repeat(96),reference_code:'NC-OC-TEST',is_validated:true,
+  bill:{number:'FCEV1345',cufe:'b'.repeat(96)}};
+assert.equal(readValidatedCreditNote({result:{data:validatedNote}}, {referenceCode:'NC-OC-TEST',billNumber:'FCEV1345'}).number,'NC1');
+assert.equal(readValidatedCreditNote({result:{data:{credit_note:validatedNote}}}).cude,'a'.repeat(96));
+for (const bad of [validatedNote.bill, {...validatedNote,cude:null}, {...validatedNote,is_validated:false}]) {
+  assert.throws(()=>readValidatedCreditNote({result:{data:bad}}),{code:'CREDIT_NOTE_RESPONSE_INDETERMINATE'});
+}
+assert.throws(()=>readValidatedCreditNote(validatedNote,{referenceCode:'OTHER'}),{code:'CREDIT_NOTE_RESPONSE_INDETERMINATE'});
 
 assert.equal(billingFullName({nombre:'JAVIER ANDRÉS',apellidos:'PÉREZ GÓMEZ'}),'JAVIER ANDRÉS PÉREZ GÓMEZ');
 assert.equal(billingFullName({nombre:'JAVIER ANDRÉS PÉREZ GÓMEZ',apellido:'PÉREZ GÓMEZ'}),'JAVIER ANDRÉS PÉREZ GÓMEZ');
@@ -73,6 +83,42 @@ async function moduleFrom(path, mocks) {
   await mod.evaluate();
   return mod.namespace;
 }
+let reconciledRow, reconciledInvoice, checkedNoteReference;
+const storedNote = {id:'local-note',tenant_id:'clinic',factura_id:'invoice',numero:'FCEV1345',cude:null,
+  reference_code:validatedNote.reference_code,dian_status:'ACCEPTED',tipo_nota_credito:'TOTAL',monto_acreditado:150000,
+  facturas:{id:'invoice',detalles:{notasCredito:[{id:'local-note',numero:'FCEV1345'}]}}};
+const creditDb = {
+  rpc:async()=>({data:[{total_factura:150000,total_acreditado:150000,saldo_disponible:0,nc_count:1}],error:null}),
+  from:table=>{
+    let patch;
+    const query={select:()=>query,eq:()=>query,update:value=>{patch=value;return query;},
+      single:async()=>{if(patch) reconciledRow=patch;return {data:patch?{...storedNote,...patch}:storedNote,error:null};},
+      then:resolve=>{if(table==='facturas') reconciledInvoice=patch;return Promise.resolve({error:null}).then(resolve);}};
+    return query;
+  },
+};
+const creditService = await moduleFrom('../src/services/factusCreditNoteService.js', {
+  '../lib/supabaseClient.js':{default:creditDb},
+  './factusCreditNoteResponse.js':{readValidatedCreditNote},
+  './factusRetryService.js':{acquireFevBackendLock:()=>{},releaseFevBackendLock:()=>{},FEV_LOCK_STATE:{}},
+  './factusProxyService.js':{
+    sendFactusCreditNote:()=>{throw new Error('Reconciliation must never emit');},
+    checkFactusCreditNote:async args=>{checkedNoteReference=args;return {result:{credit_note:validatedNote}};},
+    deleteUnvalidatedFactusCreditNote:()=>{throw new Error('Reconciliation must never delete');}},
+  './factusCreditNotePayloadBuilder.js':{buildFactusCreditNotePayload:()=>{},validateInvoiceCreditEligibility:()=>{}},
+  '../utils/dian/creditNoteCatalogs.js':{isTotalCreditNoteConcept:()=>true,isPartialCreditNoteConcept:()=>false},
+  './muvCreditNoteRipsBuilder.js':{isHealthInvoice:()=>false,validatePartialCreditNoteClinicalTraceability:()=>{}},
+});
+const reconciliation=await creditService.checkAndReconcileCreditNote({creditNoteId:'local-note',tenantId:'clinic'});
+assert.equal(reconciliation.reconciled,true);
+assert.equal(checkedNoteReference.referenceCode,validatedNote.reference_code);
+assert.equal(checkedNoteReference.number,null);
+assert.equal(reconciledRow.numero,'NC1');
+assert.equal(reconciledRow.cude,validatedNote.cude);
+assert.equal(reconciledInvoice.estado,'Anulado');
+assert.equal(reconciledInvoice.detalles.notasCredito.length,1);
+assert.equal(reconciledInvoice.detalles.notasCredito[0].numero,'NC1');
+console.log('PASS: incomplete confirmation reconciles the existing note by reference, repairs invoice history and never emits again.');
 let sentInvoice;
 const transportMocks = Object.fromEntries(['downloadFactusPdf','downloadFactusAttachedDocumentXml','downloadFactusSupportDocumentPdf','getFactusRanges','getFactusStatus','sendFactusSupportDocument','sendFactusAdjustmentNote','testFactusCredentials','sendFactusCreditNote','checkFactusCreditNote','deleteUnvalidatedFactusCreditNote','downloadFactusCreditNoteXml','downloadFactusCreditNotePdf'].map(name => [name, async () => { throw new Error(`Unexpected transport: ${name}`); }]));
 transportMocks.sendFactusBill = async payload => { sentInvoice = payload; return {result:{}}; };

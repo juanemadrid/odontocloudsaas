@@ -13,6 +13,7 @@
  */
 
 import supabase from "../lib/supabaseClient.js";
+import { readValidatedCreditNote } from './factusCreditNoteResponse.js';
 import { acquireFevBackendLock, releaseFevBackendLock, FEV_LOCK_STATE } from './factusRetryService.js';
 import {
   sendFactusCreditNote,
@@ -327,10 +328,7 @@ export async function emitCreditNote({
     try {
       // 7. Enviar a Factus Proxy
       const response = await sendFactusCreditNote(payload);
-      factusResult = response?.result?.data?.credit_note ||
-                    response?.result?.data?.bill ||
-                    response?.result?.data ||
-                    response?.result;
+      factusResult = readValidatedCreditNote(response, {referenceCode:stableRef, billNumber:payload.bill_number});
     } catch (err) {
       emissionError = err;
     }
@@ -352,9 +350,9 @@ export async function emitCreditNote({
         try {
           const checkRes = await checkFactusCreditNote({ referenceCode: stableRef, tenantId });
           const checkedCN = checkRes?.result?.credit_note;
-          if (checkedCN && (checkedCN.is_validated === true || checkedCN.cude)) {
+          if (checkedCN) {
             // Reconciliado con éxito
-            factusResult = checkedCN;
+            factusResult = readValidatedCreditNote(checkedCN, {referenceCode:stableRef, billNumber:payload.bill_number});
             emissionError = null;
           }
         } catch (checkErr) {
@@ -380,6 +378,7 @@ export async function emitCreditNote({
 
       const updatedAttempts = [...prevAttempts, failedAttempt];
       const isIndeterminate =
+        emissionError.code === 'CREDIT_NOTE_RESPONSE_INDETERMINATE' ||
         emissionError.message?.includes("timeout") ||
         emissionError.message?.includes("contactar el servicio") ||
         emissionError.message?.includes("Network");
@@ -436,6 +435,7 @@ export async function emitCreditNote({
 
     if (updateNcErr) {
       console.error("Error actualizando nota crédito aceptada:", updateNcErr);
+      throw new Error('La nota fue emitida en Factus pero no se pudo guardar su confirmación local. Verifique el estado; no vuelva a emitirla.');
     }
 
     // 10. Actualizar factura original preservando dianStatus intacto
@@ -510,7 +510,7 @@ export async function checkAndReconcileCreditNote({ creditNoteId, tenantId }) {
   }
 
   const checkRes = await checkFactusCreditNote({
-    number: nc.numero || null,
+    number: /^[a-f0-9]{96}$/i.test(nc.cude || '') ? nc.numero || null : null,
     referenceCode: refCode,
     tenantId,
   });
@@ -524,7 +524,9 @@ export async function checkAndReconcileCreditNote({ creditNoteId, tenantId }) {
     };
   }
 
-  const isValidated = remoteCN.is_validated === true || Boolean(remoteCN.cude);
+  let validatedCN = null;
+  try { validatedCN = readValidatedCreditNote(remoteCN, {referenceCode:refCode}); } catch { /* Keep unverified responses pending. */ }
+  const isValidated = Boolean(validatedCN);
   const prevAttempts = Array.isArray(nc.detalles?.ncAttempts) ? nc.detalles.ncAttempts : [];
 
   if (isValidated) {
@@ -540,7 +542,7 @@ export async function checkAndReconcileCreditNote({ creditNoteId, tenantId }) {
       cude: remoteCN.cude,
     };
 
-    const { data: updatedNC } = await supabase
+    const { data: updatedNC, error: reconcileError } = await supabase
       .from("notas_credito")
       .update({
         dian_status: "ACCEPTED",
@@ -557,21 +559,29 @@ export async function checkAndReconcileCreditNote({ creditNoteId, tenantId }) {
       .select()
       .single();
 
+    if (reconcileError) throw new Error('No se pudo guardar la reconciliación de la nota crédito: ' + reconcileError.message);
+
     // Actualizar factura
     if (nc.facturas) {
       const newBalance = await getFacturaCreditedBalance(tenantId, nc.facturas.id);
       const newFiscalStatus = newBalance.saldoDisponible <= 0 ? "FULLY_CREDITED" : "PARTIALLY_CREDITED";
+      const oldNotes = Array.isArray(nc.facturas.detalles?.notasCredito) ? nc.facturas.detalles.notasCredito : [];
+      const confirmedEntry = {id:nc.id,numero:remoteCN.number,cude:remoteCN.cude,
+        monto_acreditado:Number(nc.monto_acreditado || nc.monto),tipo:nc.tipo_nota_credito,
+        concept:nc.correction_concept_code,fecha:remoteCN.validated_at || timestamp};
       const facUpdate = {
         detalles: {
           ...(nc.facturas.detalles || {}),
           fiscal_adjustment_status: newFiscalStatus,
           saldo_fiscal_acreditable: newBalance.saldoDisponible,
+          notasCredito:[...oldNotes.filter(note => note.id !== nc.id),confirmedEntry],
         },
       };
       if (newFiscalStatus === "FULLY_CREDITED") {
         facUpdate.estado = "Anulado";
       }
-      await supabase.from("facturas").update(facUpdate).eq("id", nc.facturas.id);
+      const {error:invoiceError} = await supabase.from("facturas").update(facUpdate).eq("id", nc.facturas.id).eq('tenant_id',tenantId);
+      if (invoiceError) throw new Error('La nota se confirmó pero falta actualizar la factura local: ' + invoiceError.message);
     }
 
     return {
@@ -598,7 +608,7 @@ export async function getCreditNotesForInvoice(tenantId, facturaId) {
     .select("*")
     .eq("tenant_id", tenantId)
     .eq("factura_id", facturaId)
-    .order("created_at", { ascending: false });
+    .order("fecha", { ascending: false });
 
   if (error) {
     throw new Error(`Error obteniendo notas crédito de la factura: ${error.message}`);

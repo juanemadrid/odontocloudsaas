@@ -13,6 +13,8 @@ import {
   getFacturaCreditedBalance,
   createCreditNoteDraft,
   emitCreditNote,
+  getCreditNotesForInvoice,
+  checkAndReconcileCreditNote,
 } from "../../../services/factusCreditNoteService";
 import factusService, {
   filterActiveCreditNoteRanges,
@@ -99,11 +101,30 @@ export default function NotaCreditoElectronicaModal({
         setLoading(true);
         setErrorMessage(null);
 
+        // Reconcile an incomplete confirmation using GET only; never emit again.
+        let confirmedNote = null;
+        const existingNotes = await getCreditNotesForInvoice(inquilino, factura.id);
+        for (const note of existingNotes) {
+          if (note.dian_status === 'ACCEPTED' && (!/^[a-f0-9]{96}$/i.test(note.cude || '') || note.numero === billNumber)) {
+            const result = await checkAndReconcileCreditNote({creditNoteId:note.id,tenantId:inquilino});
+            if (!result.reconciled) throw new Error('La confirmación local está incompleta. No emita otra nota; falta verificar su número y CUDE en Factus.');
+            confirmedNote = result.creditNote;
+          } else if (note.dian_status === 'ACCEPTED' && note.tipo_nota_credito === 'TOTAL') {
+            confirmedNote = note;
+          }
+        }
         // A. Cargar saldo atómico
         const bal = await getFacturaCreditedBalance(inquilino, factura.id);
         if (!isMounted) return;
         setBalance(bal);
         setMontoAcreditar(bal.saldoDisponible);
+        if (confirmedNote && bal.saldoDisponible === 0) {
+          setAcceptedResult({numero:confirmedNote.numero,cude:confirmedNote.cude,
+            montoAcreditado:Number(confirmedNote.monto_acreditado || confirmedNote.monto),
+            concepto:getCreditNoteConcept(confirmedNote.correction_concept_code)?.shortName || confirmedNote.correction_concept_code,
+            tipo:confirmedNote.tipo_nota_credito,facturaRelacionada:billNumber,creditNoteId:confirmedNote.id});
+          return;
+        }
 
         // B. Inicializar items preservando trazabilidad clínica
         const originalItems = factura.detalles?.items || factura.items || [];
@@ -250,7 +271,7 @@ export default function NotaCreditoElectronicaModal({
 
       setAcceptedResult({
         numero: emitRes.numero || emitRes.creditNote?.numero || "NC-EMITIDA",
-        cude: emitRes.cude || emitRes.creditNote?.cude || "CUDE-PROCESADO",
+        cude: emitRes.cude || emitRes.creditNote?.cude || "",
         montoAcreditado: Number(montoAcreditar),
         concepto: getCreditNoteConcept(selectedConcept)?.shortName || selectedConcept,
         tipo: tipoNC,
