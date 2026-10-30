@@ -515,7 +515,7 @@ export async function checkAndReconcileCreditNote({ creditNoteId, tenantId }) {
     tenantId,
   });
 
-  const remoteCN = checkRes?.result?.credit_note;
+  let remoteCN = checkRes?.result?.credit_note;
   if (!remoteCN) {
     return {
       existsInFactus: false,
@@ -524,9 +524,17 @@ export async function checkAndReconcileCreditNote({ creditNoteId, tenantId }) {
     };
   }
 
+  // The list endpoint omits CUDE. Resolve a matched reference to its detail via GET.
+  if (!remoteCN.cude && remoteCN.reference_code === refCode && /^[A-Za-z0-9_-]{1,80}$/.test(remoteCN.number || '')) {
+    const detail = await checkFactusCreditNote({number:remoteCN.number,referenceCode:refCode,tenantId});
+    remoteCN = detail?.result?.credit_note || null;
+    if (!remoteCN) throw new Error('Factus no devolvió el detalle de la nota existente. No vuelva a emitirla.');
+  }
+
   let validatedCN = null;
   try { validatedCN = readValidatedCreditNote(remoteCN, {referenceCode:refCode}); } catch { /* Keep unverified responses pending. */ }
   const isValidated = Boolean(validatedCN);
+  if (validatedCN) remoteCN = validatedCN;
   const prevAttempts = Array.isArray(nc.detalles?.ncAttempts) ? nc.detalles.ncAttempts : [];
 
   if (isValidated) {
