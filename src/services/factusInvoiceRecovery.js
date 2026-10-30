@@ -67,6 +67,8 @@ export function buildRecoveredInvoice(tenantId, expectedNumber, response) {
       pacienteNombre: customer.names || customer.company || customer.trade_name || customer.name,
       pacienteDocumento: String(customer.identification), pacienteDireccion: customer.address,
       pacienteEmail: customer.email, pacienteTelefono: customer.phone,
+      pacienteCiudad: customer.municipality?.name,
+      pacienteTipoDocumento: ({13:'CC',22:'CE',31:'NIT',12:'TI',41:'PASAPORTE',48:'PPT',11:'RC'})[customer.identification_document?.code || customer.identification_document_id],
       paciente: { nombre: customer.names || customer.company || customer.trade_name || customer.name,
         documento: String(customer.identification), email: customer.email, telefono: customer.phone,
         direccion: customer.address, ciudad: customer.municipality?.name, municipality_code: customer.municipality?.code,

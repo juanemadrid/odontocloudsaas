@@ -14,6 +14,7 @@ import factusService from "../../../services/factusService";
 import FacturaElectronicaForm from "./FacturaElectronicaForm";
 import NotaCreditoElectronicaModal from "./NotaCreditoElectronicaModal";
 import RecuperarFacturaModal from "./RecuperarFacturaModal";
+import { billingPatient } from '../../../utils/billingPresentation.js';
 import { printElectronicInvoice, printReciboCaja } from "../../../utils/electronicInvoiceTemplate";
 import { getConfigSection } from "../../../services/configPersistenceService";
 import { linkReceiptToInvoice, computePaymentStatus } from "../../../services/billingReceiptLinkService";
@@ -230,6 +231,33 @@ export default function FacturaElectronicaModule() {
         combined = cfgRow?.config?.facturas_electronicas || [];
       }
 
+      // Match only this clinic's records by document; never infer identity from a name.
+      const documents = [...new Set(combined.map(f => String(f.pacienteDocumento || f.detalles?.pacienteDocumento || '').trim()).filter(Boolean))];
+      if (documents.length) {
+        try {
+          const { data: patients, error: patientError } = await supabase.from('pacientes').select('*')
+            .eq('tenant_id', inquilino).in('documento', documents);
+          if (patientError) throw patientError;
+          const thirds = await getConfigSection(inquilino, 'terceros', []);
+          const { data: sqlThirds, error: thirdError } = await queryOptionalBillingTable('terceros', table => table.select('*').eq('tenant_id',inquilino).in('nro_documento',documents));
+          if (thirdError) console.warn('No se pudieron consultar los terceros SQL:', thirdError.message);
+          const patientMasters = (patients || []).map(billingPatient);
+          const sqlThirdMasters = (sqlThirds || []).map(billingPatient);
+          const thirdMasters = [...sqlThirdMasters, ...(Array.isArray(thirds) ? thirds : []).map(billingPatient)
+            .filter(p => !sqlThirdMasters.some(sql => String(sql.documento || '').trim() === String(p.documento || '').trim()))];
+          combined = combined.map(f => {
+            const doc = String(f.pacienteDocumento || f.detalles?.pacienteDocumento || '').trim();
+            const patientMatches = patientMasters.filter(p => String(p.documento || '').trim() === doc);
+            const matches = patientMatches.length ? patientMatches : thirdMasters.filter(p => String(p.documento || '').trim() === doc);
+            if (!doc || matches.length !== 1) return f;
+            const patient = matches[0];
+            return { ...f, pacienteRegistro:patient, pacienteNombre:patient.nombreCompleto || f.pacienteNombre,
+              pacienteDireccion:patient.direccion || f.pacienteDireccion,
+              pacienteCiudad:patient.ciudad || f.pacienteCiudad || f.detalles?.paciente?.ciudad,
+              pacienteTelefono:patient.telefono || f.pacienteTelefono };
+          });
+        } catch (e) { console.warn('No se pudieron completar los datos de la ficha del paciente:', e.message); }
+      }
       setFacturas(combined);
 
       // Load receipts and payments for association modal
@@ -299,10 +327,12 @@ export default function FacturaElectronicaModule() {
     printElectronicInvoice({
       factura,
       patient: {
+        ...(factura.detalles?.paciente || {}),
+        ...(factura.pacienteRegistro || {}),
         nombreCompleto: factura.pacienteNombre,
         documento: factura.pacienteDocumento,
-        direccion: factura.pacienteDireccion,
-        ciudad: factura.pacienteCiudad,
+        direccion: factura.pacienteDireccion || factura.detalles?.paciente?.direccion || factura.detalles?.tercero?.address,
+        ciudad: factura.pacienteCiudad || factura.detalles?.paciente?.ciudad || factura.detalles?.tercero?.municipality?.name,
         telefono: factura.pacienteTelefono,
         tipoDocumento: factura.pacienteTipoDocumento || "CC"
       },

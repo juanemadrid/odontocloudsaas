@@ -20,6 +20,7 @@ import {
 } from "./factusHealthPayloadBuilder.js";
 import { calculateNIT_DV } from "../utils/dian/dianHelpers.js";
 import { factusPaymentCode } from "./factusPayment.js";
+import { billingFullName, billingItemDescription } from '../utils/billingPresentation.js';
 
 /**
  * factusService.js
@@ -312,20 +313,13 @@ export const sendInvoice = async (invoiceData, patientData, tenantCredentials) =
     patientData.ciudad || patientData.municipio || "Bogotá D.C.";
   const municipalityCode = getMunicipalityCode(cityName) || "11001";
 
-  const fullName = [patientData.nombre, patientData.apellido]
-    .filter(Boolean)
-    .join(" ")
-    .trim() || "Cliente OdontoCloud";
+  const fullName = billingFullName(patientData) || "Cliente OdontoCloud";
 
   // ── Legal organization & tribute based on document type ──
   const isNIT = tipoDoc === "31";
   const legalOrgCode = isNIT ? "1" : "2";
   const tributeCode = isNIT ? "O-13" : "ZZ";
 
-  // Split name for Factus `names` & `last_names`
-  const nameParts = fullName.trim().split(/\s+/);
-  const firstName = nameParts[0] || "Cliente";
-  const lastName  = nameParts.slice(1).join(" ") || firstName || "General";
 
   // ── Items ──
   const rawItems = invoiceData.items || [];
@@ -344,10 +338,8 @@ export const sendInvoice = async (invoiceData, patientData, tenantCredentials) =
     }
 
     return {
-      code_reference: item.code || `SERV-${String(idx + 1).padStart(4, "0")}`,
-      name: String(
-        item.descripcion || item.nombre || item.concepto || "Servicio Odontológico"
-      ).slice(0, 100),
+      code_reference: item.code || item.code_reference || item.cups || `SERV-${String(idx + 1).padStart(4, "0")}`,
+      name: billingItemDescription(item).slice(0, 100),
       quantity: qty,
       discount_rate: Number(discountRate.toFixed(2)),
       price: price,
@@ -402,8 +394,7 @@ export const sendInvoice = async (invoiceData, patientData, tenantCredentials) =
     customer: {
       identification_document_code: tipoDoc,
       identification: docNum,
-      names: firstName,
-      ...(legalOrgCode === "2" ? { last_names: lastName } : {}),
+      names: fullName,
       ...(isNIT ? { company: fullName, trade_name: fullName } : {}),
       address: address,
       email: email,

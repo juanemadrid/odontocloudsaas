@@ -4,6 +4,8 @@
  * Diseñado milimétricamente con el estándar de Factura Electrónica de Venta (Colombia).
  */
 
+import { billingItemDescription } from './billingPresentation.js';
+
 const formatCOP = (val) => {
   const num = Number(val || 0);
   return '$ ' + num.toLocaleString('es-CO', {
@@ -259,7 +261,7 @@ export const generateElectronicInvoiceHtml = ({
   const itemRowsHtml =
     rawItems.length > 0
       ? rawItems
-          .map((it) => {
+          .map((it, idx) => {
             const qty = parseFloat(it.cantidad || it.quantity || 1) || 1;
             const price =
               parseFloat(
@@ -272,14 +274,12 @@ export const generateElectronicInvoiceHtml = ({
                 : price * qty * (1 - discountPct / 100);
 
             calculatedSubtotal += lineTotal;
-            const candidates = [it.concepto, it.descripcion, it.nombre, it.name, it.procedimiento].filter(Boolean);
-            const specificDesc = candidates.find(
-              (c) => String(c).trim().toLowerCase() !== 'servicio odontológico' && String(c).trim().toLowerCase() !== 'servicio'
-            );
-            const desc = specificDesc || candidates[0] || defaultConceptName;
+            const desc = billingItemDescription(it);
 
             return `
         <tr>
+          <td style="padding: 5px 6px; border: 1px solid #111; font-size: 10px; text-align: center;">${idx + 1}</td>
+          <td style="padding: 5px 6px; border: 1px solid #111; font-size: 10px;">${it.code_reference || it.code || it.cups || '—'}</td>
           <td style="padding: 5px 8px; border: 1px solid #111; font-size: 11px; vertical-align: middle;">${desc}</td>
           <td style="padding: 5px 8px; border: 1px solid #111; font-size: 11px; text-align: right; vertical-align: middle; white-space: nowrap;">${formatCOP(
             price
@@ -293,6 +293,8 @@ export const generateElectronicInvoiceHtml = ({
           .join('')
       : `
         <tr>
+          <td style="padding: 5px 6px; border: 1px solid #111; font-size: 10px; text-align: center;">1</td>
+          <td style="padding: 5px 6px; border: 1px solid #111; font-size: 10px;">—</td>
           <td style="padding: 5px 8px; border: 1px solid #111; font-size: 11px; vertical-align: middle;">${defaultConceptName}</td>
           <td style="padding: 5px 8px; border: 1px solid #111; font-size: 11px; text-align: right; vertical-align: middle; white-space: nowrap;">${formatCOP(
             factura?.total || 0
@@ -690,7 +692,9 @@ export const generateElectronicInvoiceHtml = ({
   <table class="items-table">
     <thead>
       <tr>
-        <th style="width: 60%; text-align: left;">Item</th>
+        <th style="width: 5%; text-align: center;">#</th>
+        <th style="width: 12%; text-align: left;">Código</th>
+        <th style="width: 43%; text-align: left;">Descripción</th>
         <th style="width: 15%; text-align: right;">Precio</th>
         <th style="width: 10%; text-align: center;">Cantidad</th>
         <th style="width: 15%; text-align: right;">Total</th>

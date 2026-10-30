@@ -3,6 +3,18 @@ import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { factusPaymentCode } from '../src/services/factusPayment.js';
 import { receiptConceptAmounts } from '../src/services/receiptInvoiceItems.js';
+import { billingFullName, billingItemDescription, billingPatient } from '../src/utils/billingPresentation.js';
+import { generateElectronicInvoiceHtml } from '../src/utils/electronicInvoiceTemplate.js';
+
+assert.equal(billingFullName({nombre:'JAVIER ANDRÉS',apellidos:'PÉREZ GÓMEZ'}),'JAVIER ANDRÉS PÉREZ GÓMEZ');
+assert.equal(billingFullName({nombre:'JAVIER ANDRÉS PÉREZ GÓMEZ',apellido:'PÉREZ GÓMEZ'}),'JAVIER ANDRÉS PÉREZ GÓMEZ');
+const printItem={code_reference:'890304',concepto:'890304',descripcion:'890304 - CONTROL SOBRE PLANO',precioUnitario:150000,cantidad:1,total:150000};
+assert.equal(billingItemDescription(printItem),'CONTROL SOBRE PLANO');
+assert.equal(billingItemDescription({code:'890304',descripcion:'CONTROL 890304 POSTERIOR'}),'CONTROL 890304 POSTERIOR');
+const printPatient=billingPatient({nombres:'JAVIER ANDRÉS',apellidos:'PÉREZ GÓMEZ',direccion:'Barrio de prueba',municipality:{name:'Sincelejo'}});
+const printHtml=generateElectronicInvoiceHtml({factura:{numero:'TEST1',total:150000},patient:printPatient,items:[printItem]});
+for(const text of ['JAVIER ANDRÉS PÉREZ GÓMEZ','Barrio de prueba','Sincelejo','CONTROL SOBRE PLANO','Código','Descripción']) assert.ok(printHtml.includes(text),`Print missing ${text}`);
+assert.ok(!printHtml.includes('890304 - CONTROL SOBRE PLANO'));
 
 const receipt = { consecutivoNumero: 2076, total: 190000, conceptos: [{}] };
 assert.deepEqual(receiptConceptAmounts({ precioUnitario:190000, total:190000 }, receipt),
@@ -61,6 +73,25 @@ async function moduleFrom(path, mocks) {
   await mod.evaluate();
   return mod.namespace;
 }
+let sentInvoice;
+const transportMocks = Object.fromEntries(['downloadFactusPdf','downloadFactusAttachedDocumentXml','downloadFactusSupportDocumentPdf','getFactusRanges','getFactusStatus','sendFactusSupportDocument','sendFactusAdjustmentNote','testFactusCredentials','sendFactusCreditNote','checkFactusCreditNote','deleteUnvalidatedFactusCreditNote','downloadFactusCreditNoteXml','downloadFactusCreditNotePdf'].map(name => [name, async () => { throw new Error(`Unexpected transport: ${name}`); }]));
+transportMocks.sendFactusBill = async payload => { sentInvoice = payload; return {result:{}}; };
+const invoiceService = await moduleFrom('../src/services/factusService.js', {
+  './factusProxyService.js': transportMocks,
+  './factusHealthPayloadBuilder.js': {isFacturaSectorSalud:()=>false,buildFactusHealthInvoicePayload:payload=>payload},
+  '../utils/dian/dianHelpers.js': {calculateNIT_DV:()=>0},
+  './factusPayment.js': {factusPaymentCode},
+  '../utils/billingPresentation.js': {billingFullName,billingItemDescription},
+});
+await invoiceService.sendInvoice({numbering_range_id:1,items:[printItem],medioPago:'Efectivo'},
+  {nombre:'JAVIER ANDRÉS',apellido:'PÉREZ GÓMEZ',documento:'123456',direccion:'Barrio de prueba',ciudad:'Sincelejo'},
+  {serverManaged:true,factusTestMode:false});
+assert.equal(sentInvoice.customer.names,'JAVIER ANDRÉS PÉREZ GÓMEZ');
+assert.equal(sentInvoice.customer.address,'Barrio de prueba');
+assert.equal(sentInvoice.customer.municipality_code,'70001');
+assert.equal(sentInvoice.items[0].code_reference,'890304');
+assert.equal(sentInvoice.items[0].name,'CONTROL SOBRE PLANO');
+console.log('PASS: actual invoice payload sends full name, address, city and separate service code/description.');
 let response;
 const proxySource = await readFile(new URL('../supabase/functions/factus-proxy/index.ts', import.meta.url), 'utf8');
 const checkBillSource = proxySource.slice(proxySource.indexOf('    if (action === "check_bill")'), proxySource.indexOf('    if (action === "delete_unvalidated_bill")')).replaceAll('referenceCode!', 'referenceCode');

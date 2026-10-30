@@ -10,6 +10,7 @@ import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
 import { emitirFacturaDian } from "../../../services/DianService";
 import { factusPaymentCode } from "../../../services/factusPayment.js";
+import { billingPatient } from '../../../utils/billingPresentation.js';
 import { computePaymentStatus } from "../../../services/billingReceiptLinkService";
 import { getDoctorsList } from "../../../services/supabaseServices";
 import { getConfigItems, getConfigSection, saveConfigSection } from "../../../services/configPersistenceService";
@@ -323,7 +324,8 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
             p.tenant_id === userProfile?.tenant_id
           );
           pacientesList = (tenantMatches.length > 0 ? tenantMatches : (pDb || [])).map((p) => {
-            const full = `${p.nombres || p.nombre || ""} ${p.apellidos || p.apellido || ""}`.trim() || p.nombreCompleto || "Paciente";
+            const patient = billingPatient(p);
+            const full = patient.nombreCompleto || "Paciente";
             return {
               id: p.id,
               nombre: full,
@@ -334,9 +336,9 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
               tipoDocumento: p.tipoDocumento || p.tipo_documento || "CC",
               telefono: p.telefono || p.celular || p.movil || "",
               email: p.email || p.correo || "",
-              direccion: p.direccion || "",
+              direccion: patient.direccion || "",
               pais: "Colombia",
-              ciudad: p.ciudad || "Sincelejo",
+              ciudad: patient.ciudad || "Sincelejo",
               tipo: "paciente",
             };
           });

@@ -15,6 +15,7 @@ import {
   isTotalCreditNoteConcept,
   isPartialCreditNoteConcept,
 } from "../utils/dian/creditNoteCatalogs.js";
+import { billingFullName, billingItemDescription } from '../utils/billingPresentation.js';
 import {
   validateHealthData,
   isFacturaSectorSalud,
@@ -252,7 +253,7 @@ export function buildFactusCreditNotePayload({
 
       return {
         code_reference: item.code || item.code_reference || `SERV-${String(idx + 1).padStart(4, "0")}`,
-        name: String(item.descripcion || item.nombre || item.name || "Servicio Odontológico").slice(0, 100),
+        name: billingItemDescription(item).slice(0, 100),
         quantity: qty,
         discount_rate: 0,
         price: adjustedPrice,
@@ -267,7 +268,7 @@ export function buildFactusCreditNotePayload({
       const price = parseFloat(item.precioUnitario || item.precio || item.valor || item.price || 0) || 0;
       return {
         code_reference: item.code || item.code_reference || `SERV-${String(idx + 1).padStart(4, "0")}`,
-        name: String(item.descripcion || item.nombre || item.name || "Servicio Odontológico").slice(0, 100),
+        name: billingItemDescription(item).slice(0, 100),
         quantity: qty,
         discount_rate: 0,
         price: price,
@@ -328,20 +329,13 @@ export function buildFactusCreditNotePayload({
   const municipalityCode = /^\d{5}$/.test(String(patientData.municipality_code || ''))
     ? String(patientData.municipality_code) : getMunicipalityCode(cityName);
 
-  const fullName = [patientData.nombre, patientData.apellido]
-    .filter(Boolean)
-    .join(" ")
-    .trim() || "Cliente OdontoCloud";
+  const fullName = billingFullName(patientData) || "Cliente OdontoCloud";
 
-  const nameParts = fullName.split(/\s+/);
-  const firstName = nameParts[0] || "Cliente";
-  const lastName = nameParts.slice(1).join(" ") || firstName || "General";
 
   const customerObj = {
     identification_document_code: tipoDoc,
     identification: docNum,
-    names: firstName,
-    ...(legalOrgCode === "2" ? { last_names: lastName } : {}),
+    names: fullName,
     ...(isNIT ? { company: fullName, trade_name: fullName } : {}),
     address: address,
     email: email,
