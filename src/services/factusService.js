@@ -729,7 +729,15 @@ export const filterActiveCreditNoteRanges = (ranges) => {
  */
 export const downloadCreditNotePDF = async (creditNoteNumber) => {
   const data = await downloadFactusCreditNotePdf(creditNoteNumber);
-  const binary = atob(data.base64);
+  let binary = atob(data.base64);
+  // Older proxy versions base64-wrapped the provider's JSON response as if it were PDF bytes.
+  if (!binary.startsWith('%PDF-')) {
+    let document;
+    try { document = JSON.parse(binary); } catch { /* Invalid content is rejected below. */ }
+    const encoded = document?.data?.pdf_base_64_encoded || document?.pdf_base_64_encoded;
+    if (encoded) binary = atob(encoded);
+  }
+  if (!binary.startsWith('%PDF-')) throw new Error('Factus no devolvió un PDF válido para la nota crédito.');
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) {
     bytes[index] = binary.charCodeAt(index);

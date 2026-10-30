@@ -71,7 +71,7 @@ assert.equal(statusSandbox.statusChecksInFlight.current.size,0);
 console.log('PASS: rapid status clicks issue one query, preserve busy state and release only the owned lock.');
 
 // Real service code, isolated transport: never sends invoices or accesses a DB.
-const context = vm.createContext({ console, Date, Set, crypto: globalThis.crypto,
+const context = vm.createContext({ console, Date, Set, Blob, atob, crypto: globalThis.crypto,
   process: { exit: (code) => assert.equal(code, 0, 'Legacy regression suite failed') } });
 async function moduleFrom(path, mocks) {
   const mod = new vm.SourceTextModule(await readFile(new URL(path, import.meta.url), 'utf8'), { context });
@@ -129,9 +129,10 @@ assert.equal(reconciledInvoice.estado,'Anulado');
 assert.equal(reconciledInvoice.detalles.notasCredito.length,1);
 assert.equal(reconciledInvoice.detalles.notasCredito[0].numero,'NC1');
 console.log('PASS: incomplete confirmation reconciles the existing note by reference, repairs invoice history and never emits again.');
-let sentInvoice;
+let sentInvoice, creditPdfResponse;
 const transportMocks = Object.fromEntries(['downloadFactusPdf','downloadFactusAttachedDocumentXml','downloadFactusSupportDocumentPdf','getFactusRanges','getFactusStatus','sendFactusSupportDocument','sendFactusAdjustmentNote','testFactusCredentials','sendFactusCreditNote','checkFactusCreditNote','deleteUnvalidatedFactusCreditNote','downloadFactusCreditNoteXml','downloadFactusCreditNotePdf'].map(name => [name, async () => { throw new Error(`Unexpected transport: ${name}`); }]));
 transportMocks.sendFactusBill = async payload => { sentInvoice = payload; return {result:{}}; };
+transportMocks.downloadFactusCreditNotePdf = async () => creditPdfResponse;
 const invoiceService = await moduleFrom('../src/services/factusService.js', {
   './factusProxyService.js': transportMocks,
   './factusHealthPayloadBuilder.js': {isFacturaSectorSalud:()=>false,buildFactusHealthInvoicePayload:payload=>payload},
@@ -139,6 +140,15 @@ const invoiceService = await moduleFrom('../src/services/factusService.js', {
   './factusPayment.js': {factusPaymentCode},
   '../utils/billingPresentation.js': {billingFullName,billingItemDescription},
 });
+const pdfPayload=Buffer.from('%PDF-1.4\n% regression payload\n%%EOF');
+for(const raw of [pdfPayload,Buffer.from(JSON.stringify({data:{pdf_base_64_encoded:pdfPayload.toString('base64')}}))]) {
+  creditPdfResponse={base64:raw.toString('base64')};
+  const blob=await invoiceService.downloadCreditNotePDF('NC1');
+  assert.equal(Buffer.from(await blob.arrayBuffer()).toString(),pdfPayload.toString());
+}
+creditPdfResponse={base64:Buffer.from('{"error":"Not a PDF"}').toString('base64')};
+await assert.rejects(()=>invoiceService.downloadCreditNotePDF('NC1'),/PDF válido/);
+console.log('PASS: credit PDF downloads decode provider JSON and accept binary PDF; invalid content cannot be saved as PDF.');
 await invoiceService.sendInvoice({numbering_range_id:1,items:[printItem],medioPago:'Efectivo'},
   {nombre:'JAVIER ANDRÉS',apellido:'PÉREZ GÓMEZ',documento:'123456',direccion:'Barrio de prueba',ciudad:'Sincelejo'},
   {serverManaged:true,factusTestMode:false});
