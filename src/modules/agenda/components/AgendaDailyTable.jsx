@@ -150,8 +150,8 @@ export default function AgendaDailyTable({ appointments, doctors, branches, chai
                                 <p className="text-[10.5px] text-slate-500 font-bold mt-1.5">Selecciona otra fecha o crea una nueva cita</p>
                             </div>
                         ) : (
-                            <div className="flex flex-col h-full">
-                                <table className="w-full border-separate border-spacing-0">
+                            <div className="flex flex-col h-full max-lg:overflow-x-auto" data-note="en telefono la tabla se desliza de lado">
+                                <table className="w-full max-lg:min-w-[760px] border-separate border-spacing-0">
                                     <thead className="bg-slate-100/90 border-b-2 border-slate-200 sticky top-0 z-30 shadow-xs">
                                         <tr className={`font-black text-slate-700 uppercase tracking-[0.15em] border-b-2 border-slate-200 transition-all ${sidebarVisible ? 'text-[9.5px]' : 'text-[11.5px]'}`}>
                                             <th className="py-3.5 px-4 text-left">Hora</th>

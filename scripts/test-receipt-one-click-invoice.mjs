@@ -1,8 +1,9 @@
 // "Generar factura" desde Recibos de caja: un clic emite; recibos ya facturados no se pueden volver a marcar.
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-const list = await readFile(new URL('../src/modules/facturacion/recibo/ReciboCajaList.jsx', import.meta.url), 'utf8');
-const form = await readFile(new URL('../src/modules/facturacion/electronica/FacturaElectronicaForm.jsx', import.meta.url), 'utf8');
+// En Windows git puede dejar los archivos con CRLF: se normaliza para comparar.
+const list = (await readFile(new URL('../src/modules/facturacion/recibo/ReciboCajaList.jsx', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
+const form = (await readFile(new URL('../src/modules/facturacion/electronica/FacturaElectronicaForm.jsx', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
 
 // 1. La lógica real que decide si un recibo ya está facturado.
 const start = list.indexOf('    const receiptInvoiceNumber = (r) => {');

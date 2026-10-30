@@ -721,7 +721,7 @@ export default function AppointmentModal({
     if (!isOpen) return null;
 
     return ReactDOM.createPortal(
-        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[10000] flex items-center justify-center p-0 sm:p-4">
             {/* Backdrop */}
             <div
                 className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity animate-in fade-in duration-300"
@@ -729,9 +729,10 @@ export default function AppointmentModal({
             />
 
             {/* Modal Content */}
-            <div className="relative flex flex-col bg-slate-50 overflow-hidden h-[90vh] w-[1100px] max-w-[98vw] rounded-[32px] shadow-2xl animate-in fade-in zoom-in-95 duration-300">
+            {/* En teléfono la ventana ocupa toda la pantalla; en computador sigue igual. */}
+            <div className="relative flex flex-col bg-slate-50 overflow-hidden h-[100dvh] sm:h-[90vh] w-full sm:w-[1100px] max-w-full sm:max-w-[98vw] rounded-none sm:rounded-[32px] shadow-2xl animate-in fade-in zoom-in-95 duration-300">
                 {/* CLEAN HEADER */}
-                <div className="px-8 py-5 bg-white border-b border-slate-100 flex items-center justify-between shrink-0">
+                <div className="px-4 sm:px-8 py-4 sm:py-5 bg-white border-b border-slate-100 flex items-center justify-between shrink-0">
                     <div className="flex items-center gap-4">
                         <div className="w-10 h-10 bg-blue-600/10 rounded-2xl flex items-center justify-center text-blue-600">
                             <FiCalendar size={22} strokeWidth={2.5} />
@@ -796,11 +797,12 @@ export default function AppointmentModal({
                     </div>
                 )}
 
-                <div className="flex flex-1 overflow-hidden">
+                {/* En pantallas angostas: formulario arriba y horario debajo, con un solo desplazamiento. */}
+                <div className="flex flex-1 flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
                     {/* LEFT COL: FORM (Fixed Width) */}
                     <form
                         onSubmit={handleSubmit(onValidSubmit, onInvalidSubmit)}
-                        className="w-[400px] shrink-0 overflow-y-auto custom-scrollbar p-8 bg-white/50 border-r border-slate-100 space-y-6"
+                        className="w-full lg:w-[400px] shrink-0 lg:overflow-y-auto custom-scrollbar p-4 sm:p-8 bg-white/50 border-b lg:border-b-0 lg:border-r border-slate-100 space-y-6"
                     >
                         {/* SECTION: PACIENTE */}
                         <div className="space-y-4">
@@ -1138,7 +1140,7 @@ export default function AppointmentModal({
                     </form>
 
                     {/* RIGHT COL: SCHEDULE GRID (Flexible) */}
-                    <div className="flex-1 overflow-y-auto custom-scrollbar bg-white p-8 relative">
+                    <div className="lg:flex-1 lg:overflow-y-auto custom-scrollbar bg-white p-4 sm:p-8 relative">
                         <div className="flex items-center justify-between mb-8 sticky top-0 bg-white/95 backdrop-blur-md pb-4 z-10 border-b border-slate-50">
                             <div className="flex items-center gap-6">
                                 <button 
