@@ -13,7 +13,7 @@
     "test:config": "node scripts/test-config-integration.mjs",
     "test:odontograma": "node scripts/test-odontograma.mjs",
     "test:production": "node scripts/test-production-readiness.mjs",
-    "test:facturacion": "node --experimental-vm-modules scripts/test-factus-emission-regressions.mjs && node --experimental-vm-modules scripts/test-billing-notes-menu.mjs && node scripts/test-invoice-discard.mjs && node scripts/test-customer-nit.mjs && node scripts/test-credit-note-drafts.mjs && node scripts/test-annulled-invoices.mjs",
+    "test:facturacion": "node --experimental-vm-modules scripts/test-factus-emission-regressions.mjs && node --experimental-vm-modules scripts/test-billing-notes-menu.mjs && node scripts/test-invoice-discard.mjs && node scripts/test-customer-nit.mjs && node scripts/test-credit-note-drafts.mjs && node scripts/test-annulled-invoices.mjs && node scripts/test-expense-print.mjs",
     "test:ihce": "node scripts/test-ihce-isolated-suite.mjs",
     "test:ihce:connectivity": "node scripts/test-ihce-connectivity.mjs",
     "test:ci": "npm run security:check && npm run test:help && npm run test:agenda && npm run test:config && npm run test:odontograma && npm run test:production && npm run test:facturacion && npm run build",

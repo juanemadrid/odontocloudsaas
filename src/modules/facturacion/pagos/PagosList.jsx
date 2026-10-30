@@ -5,6 +5,7 @@ import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { toast } from "sonner";
 import { ReceiptPrintService } from "../../../services/ReceiptPrintService";
+import { formatEgresoConcepto, prepareExpensePrint } from "../../../services/expensePrintService";
 import { printDocumentoSoporte } from "../../../utils/electronicInvoiceTemplate";
 
 const fmt = (n) => {
@@ -31,14 +32,7 @@ const fmtDate = (ts) => {
   return d.toLocaleDateString("es-CO", { day: "2-digit", month: "2-digit", year: "numeric" });
 };
 
-export const formatEgresoConcepto = (concepto, pago) => {
-  if (!concepto) return "Egreso / Pago";
-  const s = String(concepto).trim();
-  if (pago?.liquidacionId || /^liquidaci[oó]n\s+(de\s+)?comisiones/i.test(s)) {
-    return "Liquidación comisiones";
-  }
-  return s;
-};
+export { formatEgresoConcepto } from "../../../services/expensePrintService";
 
 export default function PagosList({ onNew }) {
   const { userProfile } = useAuth();
@@ -476,142 +470,8 @@ export default function PagosList({ onNew }) {
         ciudad: userProfile?.tenant?.ciudad || userProfile?.tenantCiudad || "Sincelejo"
       };
 
-      const terceroNombre = pago.tercero || pago.proveedor || "BENEFICIARIO / TERCERO";
-      const terceroDoc = pago.documentoTercero || pago.nit || pago.cedula || "—";
-      const isNit = String(terceroDoc).replace(/\D/g, "").length >= 9;
-
-      const patientPayload = {
-        nombreCompleto: terceroNombre,
-        documento: terceroDoc,
-        tipoDocumento: isNit ? "NIT" : "CC",
-        direccion: pago.direccion || "—",
-        ciudad: pago.ciudad || userProfile?.tenantCiudad || "Sincelejo",
-        celular: pago.telefono || "—"
-      };
-
-      // 1. Identificar y resolver Facturas de Compra asociadas si existen
-      let facturasMap = {};
-      const tieneFacturas = pago.pagoFacturasCompra || 
-        (pago.facturasSeleccionadas && pago.facturasSeleccionadas.length > 0) ||
-        (pago.items && pago.items.some(it => it.isFactura || it.facturaId || /^FC[A-Z0-9\-_]*/i.test(it.concepto || "") || /^DS[A-Z0-9\-_]*/i.test(it.concepto || "")));
-
-      if (tieneFacturas) {
-        try {
-          const { data: fcDb } = await supabase
-            .from("facturas_compra")
-            .select("*")
-            .eq("tenant_id", inquilino);
-          if (fcDb && fcDb.length > 0) {
-            fcDb.forEach(f => {
-              if (f.id) facturasMap[f.id] = f;
-              if (f.nroFactura) facturasMap[f.nroFactura] = f;
-              if (f.documentoNumero) facturasMap[f.documentoNumero] = f;
-            });
-          }
-        } catch (_) {}
-
-        if (Object.keys(facturasMap).length === 0) {
-          try {
-            const { data: cfgRow } = await supabase
-              .from("website_config")
-              .select("config")
-              .eq("tenant_id", inquilino)
-              .maybeSingle();
-            const fcs = cfgRow?.config?.facturas_compra || [];
-            fcs.forEach(f => {
-              if (f.id) facturasMap[f.id] = f;
-              if (f.nroFactura) facturasMap[f.nroFactura] = f;
-              if (f.documentoNumero) facturasMap[f.documentoNumero] = f;
-            });
-          } catch (_) {}
-        }
-      }
-
-      let facturaRefNotas = [];
-      const itemsList = (pago.items && pago.items.length > 0)
-        ? pago.items.map(it => {
-            const isFc = it.isFactura || it.facturaId || /^FC[A-Z0-9\-_]*/i.test(it.concepto || "") || /^DS[A-Z0-9\-_]*/i.test(it.concepto || "");
-            const fcObj = isFc ? (facturasMap[it.facturaId] || facturasMap[it.concepto] || facturasMap[it.numeroFactura]) : null;
-
-            let descItem = "";
-            if (isFc) {
-              const numDoc = fcObj?.nroFactura || fcObj?.documentoNumero || it.numeroFactura || it.concepto;
-              if (numDoc) {
-                facturaRefNotas.push(numDoc);
-              }
-              // Resolver concepto real de la factura de compra (evitando repetir el nombre del proveedor)
-              if (fcObj && Array.isArray(fcObj.items) && fcObj.items.length > 0) {
-                descItem = fcObj.items.map(i => (i.concepto && i.descripcion && i.concepto !== i.descripcion) ? `${i.concepto} - ${i.descripcion}` : (i.concepto || i.descripcion)).filter(Boolean).join(", ");
-              } else if (fcObj?.concepto || fcObj?.descripcion) {
-                descItem = fcObj.concepto || fcObj.descripcion;
-              } else if (it.descripcion && it.descripcion !== terceroNombre && !it.descripcion.toLowerCase().includes(terceroNombre.toLowerCase())) {
-                descItem = it.descripcion;
-              } else {
-                descItem = "ADQUISICIÓN DE BIENES / SERVICIOS";
-              }
-            } else {
-              // Movimiento normal o de caja
-              if (it.concepto && it.descripcion && it.concepto !== it.descripcion) {
-                descItem = `${it.concepto} - ${it.descripcion}`;
-              } else {
-                descItem = it.concepto || it.descripcion || "Item";
-              }
-            }
-
-            return {
-              desc: formatEgresoConcepto(descItem, pago),
-              monto: it.total || it.precioUnitario || 0
-            };
-          })
-        : null;
-
-      // Limpieza de observaciones para evitar redundancias
-      let obsFinal = String(pago.observaciones || "").trim();
-
-      // Limpiar prefijo legacy "Factura de compra / Documento soporte:" si venía guardado
-      obsFinal = obsFinal.replace(/factura de compra\s*\/\s*documento soporte:\s*/gi, "").trim();
-
-      // Caso 1: Si es de caja menor y la observación sólo repite "Egreso caja menor: X"
-      // y ese texto ya está en la descripción del concepto, no duplicar en observaciones
-      if (/^egreso caja menor:\s*/i.test(obsFinal)) {
-        const obsContenido = obsFinal.replace(/^egreso caja menor:\s*/i, "").trim().toLowerCase();
-        const yaEnConcepto = (itemsList || []).some(it => it.desc.toLowerCase().includes(obsContenido));
-        if (yaEnConcepto || obsContenido === "") {
-          obsFinal = "";
-        }
-      }
-
-      // Caso 2: Si hay factura asociada, fijar el número de documento soporte/factura y anexar cualquier observación adicional
-      if (facturaRefNotas.length > 0) {
-        const uniqueFacturas = [...new Set(facturaRefNotas)].join(", ");
-        if (!obsFinal) {
-          obsFinal = uniqueFacturas;
-        } else if (!obsFinal.includes(uniqueFacturas)) {
-          obsFinal = `${uniqueFacturas} — ${obsFinal}`;
-        }
-      }
-
-      const isAnulado = pago.anulado || (pago.estado || "").toLowerCase() === "anulado";
-      const motivoAnulacionTexto = pago.motivo_anulacion || pago.motivoAnulacion || "";
-
-      const rawCompConcepto = (itemsList && itemsList[0]?.desc) || pago.concepto || "Egreso / Pago a proveedor";
-      const finalCompConcepto = formatEgresoConcepto(rawCompConcepto, pago);
-
-      const pagoPayload = {
-        ...pago,
-        tipo: "egreso",
-        tipoDocumento: "Egreso",
-        documentTitle: isAnulado ? "COMPROBANTE DE EGRESO (ANULADO)" : "COMPROBANTE DE EGRESO",
-        monto: Number(pago.monto || pago.total || 0),
-        concepto: finalCompConcepto,
-        nroConsecutivo: getExpenseNumber(pago) || "S/N",
-        medio: pago.medioPago || pago.bancoCaja || "Efectivo",
-        registradoPor: pago?.registradoPor || pago?.registrado_por || pago?.usuarioCreador || pago?.usuario_nombre || pago?.usuarioNombre || pago?.creadoPor || pago?.creado_por || pago?.cajero || pago?.usuario || userProfile?.nombreCompleto || "Administrador",
-        itemPayments: itemsList,
-        observaciones: isAnulado
-          ? `*** DOCUMENTO ANULADO: ${motivoAnulacionTexto || "Anulado por administración"} ***${obsFinal ? ` — ${obsFinal}` : ""}`
-          : obsFinal
-      };
+      // Mismo armado que en Facturas de compra; completa documento y celular del beneficiario.
+      const { pagoPayload, patientPayload } = await prepareExpensePrint({ tenantId: inquilino, pago, userProfile });
 
       await ReceiptPrintService.generatePDF(pagoPayload, patientPayload, clinic, userProfile);
     } catch (e) {

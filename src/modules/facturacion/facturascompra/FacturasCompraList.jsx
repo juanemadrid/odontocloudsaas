@@ -16,6 +16,7 @@ import factusService from "../../../services/factusService";
 import { getConfigSection, saveConfigSection } from "../../../services/configPersistenceService";
 import { printDocumentoSoporte } from "../../../utils/electronicInvoiceTemplate";
 import { ReceiptPrintService } from "../../../services/ReceiptPrintService";
+import { prepareExpensePrint } from "../../../services/expensePrintService";
 
 const fmt = (n) => {
   const num = Number(n || 0);
@@ -662,50 +663,10 @@ export default function FacturasCompraList({ onNew }) {
         logoUrl: clinicConfig?.logo || userProfile?.tenant?.logo || ""
       };
 
-      const terceroNombre = pago?.tercero || pago?.proveedor || fallbackFactura?.proveedor || fallbackFactura?.tercero || "BENEFICIARIO / TERCERO";
-      const terceroDoc = pago?.documentoTercero || pago?.nit || pago?.cedula || fallbackFactura?.documentoTercero || fallbackFactura?.nit || "—";
-      const isNit = String(terceroDoc).replace(/\D/g, "").length >= 9;
-
-      const patientPayload = {
-        nombreCompleto: terceroNombre,
-        documento: terceroDoc,
-        tipoDocumento: isNit ? "NIT" : "CC",
-        direccion: pago?.direccion || fallbackFactura?.direccion || fallbackFactura?.direccionProveedor || "—",
-        ciudad: pago?.ciudad || fallbackFactura?.ciudad || fallbackFactura?.ciudadProveedor || "Sincelejo",
-        celular: pago?.telefono || fallbackFactura?.telefono || "—"
-      };
-
-      const numDocFac = fallbackFactura?.nroFactura || fallbackFactura?.documentoNumero || fallbackFactura?.id || "";
-      const isAnulado = pago?.anulado || (pago?.estado || "").toLowerCase() === "anulado";
-      const montoTotal = Number(pago?.monto || pago?.total || fallbackFactura?.totalNeto || fallbackFactura?.total || 0);
-
-      const itemsList = Array.isArray(pago?.items) && pago.items.length > 0
-        ? pago.items
-        : [
-            {
-              desc: numDocFac ? `Pago Factura / Documento Soporte: ${numDocFac}` : (pago?.concepto || "Pago a proveedor"),
-              valor: montoTotal,
-              cantidad: 1,
-              total: montoTotal
-            }
-          ];
-
-      const pagoPayload = {
-        ...pago,
-        tipo: "egreso",
-        tipoDocumento: "Egreso",
-        documentTitle: isAnulado ? "COMPROBANTE DE EGRESO (ANULADO)" : "COMPROBANTE DE EGRESO",
-        monto: montoTotal,
-        total: montoTotal,
-        concepto: (itemsList[0]?.desc) || pago?.concepto || (numDocFac ? `Pago documento ${numDocFac}` : "Egreso / Pago a proveedor"),
-        nroConsecutivo: getExpenseNumber(pago) || "S/N",
-        medio: pago?.medioPago || pago?.medio || pago?.bancoCaja || fallbackFactura?.medioPago || "Efectivo",
-        registradoPor: pago?.registradoPor || pago?.registrado_por || pago?.usuarioCreador || pago?.usuario_nombre || pago?.usuarioNombre || pago?.creadoPor || pago?.creado_por || pago?.cajero || pago?.usuario || userProfile?.nombreCompleto || "Administración",
-        itemPayments: itemsList,
-        observaciones: isAnulado
-          ? `*** DOCUMENTO ANULADO *** ${pago?.observaciones || ""}`
-          : (pago?.observaciones || (numDocFac ? `Pago asociado a documento ${numDocFac}` : ""))
-      };
+      // Mismo armado que en Egresos: concepto, precio y total reales del egreso.
+      const { pagoPayload, patientPayload } = await prepareExpensePrint({
+        tenantId: inquilino, pago: pago || {}, fallbackFactura, userProfile,
+      });
 
       await ReceiptPrintService.generatePDF(pagoPayload, patientPayload, clinic, userProfile);
     } catch (e) {

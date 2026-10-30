@@ -1034,7 +1034,7 @@ export const pagarLiquidacion = async (tenantId, liquidacion, pagoOptions = {}, 
             precio: safeNumber(liquidacion.totalPagar),
             total: safeNumber(liquidacion.totalPagar)
         }],
-        observaciones: `Generado automáticamente desde módulo de Liquidaciones. Liquidación ID: ${liquidacion.id}`,
+        observaciones: "Generado automáticamente desde módulo de Liquidaciones.", // el ID queda en liquidacionId
         liquidacionId: liquidacion.id,
         created_at: nowIso,
         created_by: userProfile?.nombre || userProfile?.email || "Administración"
