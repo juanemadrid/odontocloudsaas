@@ -115,8 +115,16 @@ export default function Caja() {
       const cfgCajas = await getConfigSection(inquilino, "cajas", []);
 
       // Combinar cajas de DB y website_config con cálculo dinámico de saldos
+      // La fila de la base de datos no guarda el nombre del usuario ni quién cerró; esos datos
+      // están en la configuración. Se combinan (antes ganaba la fila de la base y salía "Usuario").
+      const cfgById = new Map((cfgCajas || []).filter(c => c && c.id).map(c => [c.id, c]));
+      const filled = (row) => Object.fromEntries(Object.entries(row || {}).filter(([, v]) => v !== null && v !== undefined && v !== ""));
+      const combined = [
+        ...list.map(row => (cfgById.has(row.id) ? { ...cfgById.get(row.id), ...filled(row) } : row)),
+        ...(cfgCajas || []),
+      ];
       const mergedMap = new Map();
-      [...list, ...cfgCajas].forEach(c => {
+      combined.forEach(c => {
         if (c && c.id && !mergedMap.has(c.id)) {
           const cajaMovs = movsList.filter(m => (m.caja_id === c.id || m.cajaId === c.id) && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado);
           const movIngresos = cajaMovs.filter(m => m.tipo === "ingreso").reduce((s, m) => s + Number(m.monto || 0), 0);

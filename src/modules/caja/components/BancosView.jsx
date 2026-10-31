@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import supabase from "../../../lib/supabaseClient";
+import { bankLabel, bankMovements, loadAllTransfers, loadBanksAndExpenses } from "../../../services/bankTransferService";
 import { getConfigItems, getConfigSection } from "../../../services/configPersistenceService";
 import { ReceiptPrintService } from "../../../services/ReceiptPrintService";
 import { 
@@ -61,95 +62,23 @@ export default function BancosView({ inquilino, userProfile }) {
     }
     setLoading(true);
     try {
-      const [
-        listBancos,
-        trasladosDbRes,
-        cajaMovsRes
-      ] = await Promise.all([
-        getConfigItems(inquilino, "bancos", "bancos").catch(() => []),
-        supabase.from("traslados").select("*").eq("tenant_id", inquilino).catch(() => ({ data: [] })),
-        supabase.from("movimientos_caja").select("*").eq("tenant_id", inquilino).eq("tipo", "traslado").catch(() => ({ data: [] }))
+      // Bancos de Configuración → Bancos, traslados (cierres de caja y manuales) y egresos
+      // pagados desde un banco. Antes una consulta mal armada fallaba y la lista quedaba vacía.
+      const [{ banks: listBancos, expenses }, allTraslados] = await Promise.all([
+        loadBanksAndExpenses(inquilino),
+        loadAllTransfers(inquilino),
       ]);
 
-      const cfgTraslados = await getConfigSection(inquilino, "traslados", []).catch(() => []);
-      const dbTraslados = trasladosDbRes?.data || [];
-      const movsTraslados = cajaMovsRes?.data || [];
-
-      // Consolidar todos los traslados sin duplicados
-      const processedTrMap = new Map();
-      [...dbTraslados, ...cfgTraslados].forEach(tr => {
-        if (!tr) return;
-        const key = tr.id || tr.referencia || `${tr.fecha}_${tr.origen}_${tr.destino}_${tr.monto}`;
-        if (!processedTrMap.has(key)) {
-          processedTrMap.set(key, tr);
-        }
-      });
-      movsTraslados.forEach(m => {
-        if (!m || (m.estado || "").toLowerCase() === "anulado" || m.anulado) return;
-        const key = m.referencia || m.id;
-        if (!processedTrMap.has(key)) {
-          processedTrMap.set(key, {
-            id: m.id,
-            fecha: m.fecha || m.created_at,
-            origen: m.caja_id || "Caja",
-            destino: m.metodo_pago || m.metodoPago || "Banco",
-            monto: Number(m.monto || 0),
-            descripcion: m.concepto || "Traslado desde caja",
-            referencia: m.referencia || `TR-${m.id}`
-          });
-        }
-      });
-
-      const allTraslados = Array.from(processedTrMap.values());
-
-      // Bancos configurados en Configuración -> Bancos
-      const baseBancos = listBancos || [];
-
-      // Calcular saldo y movimientos de cada banco basándose EXCLUSIVAMENTE en traslados
-      const updatedBancos = baseBancos.map(b => {
-        const bNameLower = (b.nombre || "").toLowerCase().trim();
+      const updatedBancos = (listBancos || []).map(b => {
+        const nombreBanco = bankLabel(b);
         const initialVal = Number(b.valor || b.saldo_inicial || 0);
-        let totalEntradas = 0;
-        let totalSalidas = 0;
-        const movements = [];
-
-        allTraslados.forEach((tr, idx) => {
-          const trDestino = (tr.destino || tr.banco_destino || "").toLowerCase().trim();
-          const trOrigen = (tr.origen || tr.banco_origen || "").toLowerCase().trim();
-          const monto = Number(tr.monto || 0);
-          if (monto <= 0) return;
-
-          const isDestino = trDestino.includes(bNameLower) || (bNameLower && bNameLower.includes(trDestino));
-          const isOrigen = trOrigen.includes(bNameLower) || (bNameLower && bNameLower.includes(trOrigen));
-
-          if (isDestino) {
-            totalEntradas += monto;
-            movements.push({
-              id: tr.id ? `tr_in_${tr.id}` : `tr_in_${idx}`,
-              fecha: tr.fecha || tr.created_at,
-              concepto: tr.descripcion || `Traslado recibido de ${tr.origen || 'Caja'}`,
-              documento: tr.referencia || `TRA-${String(idx + 1).padStart(4, "0")}`,
-              pacienteNombre: tr.origen || "Caja Clínica",
-              medio: "Traslado a Banco (+)",
-              monto,
-              tipo: "ingreso"
-            });
-          }
-
-          if (isOrigen) {
-            totalSalidas += monto;
-            movements.push({
-              id: tr.id ? `tr_out_${tr.id}` : `tr_out_${idx}`,
-              fecha: tr.fecha || tr.created_at,
-              concepto: tr.descripcion || `Traslado hacia ${tr.destino || 'Caja'}`,
-              documento: tr.referencia || `TRA-${String(idx + 1).padStart(4, "0")}`,
-              pacienteNombre: tr.destino || "Caja Clínica",
-              medio: "Traslado de Salida (-)",
-              monto,
-              tipo: "egreso"
-            });
-          }
-        });
+        const { movements: rawMovements, entradas: totalEntradas, salidas: totalSalidas } = bankMovements(nombreBanco, allTraslados, expenses);
+        const movements = rawMovements.map(m => ({
+          ...m,
+          pacienteNombre: m.tercero || (m.tipo === "ingreso" ? "Caja Clínica" : ""),
+          medio: m.clase === "Traslado +" ? "Traslado a Banco (+)" : (m.clase === "Traslado −" ? "Traslado de Salida (-)" : "Egreso desde banco (-)"),
+          documento: m.documento || (m.tipo === "ingreso" ? "TRA" : "EGR"),
+        }));
 
         // Ordenar cronológicamente ascendente para saldo acumulado
         const sortedAsc = [...movements].sort((x, y) => {
@@ -180,11 +109,20 @@ export default function BancosView({ inquilino, userProfile }) {
             total: totalEntradas
           });
         }
-        if (totalSalidas > 0) {
+        const salidasTraslado = movements.filter(m => m.clase === "Traslado −");
+        const salidasEgreso = movements.filter(m => m.clase === "Egreso desde banco");
+        if (salidasTraslado.length) {
           summaries.push({
             name: "Salidas por Traslado (-)",
-            count: movements.filter(m => m.tipo === "egreso").length,
-            total: -totalSalidas
+            count: salidasTraslado.length,
+            total: -salidasTraslado.reduce((t, m) => t + m.monto, 0)
+          });
+        }
+        if (salidasEgreso.length) {
+          summaries.push({
+            name: "Egresos pagados desde el banco (-)",
+            count: salidasEgreso.length,
+            total: -salidasEgreso.reduce((t, m) => t + m.monto, 0)
           });
         }
 
@@ -193,7 +131,7 @@ export default function BancosView({ inquilino, userProfile }) {
 
         return {
           ...b,
-          nombre: b.nombre || "Cuenta Bancaria",
+          nombre: nombreBanco || "Cuenta Bancaria",
           numero_cuenta: numeroCuenta,
           numeroCuenta: numeroCuenta,
           fecha: fechaApertura,

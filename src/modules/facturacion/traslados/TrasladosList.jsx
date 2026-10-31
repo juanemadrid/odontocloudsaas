@@ -4,6 +4,8 @@ import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { getConfigItems, getConfigSection, saveConfigSection } from "../../../services/configPersistenceService";
 import { toast } from "sonner";
+import { bankNames, loadAllTransfers, loadBanksAndExpenses, expensesFromBank, normalizeAccountName, saveTransfers } from "../../../services/bankTransferService";
+import { todayBogota } from "../../../utils/bogotaDate";
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
@@ -29,24 +31,20 @@ export default function TrasladosList({ onNew }) {
   const [fechaInicio, setFechaInicio] = useState(() => {
     const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().split("T")[0];
   });
-  const [fechaFin, setFechaFin] = useState(new Date().toISOString().split("T")[0]);
+  const [fechaFin, setFechaFin] = useState(todayBogota());
 
   // Modal Nuevo Traslado
   const [showModal, setShowModal] = useState(false);
   const [savingTraslado, setSavingTraslado] = useState(false);
-  const [cuentasDisponibles, setCuentasDisponibles] = useState([
-    "Caja Principal (Efectivo)",
-    "Bancolombia",
-    "Nequi",
-    "Daviplata",
-    "Davivienda",
-    "Banco de Bogotá"
-  ]);
+  // Solo cuentas reales: la caja y los bancos creados en Configuración → Bancos.
+  const [cuentasDisponibles, setCuentasDisponibles] = useState(["Caja Principal (Efectivo)"]);
+  const [bancosNombres, setBancosNombres] = useState([]);
+  const [direccion, setDireccion] = useState("todos"); // todos | entrada (+) | salida (−)
   const [origen, setOrigen] = useState("Caja Principal (Efectivo)");
-  const [destino, setDestino] = useState("Bancolombia");
+  const [destino, setDestino] = useState("");
   const [montoDisplay, setMontoDisplay] = useState("");
   const [montoRaw, setMontoRaw] = useState(0);
-  const [fechaTraslado, setFechaTraslado] = useState(new Date().toISOString().split("T")[0]);
+  const [fechaTraslado, setFechaTraslado] = useState(todayBogota());
   const [descripcion, setDescripcion] = useState("");
   const [referencia, setReferencia] = useState("");
 
@@ -56,23 +54,23 @@ export default function TrasladosList({ onNew }) {
     if (!inquilino) return;
     setLoading(true);
     try {
-      let list = [];
-      try {
-        const { data } = await supabase
-          .from("traslados")
-          .select("*")
-          .eq("tenant_id", inquilino);
-        if (data && data.length > 0) list = data;
-      } catch (e) {}
-
-      if (list.length === 0) {
-        const { data: cfgRow } = await supabase
-          .from("website_config")
-          .select("config")
-          .eq("tenant_id", inquilino)
-          .maybeSingle();
-        list = cfgRow?.config?.traslados || [];
-      }
+      // Traslados de cierres de caja y manuales, y egresos pagados desde un banco (salidas).
+      const [transfers, { banks, expenses }] = await Promise.all([loadAllTransfers(inquilino), loadBanksAndExpenses(inquilino)]);
+      const names = bankNames(banks);
+      setBancosNombres(names);
+      const egresosBanco = names.flatMap(name => expensesFromBank(expenses, name).map(p => ({
+        id: `eg_${p.id}`,
+        esEgreso: true,
+        fecha: p.fecha || p.created_at,
+        origen: name,
+        destino: p.tercero || p.proveedor || "Proveedor",
+        monto: Number(p.monto ?? p.total ?? 0),
+        descripcion: `Egreso desde banco: ${p.concepto || "Pago"}`,
+        referencia: p.consecutivo || p.numero || "",
+        estado: p.estado || "Activo",
+        created_at: p.created_at,
+      })));
+      const list = [...transfers, ...egresosBanco];
 
       const start = parseLocalDate(fechaInicio); start.setHours(0,0,0,0);
       const end = parseLocalDate(fechaFin); end.setHours(23,59,59,999);
@@ -97,28 +95,10 @@ export default function TrasladosList({ onNew }) {
     if (!inquilino) return;
     const loadCuentas = async () => {
       try {
-        const [bancosDb, cajasDb] = await Promise.all([
-          getConfigItems(inquilino, "bancos", "bancos").catch(() => []),
-          supabase.from("cajas").select("*").eq("tenant_id", inquilino).catch(() => ({ data: [] }))
-        ]);
-        const list = ["Caja Principal (Efectivo)"];
-        (cajasDb?.data || []).forEach(c => {
-          const nom = c.nombre || c.usuarioNombre ? `Caja: ${c.nombre || c.usuarioNombre}` : "";
-          if (nom && !list.includes(nom)) list.push(nom);
-        });
-        const userBancos = [];
-        (bancosDb || []).forEach(b => {
-          const nom = (typeof b === "string" ? b : (b.nombre || b.nombreBanco || b.banco || "")).trim();
-          if (nom && !list.includes(nom) && !userBancos.includes(nom)) {
-            userBancos.push(nom);
-            list.push(nom);
-          }
-        });
-        if (userBancos.length === 0) {
-          if (!list.includes("Bancolombia")) list.push("Bancolombia");
-          if (!list.includes("Nequi")) list.push("Nequi");
-        }
+        const { banks } = await loadBanksAndExpenses(inquilino);
+        const list = ["Caja Principal (Efectivo)", ...bankNames(banks)];
         setCuentasDisponibles(list);
+        setDestino(prev => prev || list[1] || "");
       } catch (_) {}
     };
     loadCuentas();
@@ -128,6 +108,10 @@ export default function TrasladosList({ onNew }) {
     e?.preventDefault();
     if (montoRaw <= 0) {
       toast.error("Por favor ingrese un monto válido para el traslado");
+      return;
+    }
+    if (!destino) {
+      toast.error("Cree primero el banco en Configuración → Bancos y selecciónelo como destino");
       return;
     }
     if (origen === destino) {
@@ -150,33 +134,10 @@ export default function TrasladosList({ onNew }) {
         created_at: ahoraIso
       };
 
-      try {
-        const { data } = await supabase.from("traslados").insert([newTraslado]).select();
-        if (data && data[0]) {
-          newTraslado.id = data[0].id;
-        }
-      } catch (err) {
-        console.warn("Aviso insertando en tabla traslados:", err);
-      }
-
-      try {
-        const currentList = await getConfigSection(inquilino, "traslados", []);
-        await saveConfigSection(inquilino, "traslados", [newTraslado, ...currentList]);
-      } catch (_) {}
-
-      try {
-        await supabase.from("movimientos_caja").insert([
-          {
-            tenant_id: inquilino,
-            tipo: "traslado",
-            concepto: newTraslado.descripcion,
-            monto: montoRaw,
-            fecha: newTraslado.fecha,
-            referencia: newTraslado.referencia,
-            created_at: ahoraIso
-          }
-        ]);
-      } catch (_) {}
+      newTraslado.id = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `tr_${Date.now()}`;
+      newTraslado.tipo = "manual";
+      newTraslado.usuario = userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email || "";
+      await saveTransfers(inquilino, [newTraslado]);
 
       toast.success("Traslado registrado correctamente");
       setShowModal(false);
@@ -193,11 +154,20 @@ export default function TrasladosList({ onNew }) {
     }
   };
 
-  const filtered = traslados.filter(t =>
-    (t.origen || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (t.destino || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (t.descripcion || "").toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const isBank = (name) => bancosNombres.some(b => normalizeAccountName(b) === normalizeAccountName(name));
+  // Traslado + = dinero que entra a un banco; Traslado − = dinero que sale de un banco (traslado o egreso).
+  const tipoDe = (t) => (t.esEgreso || isBank(t.origen)) ? (isBank(t.destino) ? "both" : "salida") : (isBank(t.destino) ? "entrada" : "otro");
+  const filtered = traslados.filter(t => {
+    const tipo = tipoDe(t);
+    if (direccion === "entrada" && tipo !== "entrada" && tipo !== "both") return false;
+    if (direccion === "salida" && tipo !== "salida" && tipo !== "both") return false;
+    const q = searchTerm.toLowerCase();
+    return (t.origen || "").toLowerCase().includes(q) ||
+      (t.destino || "").toLowerCase().includes(q) ||
+      (t.descripcion || "").toLowerCase().includes(q);
+  });
+  const totalEntradas = filtered.filter(t => ["entrada", "both"].includes(tipoDe(t)) && t.estado !== "Anulado").reduce((a, t) => a + Number(t.monto || 0), 0);
+  const totalSalidas = filtered.filter(t => ["salida", "both"].includes(tipoDe(t)) && t.estado !== "Anulado").reduce((a, t) => a + Number(t.monto || 0), 0);
 
   return (
     <div className="p-1.5 sm:p-4 md:p-6 max-w-[1400px] mx-auto space-y-6 animate-in fade-in duration-500">
@@ -246,6 +216,23 @@ export default function TrasladosList({ onNew }) {
         </div>
       </div>
 
+      {/* Tipo de traslado */}
+      <div className="flex flex-wrap items-center gap-2">
+        {[
+          ["todos", "Todos"],
+          ["entrada", "Traslado + (entradas a bancos)"],
+          ["salida", "Traslado − (salidas de bancos)"],
+        ].map(([id, label]) => (
+          <button key={id} onClick={() => setDireccion(id)}
+            className={`px-4 h-9 rounded-xl text-[12px] font-bold border cursor-pointer transition-colors ${direccion === id ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"}`}>
+            {label}
+          </button>
+        ))}
+        <span className="ml-auto text-[12px] font-bold text-slate-500">
+          Entradas: <span className="text-emerald-600">{fmt(totalEntradas)}</span> · Salidas: <span className="text-rose-600">{fmt(totalSalidas)}</span>
+        </span>
+      </div>
+
       {/* Table */}
       <div className="bg-white rounded-[28px] border border-slate-100 shadow-sm overflow-hidden">
         <div className="overflow-auto max-h-[550px] custom-scrollbar">
@@ -253,6 +240,7 @@ export default function TrasladosList({ onNew }) {
             <thead className="sticky top-0 bg-slate-50 z-10 border-b border-slate-100">
               <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
                 <th className="px-6 py-4 pl-8">Fecha</th>
+                <th className="px-6 py-4">Tipo</th>
                 <th className="px-6 py-4">Origen</th>
                 <th className="px-6 py-4">Destino</th>
                 <th className="px-6 py-4">Descripción</th>
@@ -263,7 +251,7 @@ export default function TrasladosList({ onNew }) {
             <tbody className="divide-y divide-slate-50 text-[13px] text-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan="6" className="px-8 py-20 text-center">
+                  <td colSpan="7" className="px-8 py-20 text-center">
                     <div className="flex flex-col items-center gap-4">
                       <div className="w-10 h-10 border-4 border-[#8cc33f] border-t-transparent rounded-full animate-spin" />
                       <span className="text-xs font-black text-slate-400 uppercase tracking-widest">Cargando traslados...</span>
@@ -272,7 +260,7 @@ export default function TrasladosList({ onNew }) {
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="px-8 py-20 text-center">
+                  <td colSpan="7" className="px-8 py-20 text-center">
                     <div className="flex flex-col items-center gap-3">
                       <div className="w-14 h-14 rounded-2xl bg-slate-50 flex items-center justify-center">
                         <FiRepeat className="text-slate-300" size={28} />
@@ -285,6 +273,16 @@ export default function TrasladosList({ onNew }) {
               ) : filtered.map(t => (
                 <tr key={t.id} className="hover:bg-slate-50/30 transition-colors group">
                   <td className="px-6 py-4 pl-8 font-semibold text-slate-500">{fmtDate(t.fecha)}</td>
+                  <td className="px-6 py-4">
+                    {(() => {
+                      const tipo = tipoDe(t);
+                      if (t.esEgreso) return <span className="px-2 py-1 rounded-full text-[10px] font-black bg-rose-50 text-rose-700">EGRESO −</span>;
+                      if (tipo === "entrada") return <span className="px-2 py-1 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700">TRASLADO +</span>;
+                      if (tipo === "salida") return <span className="px-2 py-1 rounded-full text-[10px] font-black bg-rose-50 text-rose-700">TRASLADO −</span>;
+                      if (tipo === "both") return <span className="px-2 py-1 rounded-full text-[10px] font-black bg-blue-50 text-blue-700">ENTRE BANCOS</span>;
+                      return <span className="px-2 py-1 rounded-full text-[10px] font-black bg-slate-100 text-slate-600">TRASLADO</span>;
+                    })()}
+                  </td>
                   <td className="px-6 py-4 font-bold text-slate-800">{t.origen || "—"}</td>
                   <td className="px-6 py-4 font-bold text-slate-800">{t.destino || "—"}</td>
                   <td className="px-6 py-4 text-slate-500">{t.descripcion || "—"}</td>

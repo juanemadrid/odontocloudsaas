@@ -49,8 +49,17 @@ export default function FacturacionHub() {
   const inquilino = userProfile?.inquilino || userProfile?.tenantId || userProfile?.tenant_id;
   const clinicName = userProfile?.tenant?.nombre || userProfile?.tenant_nombre || userProfile?.clinica || "Clínica Dental Sincelejo";
   const hasFE = hasElectronicInvoicingAccess(userProfile);
+  // "Traslados" es nuevo en muchos perfiles: si el perfil nunca lo configuró, lo ve quien puede
+  // ver Egresos o Recibos de caja. Si el perfil lo tiene configurado (marcado o no), se respeta.
+  const permKeys = userProfile?.permisos && typeof userProfile.permisos === "object" && !Array.isArray(userProfile.permisos)
+    ? Object.keys(userProfile.permisos) : [];
+  const trasladosConfigurado = permKeys.some(k => String(k).normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase() === "traslados");
+  const canTraslados = trasladosConfigurado
+    ? can("Administración", "Traslados", "consultar")
+    : (can("Administración", "Traslados", "consultar") || can("Administración", "Pagos a proveedores", "consultar") || can("Administración", "Recibo de caja", "consultar"));
   const visibleOptions = FACT_OPTIONS.filter(opt => {
     if (["fv","nc","nd"].includes(opt.id) && !hasFE) return false;
+    if (opt.id === "traslados") return canTraslados;
     if (opt.perm && !can("Administración", opt.perm, "consultar")) return false;
     return true;
   });

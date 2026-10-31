@@ -8,7 +8,7 @@ const fmtPure = (n) => new Intl.NumberFormat("es-CO").format(n);
 export default function AbrirCajaModal({ inquilino, userProfile, onClose, onSuccess }) {
   const [form, setForm] = useState({
     userId: userProfile?.uid || "",
-    userName: userProfile?.nombre || userProfile?.email || "Usuario",
+    userName: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.displayName || userProfile?.email || "Usuario",
     nombreCaja: "Caja Principal",
     baseActual: 0,
     ajustarBase: "",

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import supabase from "../../../lib/supabaseClient";
 import { getConfigSection, saveConfigSection, getConfigItems } from "../../../services/configPersistenceService";
+import { bankNames, buildClosingTransfers, saveTransfers } from "../../../services/bankTransferService";
 import { FiX, FiLock, FiAlertTriangle, FiCheckCircle, FiTrendingUp, FiTrendingDown, FiPlus, FiMinus, FiRepeat } from "react-icons/fi";
 
 const fmt = (n) =>
@@ -62,16 +63,7 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
     const fetchBancos = async () => {
       try {
         const list = await getConfigItems(inquilino, "bancos", "bancos");
-        const mapped = (list || [])
-          .map(b => typeof b === "string" ? b.trim() : (b.nombre || b.nombreBanco || b.banco || "").trim())
-          .filter(Boolean);
-        const unique = [];
-        mapped.forEach(name => {
-          if (!unique.some(u => u.toLowerCase() === name.toLowerCase())) {
-            unique.push(name);
-          }
-        });
-        setBancosList(unique);
+        setBancosList(bankNames(list));
       } catch (_) {}
     };
     fetchBancos();
@@ -136,10 +128,21 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
 
   const handleCerrar = async () => {
     if (!confirmed) { setError("Confirma que has realizado el conteo físico."); return; }
+    // Nombre real de quien cierra (antes podía quedar "Usuario" o el correo).
+    const cerradoPor = userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.displayName || userProfile?.email || "Usuario";
+    // Traslados a bancos: se validan ANTES de cerrar (banco, valor y que no supere lo contado).
+    const ahora = new Date();
+    let traslados = [];
+    try {
+      traslados = buildClosingTransfers({ caja, destinos: destinosTraslado, contado: conteoTotal, usuario: cerradoPor, now: ahora });
+    } catch (vErr) {
+      setError(vErr.message);
+      return;
+    }
     setSaving(true);
     setError("");
     try {
-      const fechaCierreIso = new Date().toISOString();
+      const fechaCierreIso = ahora.toISOString();
       const updatedCajaObj = {
         ...caja,
         estado: "cerrada",
@@ -155,8 +158,10 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
         totalEgresos,
         total_egresos: totalEgresos,
         observacionCierre: observacion.trim(),
-        cierradoPor: userProfile?.nombre || userProfile?.email || "Usuario",
-        cierradoPorId: userProfile?.uid || "",
+        cierradoPor: cerradoPor,
+        cerradoPor: cerradoPor,
+        cierradoPorId: userProfile?.uid || userProfile?.id || "",
+        trasladosCierre: traslados.map(t => ({ id: t.id, destino: t.destino, monto: t.monto, medio: t.medio, referencia: t.referencia, fecha: t.fecha })),
         updated_at: fechaCierreIso
       };
 
@@ -184,39 +189,14 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
         await saveConfigSection(inquilino, "cajas", updatedList);
       } catch (e) {}
 
-      // Registrar traslados automáticos a bancos si fueron seleccionados (1:1 OralDrive)
-      for (const d of destinosTraslado) {
-        const valNum = Number(d.valor || 0);
-        if (valNum > 0 && d.banco) {
-          const newTraslado = {
-            tenant_id: inquilino,
-            fecha: fechaCierreIso.split("T")[0],
-            origen: caja.nombre || caja.usuarioNombre || "Caja Principal",
-            destino: d.banco,
-            monto: valNum,
-            descripcion: `Traslado automático por cierre de caja - ${caja.usuarioNombre || caja.nombre || 'Caja'} (${d.medio || 'Efectivo'})`,
-            referencia: `TR-CIERRE-${String(caja.id || '').slice(0, 6).toUpperCase()}`,
-            estado: "Activo",
-            created_at: fechaCierreIso
-          };
-
-          try {
-            await supabase.from("traslados").insert([newTraslado]);
-          } catch (_) {}
-
-          try {
-            await supabase.from("movimientos_caja").insert([{
-              tenant_id: inquilino,
-              caja_id: caja.id,
-              tipo: "traslado",
-              concepto: newTraslado.descripcion,
-              monto: valNum,
-              metodoPago: d.medio || "Efectivo",
-              fecha: newTraslado.fecha,
-              referencia: newTraslado.referencia,
-              created_at: fechaCierreIso
-            }]);
-          } catch (_) {}
+      // Registrar los traslados a bancos donde los leen Traslados, Caja → Bancos y Reportes.
+      if (traslados.length) {
+        try {
+          await saveTransfers(inquilino, traslados);
+        } catch (tErr) {
+          console.error("Error registrando traslados del cierre:", tErr);
+          setError("La caja se cerró, pero el traslado a banco no se pudo registrar. Regístrelo en Administración → Facturación → Traslados.");
+          return;
         }
       }
 

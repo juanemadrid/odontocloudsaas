@@ -8,6 +8,7 @@ import React, { useState, useEffect } from "react";
 import supabase from "../../../lib/supabaseClient";
 import { FiSearch, FiEye, FiArrowLeft, FiFileText, FiPrinter, FiX } from "react-icons/fi";
 import { ReceiptPrintService } from "../../../services/ReceiptPrintService";
+import { loadAllTransfers } from "../../../services/bankTransferService";
 
 const fmt = (n) => {
   const num = Number(n || 0);
@@ -47,6 +48,22 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
   const [search, setSearch] = useState("");
   const [selectedMovimiento, setSelectedMovimiento] = useState(null);
   const [tenantConfig, setTenantConfig] = useState(null);
+  const [trasladosCaja, setTrasladosCaja] = useState(() => Array.isArray(caja?.trasladosCierre) ? caja.trasladosCierre : []);
+
+  // Traslados a bancos hechos al cerrar esta caja (registro final del cierre).
+  useEffect(() => {
+    const inq = userProfile?.inquilino || caja?.tenant_id || caja?.inquilino;
+    if (!caja?.id || !inq) return;
+    let alive = true;
+    loadAllTransfers(inq)
+      .then(list => {
+        const mine = (list || []).filter(t => t && t.caja_id === caja.id && String(t.estado || "").toLowerCase() !== "anulado");
+        if (alive && mine.length) setTrasladosCaja(mine);
+      })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [caja?.id, userProfile?.inquilino]);
+  const totalTrasladado = trasladosCaja.reduce((s, t) => s + Number(t.monto || 0), 0);
 
   // Cargar datos reales de la empresa / inquilino desde Supabase
   useEffect(() => {
@@ -700,6 +717,36 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
           </div>
         </div>
       </div>
+
+      {/* Traslados a bancos al cierre */}
+      {trasladosCaja.length > 0 && (
+        <div className="bg-white rounded-md border border-slate-200 shadow-sm p-6 max-w-5xl mx-auto space-y-3">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+            <h2 className="text-[16px] font-bold text-slate-800">Traslados a bancos al cierre</h2>
+            <span className="text-[13px] font-bold text-blue-700">Total trasladado: {fmt(totalTrasladado)}</span>
+          </div>
+          <table className="w-full text-[13px] border-collapse">
+            <thead>
+              <tr className="border-b border-slate-200 text-[12px] text-slate-500">
+                <th className="py-2 px-3 text-left font-bold">Banco destino</th>
+                <th className="py-2 px-3 text-left font-bold">Medio</th>
+                <th className="py-2 px-3 text-left font-bold">Documento</th>
+                <th className="py-2 px-3 text-right font-bold">Valor</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {trasladosCaja.map((t, i) => (
+                <tr key={t.id || i}>
+                  <td className="py-2 px-3 font-semibold text-slate-800">{t.destino || "—"}</td>
+                  <td className="py-2 px-3 text-slate-600">{t.medio || "Efectivo"}</td>
+                  <td className="py-2 px-3 text-slate-600">{t.referencia || "—"}</td>
+                  <td className="py-2 px-3 text-right font-bold text-blue-700">{fmt(t.monto)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Card Movimientos ("Hojita") */}
       <div className="bg-white rounded-md border border-slate-200 shadow-sm p-6 max-w-5xl mx-auto space-y-4">
