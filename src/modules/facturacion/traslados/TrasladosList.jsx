@@ -4,7 +4,7 @@ import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { getConfigItems, getConfigSection, saveConfigSection } from "../../../services/configPersistenceService";
 import { toast } from "sonner";
-import { bankNames, loadAllTransfers, loadBanksAndExpenses, expensesFromBank, normalizeAccountName, saveTransfers, tidyTransferText, localDate } from "../../../services/bankTransferService";
+import { bankNames, loadAllTransfers, loadBanksAndExpenses, expensesFromBank, normalizeAccountName, saveTransfers, tidyTransferText, localDate, loadOpenCajas } from "../../../services/bankTransferService";
 import { todayBogota } from "../../../utils/bogotaDate";
 
 const fmt = (n) =>
@@ -39,6 +39,7 @@ export default function TrasladosList({ onNew }) {
   // Solo cuentas reales: la caja y los bancos creados en Configuración → Bancos.
   const [cuentasDisponibles, setCuentasDisponibles] = useState(["Caja Principal (Efectivo)"]);
   const [bancosNombres, setBancosNombres] = useState([]);
+  const [cajasAbiertas, setCajasAbiertas] = useState([]); // [{ id, label }] para que el traslado sume en esa caja
   const [direccion, setDireccion] = useState("todos"); // todos | entrada (+) | salida (−)
   const [origen, setOrigen] = useState("Caja Principal (Efectivo)");
   const [destino, setDestino] = useState("");
@@ -91,18 +92,24 @@ export default function TrasladosList({ onNew }) {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  useEffect(() => {
+  // Cuentas para el traslado: las cajas ABIERTAS (por su nombre) y los bancos de Configuración → Bancos.
+  // Así un traslado de un banco a una caja suma en el saldo de esa caja.
+  const loadCuentas = useCallback(async () => {
     if (!inquilino) return;
-    const loadCuentas = async () => {
-      try {
-        const { banks } = await loadBanksAndExpenses(inquilino);
-        const list = ["Caja Principal (Efectivo)", ...bankNames(banks)];
-        setCuentasDisponibles(list);
-        setDestino(prev => prev || list[1] || "");
-      } catch (_) {}
-    };
-    loadCuentas();
+    try {
+      const [{ banks }, open] = await Promise.all([loadBanksAndExpenses(inquilino), loadOpenCajas(inquilino).catch(() => [])]);
+      const cajaLabels = open.length ? open.map(c => c.label) : ["Caja Principal (Efectivo)"];
+      const bancos = bankNames(banks);
+      const list = [...cajaLabels, ...bancos];
+      setCajasAbiertas(open);
+      setCuentasDisponibles(list);
+      setOrigen(prev => (list.includes(prev) ? prev : list[0] || ""));
+      setDestino(prev => (list.includes(prev) ? prev : (bancos[0] || list[1] || "")));
+    } catch (_) {}
   }, [inquilino]);
+
+  useEffect(() => { loadCuentas(); }, [loadCuentas]);
+  useEffect(() => { if (showModal) loadCuentas(); }, [showModal, loadCuentas]);
 
   const handleSaveTraslado = async (e) => {
     e?.preventDefault();
@@ -135,6 +142,10 @@ export default function TrasladosList({ onNew }) {
       };
 
       newTraslado.id = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `tr_${Date.now()}`;
+      // Caja exacta de origen o destino: el traslado aparece en sus movimientos y suma/resta en su saldo.
+      const cajaIdDe = (label) => cajasAbiertas.find(c => c.label === label)?.id || null;
+      newTraslado.caja_origen_id = cajaIdDe(origen);
+      newTraslado.caja_destino_id = cajaIdDe(destino);
       newTraslado.tipo = "manual";
       newTraslado.usuario = userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email || "";
       await saveTransfers(inquilino, [newTraslado]);
@@ -351,6 +362,12 @@ export default function TrasladosList({ onNew }) {
                   </select>
                 </div>
               </div>
+
+              {cajasAbiertas.length === 0 && (
+                <p className="text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                  No hay cajas abiertas. Si el dinero va hacia una caja o sale de ella, abra primero la caja para que se sume en su saldo.
+                </p>
+              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>

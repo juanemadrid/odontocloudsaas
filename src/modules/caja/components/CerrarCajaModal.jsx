@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import supabase from "../../../lib/supabaseClient";
 import { getConfigSection, saveConfigSection, getConfigItems } from "../../../services/configPersistenceService";
-import { bankNames, buildClosingTransfers, saveTransfers } from "../../../services/bankTransferService";
+import { bankNames, buildClosingTransfers, saveTransfers, loadCajaTransferContext, cajaTransferMovements } from "../../../services/bankTransferService";
 import { FiX, FiLock, FiAlertTriangle, FiCheckCircle, FiTrendingUp, FiTrendingDown, FiPlus, FiMinus, FiRepeat } from "react-icons/fi";
 
 const fmt = (n) =>
@@ -52,7 +52,13 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
         .select("*")
         .eq("caja_id", caja.id)
         .order("created_at", { ascending: false });
-      setMovimientos(data || []);
+      // Los traslados de banco ↔ caja también cuentan en el efectivo esperado.
+      let trasladoMovs = [];
+      try {
+        const ctx = await loadCajaTransferContext(inquilino);
+        trasladoMovs = cajaTransferMovements(ctx.transfers, caja, { allCajas: ctx.cajas, banks: ctx.banks });
+      } catch (_) {}
+      setMovimientos([...(data || []), ...trasladoMovs]);
       setLoadingMov(false);
     };
     fetchMovs();

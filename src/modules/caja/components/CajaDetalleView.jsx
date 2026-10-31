@@ -8,7 +8,7 @@ import React, { useState, useEffect } from "react";
 import supabase from "../../../lib/supabaseClient";
 import { FiSearch, FiEye, FiArrowLeft, FiFileText, FiPrinter, FiX } from "react-icons/fi";
 import { ReceiptPrintService } from "../../../services/ReceiptPrintService";
-import { loadAllTransfers } from "../../../services/bankTransferService";
+import { loadAllTransfers, loadCajaTransferContext, cajaTransferMovements } from "../../../services/bankTransferService";
 
 const fmt = (n) => {
   const num = Number(n || 0);
@@ -215,8 +215,17 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
         };
       });
 
+      // Traslados banco ↔ esta caja (ej. de Nequi a la caja): suman o restan en el saldo.
+      let trasladoMovs = [];
+      try {
+        const ctx = await loadCajaTransferContext(inquilinoId);
+        trasladoMovs = cajaTransferMovements(ctx.transfers, caja, { allCajas: ctx.cajas, banks: ctx.banks });
+      } catch (e) {}
+      const time = (m) => new Date(m.fecha || m.created_at || 0).getTime();
+      const all = [...parsedChronological, ...trasladoMovs].sort((a, b) => time(a) - time(b));
+
       // Ordenar del más reciente al más antiguo para la vista
-      setMovimientos([...parsedChronological].reverse());
+      setMovimientos([...all].reverse());
       setLoading(false);
     };
 
@@ -840,6 +849,9 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
                       <td className="px-3 py-3 text-slate-700 font-medium">{fmt(balanceMap[m.id] ?? totalCaja)}</td>
                       <td className="px-3 py-3 text-slate-500 uppercase">{sucursalNombre}</td>
                       <td className="px-3 py-3">
+                        {m.esTraslado ? (
+                          <span className="inline-block whitespace-nowrap px-2 py-1 rounded-full text-[10px] font-black bg-purple-50 text-purple-700" title={m.referencia || ""}>TRASLADO</span>
+                        ) : (
                         <button
                           onClick={() => setSelectedMovimiento(m)}
                           title="Ver recibo / comprobante"
@@ -847,6 +859,7 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
                         >
                           <FiEye size={13} />
                         </button>
+                        )}
                       </td>
                     </tr>
                   );

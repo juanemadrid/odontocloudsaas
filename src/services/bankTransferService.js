@@ -144,6 +144,124 @@ export async function loadAllTransfers(tenantId, deps = {}) {
   return out;
 }
 
+// ── Traslados que entran o salen de una caja abierta ──
+
+const ts = (v) => { const d = localDate(v); return d ? d.getTime() : NaN; };
+const cajaOpenedAt = (c) => ts(c?.fechaApertura || c?.fecha_apertura || c?.created_at);
+const cajaClosedAt = (c) => {
+  const closed = /cerrad/i.test(String(c?.estado || "")) || c?.fechaCierre || c?.fecha_cierre;
+  if (!closed) return Infinity;
+  const t = ts(c?.fechaCierre || c?.fecha_cierre || c?.updated_at);
+  // Cerrada sin hora de cierre registrada: no se le asigna nada posterior a su apertura.
+  return Number.isNaN(t) ? cajaOpenedAt(c) : t;
+};
+const isOpenCaja = (c) => !/cerrad/i.test(String(c?.estado || "")) && !c?.fechaCierre && !c?.fecha_cierre;
+
+/** Cajas abiertas (configuración + tabla), con un nombre claro para escoger en un traslado. */
+export async function loadOpenCajas(tenantId, deps = {}) {
+  const client = deps.client || supabase;
+  const getSection = deps.getSection || ((t, k, f) => loadConfigSection(t, k, f, true));
+  let cfg = [];
+  try { const v = await getSection(tenantId, "cajas", []); if (Array.isArray(v)) cfg = v; } catch { /* sin configuración */ }
+  let rows = [];
+  try {
+    const { data, error } = await client.from("cajas").select("*").eq("tenant_id", tenantId);
+    if (!error && Array.isArray(data)) rows = data;
+  } catch { /* sin tabla */ }
+  const byId = new Map();
+  for (const c of [...cfg, ...rows]) {
+    if (!c?.id) continue;
+    byId.set(c.id, { ...(byId.get(c.id) || {}), ...Object.fromEntries(Object.entries(c).filter(([, v]) => v !== null && v !== undefined && v !== "")) });
+  }
+  const open = [...byId.values()].filter(isOpenCaja)
+    .sort((a, b) => cajaOpenedAt(b) - cajaOpenedAt(a))
+    .map((c) => ({ id: c.id, label: cajaLabel(c.nombre || c.usuarioNombre || c.usuario_nombre || ""), raw: c }));
+  // Dos cajas con el mismo nombre: se distinguen por la hora de apertura.
+  const repeated = new Set(open.map((c) => c.label).filter((l, i, all) => all.indexOf(l) !== i));
+  for (const c of open) {
+    if (repeated.has(c.label)) {
+      const d = localDate(c.raw.fechaApertura || c.raw.fecha_apertura || c.raw.created_at);
+      if (d) c.label = `${c.label} (abierta ${d.toLocaleString("es-CO", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })})`;
+    }
+  }
+  return open.map(({ id, label }) => ({ id, label }));
+}
+
+/**
+ * Traslados de banco ↔ caja como movimientos de esa caja, para que sumen o resten en su saldo.
+ * Se reconocen por caja_destino_id / caja_origen_id. Los traslados viejos sin esos datos
+ * (ej. destino "Caja Principal (Efectivo)") se asignan a la caja que estaba abierta a esa hora,
+ * solo si había UNA sola abierta (si no, no se adivina). Los traslados del cierre no cuentan aquí:
+ * ocurren al cerrar y se muestran aparte.
+ */
+export function cajaTransferMovements(transfers, caja, { allCajas = [], banks = [] } = {}) {
+  if (!caja?.id) return [];
+  // Una entrada por caja (la configuración y la tabla pueden traer la misma caja dos veces).
+  const merged = new Map();
+  for (const c of [caja, ...(Array.isArray(allCajas) ? allCajas : [])]) {
+    if (!c?.id) continue;
+    merged.set(c.id, { ...(merged.get(c.id) || {}), ...Object.fromEntries(Object.entries(c).filter(([, v]) => v !== null && v !== undefined && v !== "")) });
+  }
+  const cajas = [...merged.values()];
+  const self = merged.get(caja.id);
+  const bankList = bankNames(banks);
+  const isBankName = (n) => bankList.some((b) => sameAccount(b, n));
+  const genericCaja = (n) => /\bcaja\b/i.test(String(n || "")) && !isBankName(n);
+  const onlyOpenAt = (time) => {
+    if (Number.isNaN(time)) return false;
+    const openNow = cajas.filter((c) => cajaOpenedAt(c) <= time && time <= cajaClosedAt(c));
+    return openNow.length === 1 && openNow[0].id === self.id;
+  };
+  const out = [];
+  for (const t of Array.isArray(transfers) ? transfers : []) {
+    if (!t || isVoid(t) || t.tipo === "cierre_caja") continue;
+    const monto = Number(t.monto || t.valor || 0);
+    if (!(monto > 0)) continue;
+    const linked = t.caja_destino_id || t.caja_origen_id;
+    const when = ts(t.created_at || t.fecha);
+    let tipo = null;
+    if (t.caja_destino_id === caja.id) tipo = "ingreso";
+    else if (t.caja_origen_id === caja.id) tipo = "egreso";
+    else if (!linked && onlyOpenAt(when)) {
+      if (genericCaja(t.destino) && !genericCaja(t.origen)) tipo = "ingreso";
+      else if (genericCaja(t.origen) && !genericCaja(t.destino)) tipo = "egreso";
+    }
+    if (!tipo) continue;
+    const otro = tidyTransferText(tipo === "ingreso" ? t.origen : t.destino) || "";
+    out.push({
+      id: `tr_${t.id || t.referencia}`,
+      caja_id: caja.id,
+      tipo,
+      monto,
+      metodo_pago: "Efectivo",
+      metodoPago: "Efectivo",
+      concepto: tipo === "ingreso" ? `Traslado desde ${otro}` : `Traslado hacia ${otro}`,
+      descripcion: tidyTransferText(t.descripcion) || "",
+      referencia: t.referencia || "",
+      nroConsecutivo: t.referencia || "",
+      consecutivo: t.referencia || "",
+      created_at: t.created_at || t.fecha,
+      fecha: t.created_at || t.fecha,
+      estado: t.estado || "Activo",
+      tercero: otro,
+      pacienteNombre: otro,
+      esTraslado: true,
+    });
+  }
+  return out;
+}
+
+/** Lo necesario para calcular los traslados de las cajas: traslados, bancos y cajas (lectura fresca). */
+export async function loadCajaTransferContext(tenantId, deps = {}) {
+  const getSection = deps.getSection || ((t, k, f) => loadConfigSection(t, k, f, true));
+  const [transfers, bk, cajas] = await Promise.all([
+    loadAllTransfers(tenantId, deps).catch(() => []),
+    loadBanksAndExpenses(tenantId, deps).catch(() => ({ banks: [] })),
+    Promise.resolve().then(() => getSection(tenantId, "cajas", [])).catch(() => []),
+  ]);
+  return { transfers: transfers || [], banks: bk?.banks || [], cajas: Array.isArray(cajas) ? cajas : [] };
+}
+
 /** Egresos (pagos a proveedores) que salieron de un banco y no de una caja. */
 export const expensesFromBank = (expenses, bankName) =>
   (Array.isArray(expenses) ? expenses : []).filter((p) => !isVoid(p) && sameAccount(p?.bancoCaja, bankName));

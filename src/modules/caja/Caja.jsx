@@ -13,6 +13,7 @@ import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { usePermissions } from "../../hooks/usePermissions";
 import { getConfigSection } from "../../services/configPersistenceService";
+import { loadCajaTransferContext, cajaTransferMovements } from "../../services/bankTransferService";
 
 import CajaListView from "./components/CajaListView";
 import AbrirCajaModal from "./components/AbrirCajaModal";
@@ -113,6 +114,8 @@ export default function Caja() {
       } catch (e) {}
 
       const cfgCajas = await getConfigSection(inquilino, "cajas", []);
+      let trCtx = { transfers: [], banks: [], cajas: [] };
+      try { trCtx = await loadCajaTransferContext(inquilino); } catch (e) {}
 
       // Combinar cajas de DB y website_config con cálculo dinámico de saldos
       // La fila de la base de datos no guarda el nombre del usuario ni quién cerró; esos datos
@@ -126,7 +129,9 @@ export default function Caja() {
       const mergedMap = new Map();
       combined.forEach(c => {
         if (c && c.id && !mergedMap.has(c.id)) {
-          const cajaMovs = movsList.filter(m => (m.caja_id === c.id || m.cajaId === c.id) && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado);
+          const trasladoMovs = cajaTransferMovements(trCtx.transfers, c, { allCajas: combined, banks: trCtx.banks });
+          const cajaMovs = [...movsList.filter(m => (m.caja_id === c.id || m.cajaId === c.id)), ...trasladoMovs]
+            .filter(m => (m.estado || "").toLowerCase() !== "anulado" && !m.anulado);
           const movIngresos = cajaMovs.filter(m => m.tipo === "ingreso").reduce((s, m) => s + Number(m.monto || 0), 0);
           const movEgresos = cajaMovs.filter(m => m.tipo === "egreso").reduce((s, m) => s + Number(m.monto || 0), 0);
           const baseInicial = Number(c.base_inicial ?? c.baseInicial ?? 0);

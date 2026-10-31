@@ -11,7 +11,7 @@ register('data:text/javascript,' + encodeURIComponent(`
     return next(specifier, context);
   }`));
 const svc = await import('../src/services/bankTransferService.js');
-const { buildClosingTransfers, saveTransfers, loadAllTransfers, bankMovements, bankNames, cajaLabel, tidyTransferText, localDate } = svc;
+const { buildClosingTransfers, saveTransfers, loadAllTransfers, bankMovements, bankNames, cajaLabel, tidyTransferText, localDate, cajaTransferMovements, loadOpenCajas } = svc;
 
 // 1. Traslados del cierre: validados y con todo lo que leen Traslados, Bancos y Reportes.
 const caja = { id: '8f2c1a90-aaaa', nombre: 'Caja Principal', usuarioNombre: 'Juan Madrid' };
@@ -148,3 +148,43 @@ assert.ok(rules.rowMatchesProfessional({ profesional: 'Dra. Andrea Pérez' }, 'A
 assert.ok(rules.rowMatchesProfessional({ profesional: 'x' }, 'Todos', profs));
 assert.ok(rules.isTransferRow({ tipoDocumento: 'Traslado-' }) && !rules.isTransferRow({ tipoDocumento: 'Egreso-' }));
 console.log('PASS: Reporte de facturación: fechas del día correcto, sede y profesional bien filtrados, traslados aparte de ingresos y egresos; Traslado+ entra al banco y Traslado− sale del banco (incluye pagos).');
+
+// 8. Traslados banco ↔ caja abierta: aparecen en los movimientos de la caja y suman a su saldo.
+const abierta = { id: 'c-open', nombre: 'Caja - juan madrid', estado: 'abierta', fechaApertura: '2026-10-31T12:14:11.902Z' };
+const cerrada = { id: 'c-old', nombre: 'Caja - juan madrid', estado: 'cerrada', fechaApertura: '2026-10-31T11:14:00Z', fechaCierre: '2026-10-31T12:09:00Z' };
+const sinCierre = { id: 'c-x', estado: 'cerrada', fechaApertura: '2026-10-30T02:15:44Z' };
+const trs = [
+  { id: 'a', tipo: 'manual', origen: 'nequi', destino: 'Caja Juan Madrid', caja_destino_id: 'c-open', monto: 200000, referencia: 'TR-1', created_at: '2026-10-31T13:00:00Z' },
+  { id: 'b', tipo: 'manual', origen: 'Caja Juan Madrid', destino: 'nequi', caja_origen_id: 'c-open', monto: 20000, created_at: '2026-10-31T13:10:00Z' },
+  { id: 'c', tipo: 'manual', origen: 'nequi', destino: 'Caja Principal (Efectivo)', monto: 100000, created_at: '2026-10-31T13:20:00Z' },   // viejo, sin caja: solo una abierta → esta
+  { id: 'd', tipo: 'cierre_caja', caja_id: 'c-open', origen: 'Caja: Caja - juan madrid', destino: 'nequi', monto: 5000, created_at: '2026-10-31T13:30:00Z' }, // cierre: no
+  { id: 'e', tipo: 'manual', origen: 'nequi', destino: 'Caja Principal (Efectivo)', monto: 7000, estado: 'Anulado', created_at: '2026-10-31T13:40:00Z' }, // anulado: no
+  { id: 'f', tipo: 'manual', origen: 'nequi', destino: 'Bancolombia', monto: 9000, created_at: '2026-10-31T13:50:00Z' },                 // entre bancos: no
+  { id: 'g', tipo: 'manual', origen: 'nequi', destino: 'Caja Principal (Efectivo)', monto: 1000, created_at: '2026-10-31T11:30:00Z' },   // cuando estaba abierta la otra caja
+];
+const movs = cajaTransferMovements(trs, abierta, { allCajas: [cerrada, sinCierre, abierta], banks: ['nequi', 'Bancolombia'] });
+assert.deepEqual(movs.map((m) => [m.id, m.tipo, m.monto]), [['tr_a', 'ingreso', 200000], ['tr_b', 'egreso', 20000], ['tr_c', 'ingreso', 100000]]);
+assert.equal(movs[0].concepto, 'Traslado desde nequi');
+assert.equal(movs[1].concepto, 'Traslado hacia nequi');
+assert.ok(movs.every((m) => m.esTraslado && m.metodo_pago === 'Efectivo' && m.caja_id === 'c-open'));
+assert.deepEqual(cajaTransferMovements(trs, cerrada, { allCajas: [cerrada, sinCierre, abierta], banks: ['nequi'] }).map((m) => m.id), ['tr_g'], 'el traslado viejo va a la caja abierta en ese momento');
+// Dos cajas abiertas a la vez: un traslado viejo sin caja no se adivina.
+const otra = { id: 'c-2', nombre: 'Recepción', estado: 'abierta', fechaApertura: '2026-10-31T12:00:00Z' };
+assert.deepEqual(cajaTransferMovements(trs, abierta, { allCajas: [abierta, otra], banks: ['nequi'] }).map((m) => m.id), ['tr_a', 'tr_b']);
+// "Banco Caja Social" es un banco, no una caja.
+assert.equal(cajaTransferMovements([{ id: 'h', origen: 'nequi', destino: 'Banco Caja Social', monto: 1, created_at: '2026-10-31T13:00:00Z' }], abierta, { allCajas: [abierta], banks: ['nequi', 'Banco Caja Social'] }).length, 0);
+const open = await loadOpenCajas('t1', {
+  getSection: async () => [abierta, cerrada, { ...otra, nombre: 'Caja - juan madrid' }],
+  client: { from: () => ({ select: () => ({ eq: async () => ({ data: [{ id: 'c-open', estado: 'abierta', tenant_id: 't1' }], error: null }) }) }) },
+});
+assert.equal(open.length, 2);
+assert.ok(open.every((c) => c.label.startsWith('Caja Juan Madrid (abierta ')), 'dos cajas con el mismo nombre se distinguen por la hora');
+const detalle2 = await read('src/modules/caja/components/CajaDetalleView.jsx');
+assert.ok(detalle2.includes('cajaTransferMovements(ctx.transfers, caja, { allCajas: ctx.cajas, banks: ctx.banks })') && detalle2.includes('m.esTraslado ?'));
+const cerrar2 = await read('src/modules/caja/components/CerrarCajaModal.jsx');
+assert.ok(cerrar2.includes('setMovimientos([...(data || []), ...trasladoMovs]);'), 'el cierre cuenta los traslados en el efectivo esperado');
+const cajaJsx2 = await read('src/modules/caja/Caja.jsx');
+assert.ok(cajaJsx2.includes('cajaTransferMovements(trCtx.transfers, c, { allCajas: combined, banks: trCtx.banks })'), 'la lista de cajas suma los traslados');
+const lista2 = await read('src/modules/facturacion/traslados/TrasladosList.jsx');
+assert.ok(lista2.includes('newTraslado.caja_destino_id = cajaIdDe(destino);') && lista2.includes('loadOpenCajas(inquilino)'), 'el traslado nuevo guarda la caja exacta');
+console.log('PASS: un traslado de un banco a la caja abierta aparece en sus movimientos y suma al saldo (y se cuenta al cerrar).');
