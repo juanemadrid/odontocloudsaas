@@ -527,37 +527,40 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
                     loading={loading}
                 />
             ) : showModal && (
-                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1100] flex items-center justify-center p-4 animate-fadeIn">
-                    <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-4xl overflow-hidden border border-slate-100 flex flex-col max-h-[90vh]">
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-[1100] flex items-center justify-center p-4 animate-in fade-in duration-150">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]">
                         
                         {/* Modal Header */}
-                        <div className="p-8 border-b border-slate-50 bg-slate-50/30 flex justify-between items-center">
-                            <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center shadow-lg shadow-blue-200">
-                                    <FiEdit3 size={24} />
+                        <div className="px-6 py-4 border-b border-slate-200 bg-slate-50/80 flex justify-between items-center shrink-0">
+                            <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
+                                    <FiEdit3 size={18} />
                                 </div>
                                 <div className="flex flex-col">
-                                    <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">
+                                    <h3 className="text-base font-bold text-slate-800">
                                         {currentItem ? 'Editar producto' : 'Agregar producto'}
                                     </h3>
-                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest tracking-widest mt-0.5">Categoría: {targetCat}</span>
+                                    <span className="text-xs font-medium text-slate-500">Categoría: {targetCat}</span>
                                 </div>
                             </div>
-                            <button onClick={() => setShowModal(false)} className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-slate-200 transition-colors">
-                                <FiX size={24} className="text-slate-400" />
+                            <button 
+                                onClick={() => setShowModal(false)} 
+                                className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors border-0 bg-transparent cursor-pointer"
+                            >
+                                <FiX size={18} />
                             </button>
                         </div>
 
                         {/* Modal Content - Scrollable Area */}
-                        <div className="p-10 overflow-y-auto custom-scrollbar space-y-8">
+                        <div className="p-6 overflow-y-auto custom-scrollbar space-y-5">
                             
                             {/* Row 1: Codigo & Nombre */}
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                <div className="space-y-2 relative">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Código CUPS *</label>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div className="space-y-1.5 relative">
+                                    <label className="text-xs font-semibold text-slate-700">Código CUPS *</label>
                                     <div className="relative">
                                         <input 
-                                            className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 text-[14px] font-black text-slate-700 uppercase outline-none focus:bg-white focus:ring-4 focus:ring-blue-500/5 transition-all"
+                                            className="w-full h-10 px-3.5 bg-white border border-slate-300 rounded-lg text-sm font-semibold text-slate-800 uppercase placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
                                             value={formData.codigo}
                                             onChange={e => {
                                                 const val = e.target.value.toUpperCase();
@@ -571,44 +574,44 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
                                         
                                         {/* CUPS Suggestions Dropdown */}
                                         {showCupsDropdown && filteredCUPS.length > 0 && (
-                                            <div className="absolute left-0 right-0 top-full mt-2 bg-white border border-slate-200 shadow-2xl rounded-[28px] z-50 p-3 max-h-72 overflow-y-auto animate-fadeIn custom-scrollbar">
+                                            <div className="absolute left-0 right-0 top-full mt-1.5 bg-white border border-slate-200 shadow-xl rounded-lg z-50 p-1.5 max-h-60 overflow-y-auto custom-scrollbar">
                                                 {filteredCUPS.map(c => (
                                                     <div
                                                         key={c.code}
                                                         onClick={() => handleSelectCUPS(c)}
-                                                        className="p-4 hover:bg-blue-50 rounded-2xl cursor-pointer border-b border-slate-50 last:border-0 flex justify-between items-center transition-all group/cups"
+                                                        className="p-2.5 hover:bg-blue-50 rounded-md cursor-pointer border-b border-slate-100 last:border-0 flex justify-between items-center transition-colors group/cups"
                                                     >
                                                         <div className="flex flex-col">
-                                                            <div className="text-[12px] font-black text-slate-800 uppercase tracking-tight group-hover/cups:text-blue-600">{c.name}</div>
-                                                            <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{c.code}</div>
+                                                            <div className="text-xs font-bold text-slate-800 group-hover/cups:text-blue-600">{c.name}</div>
+                                                            <div className="text-[10px] font-medium text-slate-400">{c.code}</div>
                                                         </div>
-                                                        <FiCheck className="text-emerald-500 opacity-0 group-hover/cups:opacity-100 transition-opacity" />
+                                                        <FiCheck className="text-emerald-500 opacity-0 group-hover/cups:opacity-100 transition-opacity" size={16} />
                                                     </div>
                                                 ))}
                                             </div>
                                         )}
                                     </div>
                                 </div>
-                                <div className="md:col-span-2 space-y-2">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre procedimiento *</label>
+                                <div className="md:col-span-2 space-y-1.5">
+                                    <label className="text-xs font-semibold text-slate-700">Nombre procedimiento *</label>
                                     <input 
-                                        className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-5 py-4 text-[14px] font-black text-slate-700 uppercase outline-none focus:bg-white focus:ring-4 focus:ring-blue-500/5 transition-all"
+                                        className="w-full h-10 px-3.5 bg-white border border-slate-300 rounded-lg text-sm font-semibold text-slate-800 uppercase placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
                                         value={formData.nombre}
                                         onChange={e => setFormData({...formData, nombre: e.target.value.toUpperCase()})}
-                                        placeholder="NOMBRE DEL PROCEDIMIENTO O PRODUCTO..."
+                                        placeholder="Nombre del procedimiento o producto..."
                                     />
                                 </div>
                             </div>
 
-                            {/* Row 2: Precio */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Precio *</label>
+                            {/* Row 2: Precio & Observaciones */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-semibold text-slate-700">Precio *</label>
                                     <div className="relative">
-                                        <div className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-300 font-bold">$</div>
+                                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-semibold text-sm">$</div>
                                         <input 
                                             type="text"
-                                            className="w-full bg-slate-50 border border-slate-100 rounded-2xl pl-10 pr-5 py-4 text-[14px] font-black text-slate-700 outline-none focus:bg-white focus:ring-4 focus:ring-blue-500/5 transition-all"
+                                            className="w-full h-10 pl-8 pr-3.5 bg-white border border-slate-300 rounded-lg text-sm font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
                                             value={formatCOP(formData.precio)}
                                             onChange={e => {
                                                 const val = parseCOP(e.target.value);
@@ -618,26 +621,27 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
                                         />
                                     </div>
                                 </div>
-                                <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Observaciones</label>
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-semibold text-slate-700">Observaciones</label>
                                     <textarea 
-                                        className="w-full bg-slate-50 border border-slate-100 rounded-2xl px-5 py-3 text-[14px] font-bold text-slate-600 outline-none focus:bg-white focus:ring-4 focus:ring-blue-500/5 transition-all min-h-[52px]"
+                                        className="w-full px-3.5 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors min-h-[40px] max-h-24 resize-y"
                                         value={formData.observaciones}
                                         onChange={e => setFormData({...formData, observaciones: e.target.value})}
                                         placeholder="Notas adicionales..."
+                                        rows={1}
                                     />
                                 </div>
                             </div>
 
                             {/* Row 3: Pago Fijo Doctor */}
-                            <div className="p-6 bg-blue-50/50 border border-blue-100 rounded-[28px] flex flex-col md:flex-row gap-6 items-center">
-                                <div className="flex-1 space-y-2 w-full">
-                                    <label className="text-[10px] font-black text-blue-400 uppercase tracking-widest ml-1">Pago valor fijo a doctores</label>
+                            <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg flex flex-col md:flex-row gap-4 items-center">
+                                <div className="flex-1 space-y-1.5 w-full">
+                                    <label className="text-xs font-semibold text-slate-700">Pago valor fijo a doctores</label>
                                     <div className="relative">
-                                        <div className="absolute left-5 top-1/2 -translate-y-1/2 text-blue-200 font-bold">$</div>
+                                        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-semibold text-sm">$</div>
                                         <input 
                                             type="text"
-                                            className="w-full bg-white border border-blue-100 rounded-xl pl-10 pr-5 py-3 text-[14px] font-black text-slate-700 outline-none focus:ring-4 focus:ring-blue-500/5"
+                                            className="w-full h-10 pl-8 pr-3.5 bg-white border border-slate-300 rounded-lg text-sm font-semibold text-slate-800 disabled:bg-slate-100 disabled:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
                                             value={formatCOP(formData.pago_fijo_doctor)}
                                             onChange={e => {
                                                 const val = parseCOP(e.target.value);
@@ -647,61 +651,63 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
                                         />
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-3">
+                                <div className="flex items-center gap-2.5 pt-4 md:pt-6">
                                     <input 
                                         type="checkbox" 
                                         id="usarFijo"
-                                        className="w-6 h-6 rounded-lg text-blue-600 focus:ring-blue-500 border-slate-300 transition-all cursor-pointer"
+                                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
                                         checked={formData.usar_pago_fijo}
                                         onChange={e => setFormData({...formData, usar_pago_fijo: e.target.checked})}
                                     />
-                                    <label htmlFor="usarFijo" className="text-[11px] font-bold text-slate-500 uppercase leading-none cursor-pointer">Usar este campo para no liquidar por %</label>
+                                    <label htmlFor="usarFijo" className="text-xs font-medium text-slate-600 cursor-pointer select-none">
+                                        Usar este campo para no liquidar por %
+                                    </label>
                                 </div>
                             </div>
 
                             {/* Section: Booleans & Limits (RIPS, Consulta, Descuento) */}
-                            <div className="space-y-6">
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                    <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    <label htmlFor="pDesc" className="flex items-center gap-2.5 p-3 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-100/60 transition-colors">
                                         <input 
                                             type="checkbox" 
                                             id="pDesc"
                                             checked={formData.permite_descuento}
                                             onChange={e => setFormData({...formData, permite_descuento: e.target.checked})}
-                                            className="w-5 h-5 rounded text-blue-600 cursor-pointer"
+                                            className="w-4 h-4 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
                                         />
-                                        <label htmlFor="pDesc" className="text-[11px] font-black text-slate-600 uppercase cursor-pointer">Permite Descuento</label>
-                                    </div>
-                                    <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                        <span className="text-xs font-semibold text-slate-700 select-none">Permite Descuento</span>
+                                    </label>
+                                    <label htmlFor="gRips" className="flex items-center gap-2.5 p-3 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-100/60 transition-colors">
                                         <input 
                                             type="checkbox" 
                                             id="gRips"
                                             checked={formData.genera_rips}
                                             onChange={e => setFormData({...formData, genera_rips: e.target.checked})}
-                                            className="w-5 h-5 rounded text-blue-600 cursor-pointer"
+                                            className="w-4 h-4 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
                                         />
-                                        <label htmlFor="gRips" className="text-[11px] font-black text-slate-600 uppercase cursor-pointer">Genera RIPS</label>
-                                    </div>
-                                    <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                                        <span className="text-xs font-semibold text-slate-700 select-none">Genera RIPS</span>
+                                    </label>
+                                    <label htmlFor="eCons" className="flex items-center gap-2.5 p-3 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer hover:bg-slate-100/60 transition-colors">
                                         <input 
                                             type="checkbox" 
                                             id="eCons"
                                             checked={formData.es_consulta}
                                             onChange={e => setFormData({...formData, es_consulta: e.target.checked})}
-                                            className="w-5 h-5 rounded text-blue-600 cursor-pointer"
+                                            className="w-4 h-4 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer"
                                         />
-                                        <label htmlFor="eCons" className="text-[11px] font-black text-slate-600 uppercase cursor-pointer">Es Consulta</label>
-                                    </div>
+                                        <span className="text-xs font-semibold text-slate-700 select-none">Es Consulta</span>
+                                    </label>
                                 </div>
 
                                 {formData.permite_descuento && (
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6 bg-emerald-50/30 border border-emerald-100 rounded-[28px] animate-in zoom-in-95 duration-300">
-                                        <div className="space-y-2">
-                                            <label className="text-[10px] font-black text-emerald-600 uppercase tracking-widest ml-1">Máximo % de Descuento</label>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-slate-50/80 border border-slate-200 rounded-lg">
+                                        <div className="space-y-1.5">
+                                            <label className="text-xs font-semibold text-slate-700">Máximo % de Descuento</label>
                                             <div className="relative">
                                                 <input 
                                                     type="number"
-                                                    className="w-full bg-white border border-emerald-100 rounded-xl px-4 py-3 text-[14px] font-black text-slate-700 outline-none"
+                                                    className="w-full h-10 pr-8 pl-3.5 bg-white border border-slate-300 rounded-lg text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
                                                     value={formData.max_descuento_porcentaje}
                                                     onChange={e => {
                                                         const p = e.target.value === "" ? "" : Number(e.target.value);
@@ -709,17 +715,18 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
                                                         const v = p === "" ? "" : Math.round((p / 100) * price);
                                                         setFormData({...formData, max_descuento_porcentaje: p, max_descuento_valor: v});
                                                     }}
+                                                    placeholder="0"
                                                 />
-                                                <div className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-400 font-bold">%</div>
+                                                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 font-semibold text-sm">%</div>
                                             </div>
                                         </div>
-                                        <div className="space-y-2">
-                                            <label className="text-[10px] font-black text-emerald-600 uppercase tracking-widest ml-1">Máximo Valor de Descuento ($)</label>
+                                        <div className="space-y-1.5">
+                                            <label className="text-xs font-semibold text-slate-700">Máximo Valor de Descuento ($)</label>
                                             <div className="relative">
-                                                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-400 font-bold">$</div>
+                                                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-semibold text-sm">$</div>
                                                 <input 
                                                     type="text"
-                                                    className="w-full bg-white border border-emerald-100 rounded-xl pl-10 pr-4 py-3 text-[14px] font-black text-slate-700 outline-none"
+                                                    className="w-full h-10 pl-8 pr-3.5 bg-white border border-slate-300 rounded-lg text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
                                                     value={formatCOP(formData.max_descuento_valor)}
                                                     onChange={e => {
                                                         const v = parseCOP(e.target.value);
@@ -727,6 +734,7 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
                                                         const p = v === "" ? "" : (price > 0 ? Number(((v / price) * 100).toFixed(2)) : 0);
                                                         setFormData({...formData, max_descuento_valor: v, max_descuento_porcentaje: p});
                                                     }}
+                                                    placeholder="0"
                                                 />
                                             </div>
                                         </div>
@@ -735,49 +743,57 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
                             </div>
 
                             {/* Section: Agenda Logic */}
-                            <div className="p-8 bg-slate-50 rounded-[32px] border border-slate-100 space-y-6">
-                                <div className="flex items-center justify-between border-b border-slate-200 pb-4">
+                            <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-4">
+                                <div className="flex items-center justify-between border-b border-slate-200 pb-3">
                                      <div className="flex items-center gap-3">
-                                        <span className="text-[12px] font-black text-slate-700 uppercase tracking-tight">Ver en agenda</span>
-                                        <div 
+                                        <span className="text-xs font-semibold text-slate-700">Ver en agenda</span>
+                                        <button
+                                            type="button"
                                             onClick={() => setFormData({...formData, ver_en_agenda: !formData.ver_en_agenda})}
-                                            className={`w-14 h-7 rounded-full p-1 cursor-pointer transition-all duration-300 shadow-inner ${formData.ver_en_agenda ? 'bg-blue-500' : 'bg-slate-300'}`}
+                                            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${formData.ver_en_agenda ? 'bg-blue-600' : 'bg-slate-300'}`}
                                         >
-                                            <div className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform duration-300 ${formData.ver_en_agenda ? 'translate-x-7' : 'translate-x-0'}`} />
-                                        </div>
+                                            <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${formData.ver_en_agenda ? 'translate-x-4' : 'translate-x-0'}`} />
+                                        </button>
                                      </div>
-                                     <div className="flex items-center gap-2">
-                                        <input type="checkbox" id="vOnline" checked={formData.ver_en_agenda_online} onChange={e => setFormData({...formData, ver_en_agenda_online: e.target.checked})} className="w-4 h-4 rounded text-blue-600" />
-                                        <label htmlFor="vOnline" className="text-[10px] font-bold text-slate-400 uppercase cursor-pointer">Ver en agenda online</label>
-                                     </div>
+                                     <label htmlFor="vOnline" className="flex items-center gap-2 cursor-pointer">
+                                        <input 
+                                            type="checkbox" 
+                                            id="vOnline" 
+                                            checked={formData.ver_en_agenda_online} 
+                                            onChange={e => setFormData({...formData, ver_en_agenda_online: e.target.checked})} 
+                                            className="w-4 h-4 rounded text-blue-600 border-slate-300 focus:ring-blue-500" 
+                                        />
+                                        <span className="text-xs font-medium text-slate-600 select-none">Ver en agenda online</span>
+                                     </label>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 opacity-100 transition-opacity">
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nombre Agenda</label>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-semibold text-slate-700">Nombre Agenda</label>
                                         <input 
-                                            className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-[13px] font-bold text-slate-600"
+                                            className="w-full h-10 px-3.5 bg-white border border-slate-300 rounded-lg text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
                                             value={formData.nombre_agenda}
                                             onChange={e => setFormData({...formData, nombre_agenda: e.target.value})}
                                             placeholder="Nombre corto..."
                                         />
                                     </div>
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Tiempo (Min)</label>
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-semibold text-slate-700">Tiempo (Min)</label>
                                         <select 
-                                            className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-[13px] font-black text-slate-600 outline-none"
+                                            className="w-full h-10 px-3 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-800 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
                                             value={formData.tiempo}
                                             onChange={e => setFormData({...formData, tiempo: Number(e.target.value)})}
                                         >
                                             {[5, 10, 15, 20, 30, 45, 60, 90, 120].map(t => <option key={t} value={t}>{t} Minutos</option>)}
                                         </select>
                                     </div>
-                                    <div className="space-y-2">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Identificador</label>
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-semibold text-slate-700">Identificador</label>
                                         <input 
-                                            className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-[13px] font-bold text-slate-600"
+                                            className="w-full h-10 px-3.5 bg-white border border-slate-300 rounded-lg text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
                                             value={formData.identificador_agenda}
                                             onChange={e => setFormData({...formData, identificador_agenda: e.target.value})}
+                                            placeholder="Identificador..."
                                         />
                                     </div>
                                 </div>
@@ -785,21 +801,21 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
                         </div>
 
                         {/* Modal Footer */}
-                        <div className="p-8 border-t border-slate-50 bg-slate-50/50 flex gap-4">
+                        <div className="px-6 py-4 border-t border-slate-200 bg-slate-50/70 flex justify-end items-center gap-3 shrink-0">
                             <button 
                                 onClick={() => setShowModal(false)}
-                                className="flex-1 py-4 bg-white border-2 border-slate-200 text-slate-400 hover:text-slate-600 hover:border-slate-300 rounded-2xl font-black text-[11px] uppercase tracking-widest transition-all"
+                                className="px-4 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-sm font-medium transition-colors cursor-pointer"
                             >
                                 Cerrar
                             </button>
                             <button 
                                 onClick={handleSaveItem}
                                 disabled={loading}
-                                className="flex-[2] py-4 bg-[#8CC63F] text-white rounded-2xl font-black text-[12px] uppercase tracking-[0.1em] shadow-xl shadow-[#8CC63F]/20 hover:bg-[#7bb335] transition-all active:scale-95 flex items-center justify-center gap-3"
+                                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-semibold shadow-sm transition-colors flex items-center gap-2 cursor-pointer border-0"
                             >
                                 {loading ? 'Guardando...' : (
                                     <>
-                                        <FiCheck size={18} strokeWidth={3} /> Guardar Cambios
+                                        <FiCheck size={16} /> Guardar Cambios
                                     </>
                                 )}
                             </button>
@@ -811,36 +827,36 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
 
             {/* Modal Agregar Categoría */}
             {showCategoryModal && (
-                <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[1100] flex items-center justify-center p-4 animate-fadeIn">
-                    <div className="bg-white rounded-[32px] shadow-2xl w-full max-w-md overflow-hidden border border-slate-100 flex flex-col">
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-[1100] flex items-center justify-center p-4 animate-in fade-in duration-150">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden border border-slate-200 flex flex-col">
                         
                         {/* Modal Header */}
-                        <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                        <div className="px-6 py-4 border-b border-slate-200 bg-slate-50/80 flex justify-between items-center">
                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-md shadow-blue-200">
-                                    <FiFolder size={20} />
+                                <div className="w-9 h-9 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center font-bold">
+                                    <FiFolder size={18} />
                                 </div>
                                 <div>
-                                    <h3 className="text-lg font-extrabold text-slate-800 tracking-tight">Agregar Categoría</h3>
-                                    <p className="text-[12px] font-medium text-slate-400">Crea una nueva categoría para agrupar ítems</p>
+                                    <h3 className="text-base font-bold text-slate-800">Agregar Categoría</h3>
+                                    <p className="text-xs text-slate-500 font-medium">Crea una nueva categoría para agrupar ítems</p>
                                 </div>
                             </div>
                             <button 
                                 onClick={() => setShowCategoryModal(false)} 
-                                className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200 transition-colors border-0 bg-transparent cursor-pointer"
+                                className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors border-0 bg-transparent cursor-pointer"
                             >
-                                <FiX size={20} className="text-slate-400" />
+                                <FiX size={18} />
                             </button>
                         </div>
 
                         {/* Modal Form */}
-                        <form onSubmit={handleSaveCategory} className="p-4 sm:p-6 space-y-5">
-                            <div className="space-y-2">
-                                <label className="text-[11px] font-black text-slate-500 uppercase tracking-wider ml-1">
+                        <form onSubmit={handleSaveCategory} className="p-4 sm:p-6 space-y-4">
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-semibold text-slate-700">
                                     Nombre de la categoría *
                                 </label>
                                 <input 
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-[14px] font-bold text-slate-800 uppercase outline-none focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all"
+                                    className="w-full h-10 px-3.5 bg-white border border-slate-300 rounded-lg text-sm font-semibold text-slate-800 uppercase placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
                                     value={newCategoryName}
                                     onChange={e => setNewCategoryName(e.target.value)}
                                     placeholder="EJ: CIRUGÍA ORAL, ENDODONCIA..."
@@ -849,18 +865,18 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
                             </div>
 
                             {/* Footer Buttons */}
-                            <div className="flex gap-3 pt-2">
+                            <div className="flex justify-end gap-3 pt-2">
                                 <button 
                                     type="button"
                                     onClick={() => setShowCategoryModal(false)}
-                                    className="flex-1 py-3 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl font-bold text-[12px] transition-all cursor-pointer"
+                                    className="px-4 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-sm font-medium transition-colors cursor-pointer"
                                 >
                                     Cancelar
                                 </button>
                                 <button 
                                     type="submit"
                                     disabled={!newCategoryName.trim()}
-                                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold text-[12px] shadow-md shadow-blue-500/20 transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer border-0"
+                                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-semibold shadow-sm transition-colors flex items-center gap-2 cursor-pointer border-0"
                                 >
                                     <FiCheck size={16} /> Guardar
                                 </button>
@@ -872,3 +888,4 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
         </div>
     );
 }
+
