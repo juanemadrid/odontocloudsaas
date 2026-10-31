@@ -380,11 +380,15 @@ export const sendInvoice = async (invoiceData, patientData, tenantCredentials) =
     invoiceData.factusReferenceCode ||
     `OC-${Date.now().toString(36).toUpperCase()}`;
 
+  // Observaciones: solo las que escribió el usuario. Si no hay, el campo no se envía y la
+  // factura queda con observaciones en blanco en Factus/DIAN (igual que en la impresión).
+  const observation = String(invoiceData.observaciones ?? "").trim().slice(0, 250);
+
   // ── Full payload — Factus V2 structure ──
   const payload = {
     numbering_range_id: numberingRangeId,
     reference_code: referenceCode,
-    observation: (invoiceData.observaciones || "Emitido desde OdontoCloud").slice(0, 250),
+    ...(observation ? { observation } : {}),
     payment_details: [
       {
         payment_form: paymentForm,
