@@ -208,7 +208,9 @@ export const generateElectronicInvoiceHtml = ({
     qrData
   )}&bgcolor=ffffff&color=000000&margin=0`;
 
-  // Elaborado por
+  // Elaborado por: el usuario que hizo la factura (guardado en la factura o en sus detalles).
+  // Nunca el profesional que atendió ni el nombre de la clínica.
+  const det = factura?.detalles && typeof factura.detalles === 'object' ? factura.detalles : {};
   const elaboradoPor =
     factura?.elaboradoPor ||
     factura?.elaborado_por ||
@@ -217,10 +219,13 @@ export const generateElectronicInvoiceHtml = ({
     factura?.usuarioCreador ||
     factura?.usuarioNombre ||
     factura?.usuario_nombre ||
-    factura?.profesional ||
-    factura?.doctor ||
-    tenant?.nombreComercial ||
-    '—';
+    det.elaboradoPor ||
+    det.elaborado_por ||
+    det.creadoPor ||
+    det.creado_por ||
+    det.usuarioCreador ||
+    det.usuario_nombre ||
+    '';
 
   // Payment method
   const paymentMethodLabel = getPaymentMethodLabel(

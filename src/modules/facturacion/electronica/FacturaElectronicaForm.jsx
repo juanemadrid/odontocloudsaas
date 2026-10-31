@@ -16,6 +16,7 @@ import { getDoctorsList } from "../../../services/supabaseServices";
 import { getConfigItems, getConfigSection, saveConfigSection } from "../../../services/configPersistenceService";
 import { validateTerceroForDian, formatTerceroNombre, splitIdentificationForDian } from "../../../utils/dian/dianHelpers";
 import { fiscalInvoiceNumber, invoiceDisplayNumber, isGeneratedItemCode, newProvisionalInvoiceNumber } from "../../../utils/invoiceNumbering.js";
+import { todayBogota, invoiceCalendarDate } from "../../../utils/bogotaDate.js";
 import { CUPS_DENTAL_CODES } from "../../../data/cupsCodes";
 
 import {
@@ -103,9 +104,10 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
 
   // CARD 1: Datos generales
   const [fecha, setFecha] = useState(() => {
-    if (initialFactura?.fecha_emision) return String(initialFactura.fecha_emision).slice(0, 10);
-    if (initialFactura?.fecha) return String(initialFactura.fecha).slice(0, 10);
-    return new Date().toISOString().split("T")[0];
+    // Fecha en hora de Colombia (antes, después de las 7 p. m. salía la del día siguiente).
+    if (initialFactura?.fecha_emision) return invoiceCalendarDate(initialFactura.fecha_emision);
+    if (initialFactura?.fecha) return invoiceCalendarDate(initialFactura.fecha);
+    return todayBogota();
   });
   const [profesionalId, setProfesionalId] = useState(() => {
     return initialFactura?.profesional || initialDetalles?.profesional || "";
@@ -868,7 +870,7 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
           const sourceId = it.clinicalSourceId || it.planItemId || (it.planId && it.id ? it.id : null);
           const sourceType = it.clinicalSourceType || (it.planItemId || it.planId ? "PLAN_ITEM" : null);
           const totalVal = parseRawNumber(it.total) || Math.max(0, (parseRawNumber(it.precioUnitario) || 0) * (parseFloat(it.cantidad) || 1) - (parseRawNumber(it.descuento) || 0));
-          const fechaAtencion = (it.fechaAtencion || it.fechaRealizado || fecha || new Date().toISOString()).slice(0, 10);
+          const fechaAtencion = (it.fechaAtencion || it.fechaRealizado || fecha || todayBogota()).slice(0, 10);
           
           const fullLineName = it.concepto && it.descripcion && it.concepto !== it.descripcion
             ? `${it.concepto} (${it.descripcion})`

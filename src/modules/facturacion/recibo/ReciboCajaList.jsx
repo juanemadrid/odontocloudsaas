@@ -19,6 +19,7 @@ import { getFactusCredentialsForTenant } from "../../../services/factusAdminServ
 import { createReceiptInvoiceDraft } from "../../../services/receiptInvoiceDraftService";
 import { receiptConceptAmounts, paymentConcepts, invoiceLineCode } from "../../../services/receiptInvoiceItems.js";
 import { queryOptionalBillingTable } from "../../../services/optionalBillingTables.js";
+import { todayBogota } from "../../../utils/bogotaDate.js";
 
 const fmt = (n) => {
   const num = Number(n || 0);
@@ -274,7 +275,7 @@ export default function ReciboCajaList({ onNew }) {
                 observaciones: "", // la factura no lleva nota automática; el vínculo queda en recibos_asociados
                 profesional: first.profesionalNombre || "Sin asignar",
                 profesional_nombre: first.profesionalNombre || "Sin asignar",
-                fecha: new Date().toISOString().split("T")[0],
+                fecha: todayBogota(),
                 pacienteNombre: patientData.nombre,
                 pacienteDocumento: patientData.documento,
                 pacienteTipoDocumento: patientData.tipoDocumento,

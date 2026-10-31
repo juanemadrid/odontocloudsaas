@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useToast } from '../../../context/ToastContext';
 import { createPlan, updatePlan, deletePlan } from '../../../services/planService';
+import { todayBogota } from '../../../utils/bogotaDate.js';
 import supabase from '../../../lib/supabaseClient';
 import { FiSearch, FiTrash2, FiPlus, FiCheck, FiX, FiInfo, FiActivity, FiDollarSign, FiChevronLeft, FiPlusCircle, FiPackage, FiFileText, FiPrinter, FiPlusSquare, FiSave, FiAlertCircle, FiLoader, FiSend, FiEye } from 'react-icons/fi';
 import { useFormContext } from 'react-hook-form';
@@ -734,7 +735,7 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                 const lineId = it.invoiceLineId || (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `line-${idx + 1}-${Date.now()}`);
                 const sourceId = it.clinicalSourceId || it.id;
                 const sourceType = it.clinicalSourceType || 'PLAN_ITEM';
-                const fechaAtencion = it.fechaRealizado || it.fecha || new Date().toISOString().slice(0, 10);
+                const fechaAtencion = it.fechaRealizado || it.fecha || todayBogota();
                 return {
                     itemId:             it.id,
                     invoiceLineId:      lineId,
@@ -897,6 +898,8 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                 condicionPago: '1',
                 estado:     'Pendiente',
                 factusEstado: 'Pendiente',
+                // Quien elabora la factura es el usuario que la emite (no el profesional).
+                elaborado_por: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email?.split('@')[0] || '',
                 profesional: initialData?.profesionalId || initialData?.profesional || initialData?.doctor || patient?.doctorTratante || (isDoctorUser(userProfile) ? userProfile?.nombreCompleto : null) || 'Sin asignar',
                 terceroId:   isPlanEntidad ? (planCob.terceroId || planCob.entidadId) : null,
                 terceroNombre: isPlanEntidad ? terceroNombre : null,
