@@ -6,11 +6,12 @@ import { register } from 'node:module';
 register('data:text/javascript,' + encodeURIComponent(`
   export async function resolve(specifier, context, next) {
     if (specifier.endsWith('lib/supabaseClient.js')) return { url: 'data:text/javascript,export default {};', shortCircuit: true };
+    if (specifier.endsWith('configCacheService.js')) return { url: 'data:text/javascript,export const loadConfigSection=async()=>[];', shortCircuit: true };
     if (specifier.endsWith('configPersistenceService.js')) return { url: 'data:text/javascript,export const getConfigSection=async()=>[];export const saveConfigSection=async()=>{};export const getConfigItems=async()=>[];', shortCircuit: true };
     return next(specifier, context);
   }`));
 const svc = await import('../src/services/bankTransferService.js');
-const { buildClosingTransfers, saveTransfers, loadAllTransfers, bankMovements, bankNames, cajaLabel, tidyTransferText } = svc;
+const { buildClosingTransfers, saveTransfers, loadAllTransfers, bankMovements, bankNames, cajaLabel, tidyTransferText, localDate } = svc;
 
 // 1. Traslados del cierre: validados y con todo lo que leen Traslados, Bancos y Reportes.
 const caja = { id: '8f2c1a90-aaaa', nombre: 'Caja Principal', usuarioNombre: 'Juan Madrid' };
@@ -84,11 +85,16 @@ console.log('PASS: cierre, lista de cajas, detalle, Bancos, Traslados y el menú
 
 // 6. Textos sin "Caja: Caja ..." y etiqueta del tipo en una sola línea.
 assert.equal(cajaLabel('Caja Juan Madrid'), 'Caja Juan Madrid');
-assert.equal(cajaLabel('juan madrid'), 'Caja juan madrid');
-assert.equal(cajaLabel('CAJA PRINCIPAL'), 'CAJA PRINCIPAL');
+assert.equal(cajaLabel('juan madrid'), 'Caja Juan Madrid');
+assert.equal(cajaLabel('Caja - juan madrid'), 'Caja Juan Madrid');
+assert.equal(cajaLabel('Caja de la Sede Norte'), 'Caja de la Sede Norte');
+assert.equal(cajaLabel('CAJA PRINCIPAL'), 'Caja Principal');
 assert.equal(cajaLabel(''), 'Caja');
 assert.equal(buildClosingTransfers({ caja: { id: 'x', nombre: 'Recepción' }, destinos: [{ banco: 'nequi', valor: 1 }], contado: 5, now })[0].origen, 'Caja Recepción');
 assert.equal(tidyTransferText('Caja: Caja Juan Madre'), 'Caja Juan Madre');
+assert.equal(tidyTransferText('Caja: Caja - juan madrid'), 'Caja Juan Madrid');
+assert.equal(tidyTransferText('Traslado por cierre de caja - Caja - juan madrid (Efectivo)'), 'Traslado por cierre de Caja Juan Madrid (Efectivo)');
+assert.equal(tidyTransferText('Traslado de fondos de Caja Principal (Efectivo) a nequi'), 'Traslado de fondos de Caja Principal (Efectivo) a nequi');
 assert.equal(tidyTransferText('Traslado por cierre de caja - Caja Juan Madre (Efectivo)'), 'Traslado por cierre de Caja Juan Madre (Efectivo)');
 assert.equal(tidyTransferText('Caja: Recepción'), 'Caja Recepción');
 assert.equal(tidyTransferText('Traslado por cierre de caja - Recepción (Efectivo)'), 'Traslado por cierre de Caja Recepción (Efectivo)');
@@ -101,3 +107,38 @@ assert.equal(m6.concepto, 'Traslado por cierre de Caja Principal (Efectivo)');
 assert.ok(traslados.includes('{tidyTransferText(t.origen) || "—"}') && traslados.includes('{tidyTransferText(t.descripcion) || "—"}'));
 assert.ok(traslados.includes('>TRASLADO\u00a0+</span>') && traslados.includes('inline-block whitespace-nowrap px-2 py-1'), 'el + queda al lado');
 console.log('PASS: los traslados dicen "Caja Juan Madrid" (sin "Caja: Caja") y "TRASLADO +" se ve en una sola línea.');
+
+// 7. Fechas de solo día y Reporte de facturación.
+const d31 = localDate('2026-10-31');
+assert.equal([d31.getFullYear(), d31.getMonth() + 1, d31.getDate()].join('-'), '2026-10-31', '"2026-10-31" es el 31, no el 30');
+assert.equal(localDate('2026-10-31T12:11:59.434Z').toISOString(), '2026-10-31T12:11:59.434Z');
+assert.equal(localDate(''), null);
+assert.ok(traslados.includes('const d = localDate(ts);') && traslados.includes('localDate(t.fecha || t.created_at)'), 'Traslados usa el día correcto');
+const reporte = await read('src/modules/reportes/views/ReporteFinanciero.jsx');
+assert.ok(!reporte.includes('centro del dolor') && !reporte.includes('includes("sincelejo")'), 'sin nombres de sedes escritos a mano');
+assert.equal((reporte.match(/rowMatchesProfessional\(r, /g) || []).length, 2, 'selector y tabla usan la misma regla de profesional');
+assert.equal((reporte.match(/rowMatchesOffice\(r, /g) || []).length, 2, 'selector y tabla usan la misma regla de sede');
+assert.ok(reporte.includes('&& !isTransferRow(r) && r.estado !== "Anulado"'), 'los traslados no suman a ingresos ni egresos');
+assert.ok(reporte.includes('Traslados entre cuentas:'));
+// Las reglas del reporte, probadas de verdad (se toman del archivo tal cual).
+const block = reporte.slice(reporte.indexOf('const rowDate = '), reporte.indexOf('export default function ReporteFinanciero'));
+const rules = new Function('localDate', block + '; return { rowInRange, rowMatchesOffice, rowMatchesProfessional, isTransferRow };')(localDate);
+assert.ok(rules.rowInRange({ fechaSeleccionada: '2026-10-01' }, '2026-10-01', '2026-10-31'), 'el día 1 entra en su mes');
+assert.ok(!rules.rowInRange({ fechaSeleccionada: '2026-11-01' }, '2026-10-01', '2026-10-31'));
+assert.ok(rules.rowInRange({ fechaSeleccionada: '2026-10-31' }, '2026-10-31', '2026-10-31'));
+const sedes = [{ id: 'TODAS', nombre: 'Todas las oficinas' }, { id: 's1', nombre: 'Sede Centro' }, { id: 's2', nombre: 'Sede Norte' }];
+assert.ok(rules.rowMatchesOffice({}, 'Todas las oficinas', sedes));
+assert.ok(rules.rowMatchesOffice({}, 'Sede Centro', sedes), 'sin sede = sede principal');
+assert.ok(!rules.rowMatchesOffice({}, 'Sede Norte', sedes));
+assert.ok(rules.rowMatchesOffice({ oficina: 'Sede Norte' }, 'Sede Norte', sedes));
+assert.ok(!rules.rowMatchesOffice({ oficina: 'Sede Norte' }, 'Sede Centro', sedes));
+const profs = [{ id: 'u1', nombre: 'Andrea Pérez', allNames: ['u1', 'andrea pérez', 'andrea', 'pérez', 'andrea@x.co'] },
+               { id: 'u2', nombre: 'Andrea Gómez', allNames: ['u2', 'andrea gómez', 'andrea', 'gómez'] }];
+assert.ok(rules.rowMatchesProfessional({ profesional: 'Andrea Pérez' }, 'Andrea Pérez', profs));
+assert.ok(rules.rowMatchesProfessional({ profesionalId: 'u1' }, 'Andrea Pérez', profs));
+assert.ok(!rules.rowMatchesProfessional({ profesional: '' }, 'Andrea Pérez', profs), 'sin profesional no aparece');
+assert.ok(!rules.rowMatchesProfessional({ profesional: 'Andrea Gómez' }, 'Andrea Pérez', profs), 'no confunde dos Andreas');
+assert.ok(rules.rowMatchesProfessional({ profesional: 'Dra. Andrea Pérez' }, 'Andrea Pérez', profs));
+assert.ok(rules.rowMatchesProfessional({ profesional: 'x' }, 'Todos', profs));
+assert.ok(rules.isTransferRow({ tipoDocumento: 'Traslado-' }) && !rules.isTransferRow({ tipoDocumento: 'Egreso-' }));
+console.log('PASS: Reporte de facturación: fechas del día correcto, sede y profesional bien filtrados, traslados aparte de ingresos y egresos.');

@@ -4,7 +4,7 @@ import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { getConfigItems, getConfigSection, saveConfigSection } from "../../../services/configPersistenceService";
 import { toast } from "sonner";
-import { bankNames, loadAllTransfers, loadBanksAndExpenses, expensesFromBank, normalizeAccountName, saveTransfers, tidyTransferText } from "../../../services/bankTransferService";
+import { bankNames, loadAllTransfers, loadBanksAndExpenses, expensesFromBank, normalizeAccountName, saveTransfers, tidyTransferText, localDate } from "../../../services/bankTransferService";
 import { todayBogota } from "../../../utils/bogotaDate";
 
 const fmt = (n) =>
@@ -17,8 +17,8 @@ const fmt = (n) =>
 const fmtPure = (n) => new Intl.NumberFormat("es-CO").format(n);
 
 const fmtDate = (ts) => {
-  if (!ts) return "—";
-  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  const d = localDate(ts); // "2026-10-31" se muestra 31/10, no 30/10
+  if (!d) return "—";
   return d.toLocaleDateString("es-CO", { day: "2-digit", month: "2-digit", year: "numeric" });
 };
 
@@ -29,7 +29,7 @@ export default function TrasladosList({ onNew }) {
   const [traslados, setTraslados] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [fechaInicio, setFechaInicio] = useState(() => {
-    const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().split("T")[0];
+    const d = new Date(); d.setDate(d.getDate() - 30); return todayBogota(d);
   });
   const [fechaFin, setFechaFin] = useState(todayBogota());
 
@@ -77,10 +77,10 @@ export default function TrasladosList({ onNew }) {
       const filtered = (list || [])
         .filter(t => {
           if (!t.fecha && !t.created_at) return false;
-          const ts = new Date(t.fecha || t.created_at).getTime();
+          const ts = localDate(t.fecha || t.created_at)?.getTime() ?? NaN;
           return ts >= start.getTime() && ts <= end.getTime();
         })
-        .sort((a, b) => new Date(b.fecha || b.created_at).getTime() - new Date(a.fecha || a.created_at).getTime());
+        .sort((a, b) => String(b.created_at || b.fecha || "").localeCompare(String(a.created_at || a.fecha || "")));
       setTraslados(filtered);
     } catch (e) {
       console.error("Error loading traslados:", e);

@@ -5,6 +5,7 @@
 // ignoraba: el traslado no quedaba en ninguna parte.
 import supabase from "../lib/supabaseClient.js";
 import { getConfigSection, saveConfigSection, getConfigItems } from "./configPersistenceService.js";
+import { loadConfigSection } from "./configCacheService.js";
 import { todayBogota } from "../utils/bogotaDate.js";
 
 export const normalizeAccountName = (value) =>
@@ -29,21 +30,40 @@ export const bankNames = (banks) => {
   return out;
 };
 
-/** "Juan Madrid" → "Caja Juan Madrid"; "Caja Juan Madrid" se deja igual (sin "Caja: Caja ..."). */
-export const cajaLabel = (name) => {
+// Nombre en mayúsculas o minúsculas parejas → "Juan Madrid". Si ya viene mezclado, se respeta.
+const SMALL_WORDS = new Set(["de", "del", "la", "las", "los", "y", "e"]);
+const niceName = (name) => {
   const n = String(name ?? "").trim().replace(/\s+/g, " ");
-  if (!n) return "Caja";
-  return /^caja\b/i.test(n) ? n : `Caja ${n}`;
+  if (!n || (n !== n.toLowerCase() && n !== n.toUpperCase())) return n;
+  return n.toLowerCase().split(" ").map((w, i) => (i > 0 && SMALL_WORDS.has(w) ? w : w.charAt(0).toUpperCase() + w.slice(1))).join(" ");
 };
 
-/** Arregla textos ya guardados con la palabra repetida ("Caja: Caja X", "cierre de caja - Caja X"). */
+/** "juan madrid" / "Caja - juan madrid" / "Caja: Caja - juan madrid" → "Caja Juan Madrid". */
+export const cajaLabel = (name) => {
+  const rest = String(name ?? "").trim().replace(/^(?:caja\b\s*[:\-–]?\s*)+/i, "").trim();
+  return rest ? `Caja ${niceName(rest)}` : "Caja";
+};
+
+/**
+ * Arregla textos ya guardados con la palabra repetida o con separadores:
+ * "Caja: Caja - juan madrid" → "Caja Juan Madrid";
+ * "Traslado por cierre de caja - Caja - juan madrid (Efectivo)" → "Traslado por cierre de Caja Juan Madrid (Efectivo)".
+ */
 export const tidyTransferText = (text) => {
   if (text == null) return text;
-  return String(text)
-    .replace(/\bcaja:\s*(?=caja\b)/gi, "")
-    .replace(/\bcaja:\s*/gi, "Caja ")
-    .replace(/cierre de caja\s*-\s*(?=caja\b)/gi, "cierre de ")
-    .replace(/cierre de caja\s*-\s*/gi, "cierre de Caja ");
+  return String(text).replace(/\bcaja\b(?:\s*[:\-–]\s*caja\b)*(?:\s*[:\-–]\s*|\s+)([^()]+?)(?=\s*\(|\s+a\s|$)/gi,
+    (m, rest) => (/^(principal|general)\b/i.test(rest.trim()) && !/[:\-–]/.test(m) ? m : cajaLabel(rest)));
+};
+
+/** "2026-10-31" es un día en Colombia (no la medianoche de Londres, que en Colombia cae el día anterior). */
+export const localDate = (value) => {
+  if (!value) return null;
+  if (typeof value?.toDate === "function") return value.toDate();
+  if (value instanceof Date) return value;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value).trim());
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0);
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
 };
 
 const newId = () => (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
@@ -100,7 +120,8 @@ export async function saveTransfers(tenantId, transfers, deps = {}) {
 /** Todos los traslados: tabla "traslados" (si existe) + configuración, sin duplicados. */
 export async function loadAllTransfers(tenantId, deps = {}) {
   const client = deps.client || supabase;
-  const getSection = deps.getSection || getConfigSection;
+  // Siempre lectura fresca: una copia guardada de hace unos minutos escondía el traslado más reciente.
+  const getSection = deps.getSection || ((t, k, f) => loadConfigSection(t, k, f, true));
   let tableRows = [];
   try {
     const { data, error } = await client.from("traslados").select("*").eq("tenant_id", tenantId);

@@ -10,6 +10,7 @@ import { FiDollarSign, FiSearch, FiFileText, FiFilter, FiDownload, FiCheck, FiX,
 import { format } from "date-fns";
 import XLSX from "xlsx-js-style";
 import { NO_FISCAL_NUMBER_LABEL, isDiscardedInvoice, isProvisionalInvoiceNumber } from "../../../utils/invoiceNumbering.js";
+import { tidyTransferText, localDate } from "../../../services/bankTransferService";
 
 const cleanObservaciones = (rawVal) => {
   if (!rawVal) return "";
@@ -121,6 +122,56 @@ const TIPO_MOVIMIENTO_OPTIONS = [
   "Anticipo+",
   "Saldo a favor+"
 ];
+
+// ── Filtros del reporte (los usan el conteo del selector y la tabla, para que siempre coincidan) ──
+
+/** Fecha del movimiento. "2026-10-31" (solo fecha) es ese día en Colombia, no el 30 a las 7 p. m. */
+const rowDate = (r) => localDate(r?.fechaSeleccionada || r?.fechaCreacion);
+
+const rowInRange = (r, fechaInicial, fechaFinal) => {
+  const d = rowDate(r);
+  if (!d) return true;
+  const init = new Date(fechaInicial + "T00:00:00");
+  const end = new Date((fechaFinal || fechaInicial) + "T23:59:59");
+  return d >= init && d <= end;
+};
+
+/**
+ * Sede: si el movimiento no tiene sede registrada pertenece a la sede principal (la primera
+ * configurada o la que se llama "principal"). Antes había nombres de una clínica escritos a mano.
+ */
+const rowMatchesOffice = (r, selected, oficinasList) => {
+  if (!selected || selected === "Todas las oficinas" || selected === "Todas" || selected === "TODAS") return true;
+  const target = String(selected).toLowerCase().trim();
+  const rOficina = String(r.oficina || r.sucursal || r.sede || "").toLowerCase().trim();
+  const rOficinaId = String(r.sucursalId || r.sucursal_id || "").toLowerCase().trim();
+  const ofObj = oficinasList.find(o => String(o.nombre).toLowerCase() === target || o.id === selected);
+  const targetId = ofObj ? String(ofObj.id).toLowerCase() : "";
+  if (rOficinaId && targetId && rOficinaId === targetId) return true;
+  if (rOficina) return rOficina === target || rOficina.includes(target) || target.includes(rOficina);
+  if (rOficinaId) return false;
+  const principal = oficinasList.find(o => o.id !== "TODAS");
+  return Boolean((ofObj && principal && ofObj.id === principal.id) || target.includes("principal"));
+};
+
+/** Profesional: un movimiento sin profesional NO aparece al filtrar por un profesional. */
+const rowMatchesProfessional = (r, selected, profesionales) => {
+  if (!selected || selected === "Todos" || !String(selected).trim()) return true;
+  const rProf = String(r.profesional || "").toLowerCase().trim();
+  const rProfId = String(r.profesionalId || "").toLowerCase().trim();
+  if (!rProf && !rProfId) return false;
+  const targetProf = String(selected).toLowerCase().trim();
+  const profObj = profesionales.find(pr => pr.nombre === selected || pr.id === selected);
+  const variants = (profObj?.allNames?.length ? profObj.allNames : [targetProf, String(profObj?.id || "").toLowerCase()])
+    .map(v => String(v || "").toLowerCase().trim()).filter(Boolean);
+  // Un solo nombre ("juan") no basta: confundiría a dos profesionales que se llamen igual.
+  const strong = (v) => v.includes(" ") || v.includes("@") || v.length >= 20;
+  return variants.some(v => (rProfId && rProfId === v) || (rProf && (rProf === v ||
+    (strong(v) && rProf.includes(v)) || (strong(v) && rProf.includes(" ") && v.includes(rProf)))));
+};
+
+/** Traslados entre caja y bancos: mueven dinero de la clínica, no son ingresos ni gastos. */
+const isTransferRow = (r) => r.tipoDocumento === "Traslado+" || r.tipoDocumento === "Traslado-";
 
 export default function ReporteFinanciero() {
   const { userProfile } = useAuth();
@@ -963,13 +1014,13 @@ export default function ReporteFinanciero() {
           tipoDocumento: "Traslado-",
           fechaCreacion: tr.created_at || tr.fecha || new Date().toISOString(),
           fechaSeleccionada: tr.fecha || tr.created_at || new Date().toISOString(),
-          concepto: tr.descripcion || `Traslado de fondos (${tr.origen} a ${tr.destino})`,
+          concepto: tidyTransferText(tr.descripcion) || `Traslado de fondos (${tidyTransferText(tr.origen)} a ${tidyTransferText(tr.destino)})`,
           valor: montoNum,
           consecutivo: "Principal",
           docReferencia: refDoc,
           documentosAsociados: "—",
           estado: isAnulado ? "Anulado" : "Activo",
-          tercero: tr.origen || "Caja Origen",
+          tercero: tidyTransferText(tr.origen) || "Caja Origen",
           documentoTercero: "",
           profesional: "Administración",
           profesionalId: "",
@@ -980,7 +1031,7 @@ export default function ReporteFinanciero() {
           retencion: 0,
           total: montoNum,
           usuarioCreador: "Administración",
-          observaciones: cleanObservaciones(tr.descripcion || ""),
+          observaciones: cleanObservaciones(tidyTransferText(tr.descripcion) || ""),
           cuentaContable: "110505 - Caja General",
           oficina: ""
         });
@@ -993,13 +1044,13 @@ export default function ReporteFinanciero() {
           tipoDocumento: "Traslado+",
           fechaCreacion: tr.created_at || tr.fecha || new Date().toISOString(),
           fechaSeleccionada: tr.fecha || tr.created_at || new Date().toISOString(),
-          concepto: tr.descripcion || `Traslado de fondos (${tr.origen} a ${tr.destino})`,
+          concepto: tidyTransferText(tr.descripcion) || `Traslado de fondos (${tidyTransferText(tr.origen)} a ${tidyTransferText(tr.destino)})`,
           valor: montoNum,
           consecutivo: "Principal",
           docReferencia: refDoc,
           documentosAsociados: "—",
           estado: isAnulado ? "Anulado" : "Activo",
-          tercero: tr.destino || "Caja Destino",
+          tercero: tidyTransferText(tr.destino) || "Caja Destino",
           documentoTercero: "",
           profesional: "Administración",
           profesionalId: "",
@@ -1010,7 +1061,7 @@ export default function ReporteFinanciero() {
           retencion: 0,
           total: montoNum,
           usuarioCreador: "Administración",
-          observaciones: cleanObservaciones(tr.descripcion || ""),
+          observaciones: cleanObservaciones(tidyTransferText(tr.descripcion) || ""),
           cuentaContable: "111005 - Bancos",
           oficina: ""
         });
@@ -1693,75 +1744,24 @@ export default function ReporteFinanciero() {
   // Formateadores de fecha
   const formatDateTime = (dateVal) => {
     if (!dateVal) return "";
-    const dt = dateVal?.toDate ? dateVal.toDate() : new Date(dateVal);
-    return isNaN(dt.getTime()) ? String(dateVal) : format(dt, "dd/MM/yyyy HH:mm");
+    const dt = localDate(dateVal);
+    if (!dt) return String(dateVal);
+    return /^\d{4}-\d{2}-\d{2}$/.test(String(dateVal).trim()) ? format(dt, "dd/MM/yyyy") : format(dt, "dd/MM/yyyy HH:mm");
   };
 
   const formatDateOnly = (dateVal) => {
     if (!dateVal) return "";
-    const dt = dateVal?.toDate ? dateVal.toDate() : new Date(dateVal);
-    return isNaN(dt.getTime()) ? String(dateVal) : format(dt, "dd/MM/yyyy");
+    const dt = localDate(dateVal);
+    return dt ? format(dt, "dd/MM/yyyy") : String(dateVal);
   };
 
   // Transacciones en el período y filtros activos para conteos contextuales en el selector
   const transactionsInPeriod = useMemo(() => {
     return allTransactions.filter(r => {
-      // 1. Filtro por Fechas
-      if (!isAllHistory && fechaInicial && fechaInicial.trim() !== "") {
-        const rawDate = r.fechaSeleccionada || r.fechaCreacion;
-        if (rawDate) {
-          const targetDate = rawDate?.toDate ? rawDate.toDate() : new Date(rawDate);
-          if (!isNaN(targetDate.getTime())) {
-            const init = new Date(fechaInicial + "T00:00:00");
-            const endStr = fechaFinal || fechaInicial;
-            const end = new Date(endStr + "T23:59:59");
-            if (targetDate < init || targetDate > end) return false;
-          }
-        }
-      }
-
-      // 2. Filtro por Oficina / Sede
-      if (oficina && oficina !== "Todas las oficinas" && oficina !== "Todas") {
-        const targetOficina = oficina.toLowerCase().trim();
-        const rOficina = String(r.oficina || r.sucursal || r.sede || "").toLowerCase().trim();
-        const rOficinaId = String(r.sucursalId || r.sucursal_id || "").toLowerCase().trim();
-        
-        const ofObj = oficinasList.find(o => o.nombre.toLowerCase() === targetOficina || o.id === oficina);
-        const targetId = ofObj ? String(ofObj.id).toLowerCase() : "";
-
-        let matchesOffice = false;
-        if (rOficina) {
-          matchesOffice = rOficina.includes(targetOficina) || targetOficina.includes(rOficina);
-        }
-        if (rOficinaId && targetId) {
-          matchesOffice = matchesOffice || rOficinaId === targetId;
-        }
-        if (!rOficina && !rOficinaId) {
-          const isPrincipal = targetOficina.includes("principal") || targetOficina.includes("centro del dolor") || targetOficina.includes("sincelejo");
-          matchesOffice = isPrincipal;
-        }
-
-        if (!matchesOffice) return false;
-      }
-
-      // 3. Filtro por Profesional
-      if (selectedProfesional && selectedProfesional !== "Todos" && selectedProfesional.trim() !== "") {
-        const targetProf = selectedProfesional.toLowerCase().trim();
-        const profObj = profesionales.find(pr => pr.nombre === selectedProfesional || pr.id === selectedProfesional);
-        const rProf = String(r.profesional || "").toLowerCase().trim();
-        const rProfId = String(r.profesionalId || "").toLowerCase().trim();
-
-        let matchesDoc = false;
-        if (profObj && profObj.allNames) {
-          matchesDoc = profObj.allNames.some(nameVariant => 
-            rProf.includes(nameVariant) || rProfId === nameVariant || nameVariant.includes(rProf)
-          );
-        } else {
-          matchesDoc = rProf.includes(targetProf) || rProfId.includes(targetProf) || targetProf.includes(rProf);
-        }
-        if (!matchesDoc) return false;
-      }
-
+      // 1. Fechas  2. Oficina / Sede  3. Profesional (mismas reglas que la tabla)
+      if (!isAllHistory && fechaInicial && fechaInicial.trim() !== "" && !rowInRange(r, fechaInicial, fechaFinal)) return false;
+      if (!rowMatchesOffice(r, oficina, oficinasList)) return false;
+      if (!rowMatchesProfessional(r, selectedProfesional, profesionales)) return false;
       return true;
     });
   }, [allTransactions, isAllHistory, fechaInicial, fechaFinal, oficina, selectedProfesional, oficinasList, profesionales]);
@@ -1792,43 +1792,10 @@ export default function ReporteFinanciero() {
   // Filtrado reactivo de movimientos
   const filteredData = useMemo(() => {
     return allTransactions.filter(r => {
-      // 1. Filtro por Fechas
-      if (!appliedFilters.isAllHistory && appliedFilters.fechaInicial && appliedFilters.fechaInicial.trim() !== "") {
-        const rawDate = r.fechaSeleccionada || r.fechaCreacion;
-        if (rawDate) {
-          const targetDate = rawDate?.toDate ? rawDate.toDate() : new Date(rawDate);
-          if (!isNaN(targetDate.getTime())) {
-            const init = new Date(appliedFilters.fechaInicial + "T00:00:00");
-            const endStr = appliedFilters.fechaFinal || appliedFilters.fechaInicial;
-            const end = new Date(endStr + "T23:59:59");
-            if (targetDate < init || targetDate > end) return false;
-          }
-        }
-      }
-
-      // 2. Filtro por Oficina / Sede
-      if (appliedFilters.oficina && appliedFilters.oficina !== "Todas las oficinas" && appliedFilters.oficina !== "Todas") {
-        const targetOficina = appliedFilters.oficina.toLowerCase().trim();
-        const rOficina = String(r.oficina || r.sucursal || r.sede || "").toLowerCase().trim();
-        const rOficinaId = String(r.sucursalId || r.sucursal_id || "").toLowerCase().trim();
-        
-        const ofObj = oficinasList.find(o => o.nombre.toLowerCase() === targetOficina || o.id === appliedFilters.oficina);
-        const targetId = ofObj ? String(ofObj.id).toLowerCase() : "";
-
-        let matchesOffice = false;
-        if (rOficina) {
-          matchesOffice = rOficina.includes(targetOficina) || targetOficina.includes(rOficina);
-        }
-        if (rOficinaId && targetId) {
-          matchesOffice = matchesOffice || rOficinaId === targetId;
-        }
-        if (!rOficina && !rOficinaId) {
-          const isPrincipal = targetOficina.includes("principal") || targetOficina.includes("centro del dolor") || targetOficina.includes("sincelejo");
-          matchesOffice = isPrincipal;
-        }
-
-        if (!matchesOffice) return false;
-      }
+      // 1. Fechas  2. Oficina / Sede
+      if (!appliedFilters.isAllHistory && appliedFilters.fechaInicial && appliedFilters.fechaInicial.trim() !== "" &&
+          !rowInRange(r, appliedFilters.fechaInicial, appliedFilters.fechaFinal)) return false;
+      if (!rowMatchesOffice(r, appliedFilters.oficina, oficinasList)) return false;
 
       // 3. Filtro por Tipo de Movimiento (Estricto 1:1)
       if (appliedFilters.tipoMovimiento === "Seleccione") {
@@ -1867,23 +1834,8 @@ export default function ReporteFinanciero() {
         }
       }
 
-      // 4. Filtro por Profesional
-      if (appliedFilters.profesional && appliedFilters.profesional !== "Todos" && appliedFilters.profesional.trim() !== "") {
-        const targetProf = appliedFilters.profesional.toLowerCase().trim();
-        const profObj = profesionales.find(pr => pr.nombre === appliedFilters.profesional || pr.id === appliedFilters.profesional);
-        const rProf = String(r.profesional || "").toLowerCase().trim();
-        const rProfId = String(r.profesionalId || "").toLowerCase().trim();
-
-        let matchesDoc = false;
-        if (profObj && profObj.allNames) {
-          matchesDoc = profObj.allNames.some(nameVariant => 
-            rProf.includes(nameVariant) || rProfId === nameVariant || nameVariant.includes(rProf)
-          );
-        } else {
-          matchesDoc = rProf.includes(targetProf) || rProfId.includes(targetProf) || targetProf.includes(rProf);
-        }
-        if (!matchesDoc) return false;
-      }
+      // 4. Profesional
+      if (!rowMatchesProfessional(r, appliedFilters.profesional, profesionales)) return false;
 
       // 5. Búsqueda rápida global en tabla
       if (tableSearchTerm.trim() !== "") {
@@ -1925,9 +1877,8 @@ export default function ReporteFinanciero() {
       .filter(r => (
         r.tipoDocumento.includes("Recibo") || 
         r.tipoDocumento.includes("Saldo a favor") || 
-        r.tipoDocumento.includes("Anticipo") || 
-        r.tipoDocumento === "Traslado+"
-      ) && r.estado !== "Anulado")
+        r.tipoDocumento.includes("Anticipo")
+      ) && !isTransferRow(r) && r.estado !== "Anulado")
       .reduce((sum, r) => sum + Number(r.valor || 0), 0);
   }, [filteredData]);
 
@@ -1942,10 +1893,16 @@ export default function ReporteFinanciero() {
       .filter(r => (
         r.tipoDocumento.includes("Egreso") || 
         r.tipoDocumento.includes("Compra") || 
-        r.tipoDocumento === "Nota débito-" ||
-        r.tipoDocumento === "Traslado-"
-      ) && r.estado !== "Anulado")
+        r.tipoDocumento === "Nota débito-"
+      ) && !isTransferRow(r) && r.estado !== "Anulado")
       .reduce((sum, r) => sum + Number(r.valor || 0), 0);
+  }, [filteredData]);
+
+  // Traslados: cada traslado tiene salida (Traslado−) y entrada (Traslado+); se informa el valor trasladado una vez.
+  const totalTraslados = useMemo(() => {
+    const out = filteredData.filter(r => r.tipoDocumento === "Traslado-" && r.estado !== "Anulado").reduce((s, r) => s + Number(r.valor || 0), 0);
+    const inn = filteredData.filter(r => r.tipoDocumento === "Traslado+" && r.estado !== "Anulado").reduce((s, r) => s + Number(r.valor || 0), 0);
+    return Math.max(out, inn);
   }, [filteredData]);
 
   // Manejar clic en "Buscar"
@@ -3204,6 +3161,9 @@ export default function ReporteFinanciero() {
             <span>Recaudos / Ingresos (+): <strong className="text-emerald-600">$ {totalIngresos.toLocaleString('es-CO')}</strong></span>
             <span>Total Facturado (FEV): <strong className="text-sky-600">$ {totalFacturado.toLocaleString('es-CO')}</strong></span>
             <span>Egresos (-): <strong className="text-rose-600">$ {totalEgresos.toLocaleString('es-CO')}</strong></span>
+            {totalTraslados > 0 && (
+              <span title="Dinero movido entre la caja y los bancos. No es ingreso ni gasto.">Traslados entre cuentas: <strong className="text-purple-700">$ {totalTraslados.toLocaleString('es-CO')}</strong></span>
+            )}
             <span>Balance Neto: <strong className={totalIngresos - totalEgresos >= 0 ? "text-sky-700" : "text-rose-700"}>$ {(totalIngresos - totalEgresos).toLocaleString('es-CO')}</strong></span>
           </div>
         </div>
