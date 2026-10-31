@@ -53,6 +53,9 @@ if (mode === 'unconfirmed') tables.website_config[0].config.empresa_datos.admini
 if (mode === 'cups-conflict') {
   const item=tables.treatment_plans[0].detalles.items[0]; item.code='890203'; item.es_consulta=false;
 }
+if (mode === 'control-evolucion') {
+  const item=tables.treatment_plans[0].detalles.items[0]; item.code='890303'; item.desc='Control plano estabilizador'; item.es_consulta=false;
+}
 if (mode === 'duplicate-tariff') {
   tables.treatment_plans[0].detalles.baseListId='correct-list';
   tables.treatment_plans[0].detalles.items[0].desc='Consulta de Control sobre plano Estabilizador';
@@ -227,6 +230,17 @@ try {
   assert.equal(await page.getByRole('button', { name: /Descargar RIPS Sin FEV/ }).count(), 0);
   assert.equal(await page.getByText(/sin registro de consulta médica realizada/).count(), 0);
   console.log('PASS UI: conflicto entre Es consulta y CUPS oficial se informa sin pedir Docclinic para un procedimiento.');
+  await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__rips_test?mode=control-evolucion`);
+  await page.getByRole('option', { name: /Profesional Prueba/ }).waitFor({ state: 'attached' });
+  await page.locator('select').selectOption(doctor);
+  await dates.nth(0).fill('2026-10-01'); await dates.nth(1).fill('2026-10-22');
+  await page.getByRole('button', { name: /^Buscar$/ }).click();
+  await page.getByRole('button', { name: /Descargar RIPS Sin FEV/ }).waitFor();
+  assert.equal(await page.getByRole('region', { name: 'Observaciones RIPS' }).count(), 0);
+  assert.equal(await page.getByText(/RIPS_SERVICE_TYPE_CUPS_MISMATCH/).count(), 0);
+  assert.equal(await page.getByText('890303', { exact: true }).count(), 1);
+  assert.equal(await page.getByText('890203', { exact: true }).count(), 1);
+  console.log('PASS UI: control 890303 del presupuesto se reporta como consulta con la evolución, sin abrir Docclinic.');
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/__rips_test?mode=ips`);
   await page.getByText('Sucursales', { exact: true }).waitFor();
   await dates.nth(0).fill('2026-10-01'); await dates.nth(1).fill('2026-10-22');

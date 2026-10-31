@@ -16,6 +16,7 @@ import {
     mapFinalidadOficial,
     mapCausaOficial,
     mapModalidadOficial,
+    esCodigoControl,
     mapZonaOficial,
     mapTipoDocumentoOficial,
     documentoAcordeEdad,
@@ -1519,6 +1520,62 @@ export default function RipsGenerator() {
                             if (!usesClinicalSources && isAssignedToOtherDoctor) continue;
                         }
                         const fechaAtencion = atencionDateTime(matchedEvo?.fecha || evoData.date || matchedPlanItem?.fechaRealizado || fechaDoc, evoData.horaInicio);
+
+                        // Control de seguimiento cargado como ítem del presupuesto (8903xx, ej. 890303 control mensual
+                        // de un plano): se reporta como CONSULTA y su registro clínico es la evolución del presupuesto,
+                        // sin abrir un documento de consulta aparte. Las consultas de primera vez siguen pidiendo Doc. Clínicos.
+                        if (esCodigoControl(procCups)) {
+                            const finalidadCtrl = mapFinalidadOficial(evoData.finalidad || evoData.tipoServicio, { isConsulta: true });
+                            const codServicioCtrl = servicioRepsDe(profObj);
+                            const alertaCtrl = alertaConsultaServicio(procCups, codServicioCtrl);
+                            if (alertaCtrl) itemErrors.push(alertaCtrl);
+                            conList.push({
+                                docPaciente: patientDoc,
+                                invoiceId: normalizedDoc.numFactura,
+                                ripsDocumentId: invoiceId,
+                                codPrestador,
+                                fechaInicio: fechaAtencion,
+                                numAutorizacion: f.nroAutorizacion || f.autorizacion || null,
+                                codConsulta: procCups,
+                                modalidadGrupoServicioTecSal: mapModalidadOficial(evoData.modalidadAtencion),
+                                grupoServicios: "01",
+                                codServicio: codServicioCtrl,
+                                finalidadTecnologiaSalud: finalidadCtrl,
+                                causaMotivoAtencion: mapCausaOficial(evoData.causaMotivoAtencion, finalidadCtrl),
+                                dxPrincipal: codDxPrincipal || "SIN_DX",
+                                codDiagnosticoRelacionado1: codDxRel,
+                                tipoDiagnosticoPrincipal: evoData.tipoDiagnosticoPrincipal || "01",
+                                tipoDocumentoIdentificacion: profObj.tipoDocumentoIdentificacion,
+                                numDocumentoIdentificacion: profObj.numDocumentoIdentificacion,
+                                valorServicio: valorServ,
+                                conceptoRecaudo: "05",
+                                valorPagoModerador: 0,
+                                numFEVPagoModerador: null,
+                                fuenteClinica: "evolucion",
+                                errors: itemErrors
+                            });
+                            if (itemErrors.length === 0) {
+                                adaptedAtencionesForInvoice.push({
+                                    tipoAtencion: "consulta",
+                                    cupsCode: procCups,
+                                    codServicio: codServicioCtrl,
+                                    codDiagnosticoPrincipal: codDxPrincipal,
+                                    codDiagnosticoRelacionado1: codDxRel,
+                                    fechaInicioAtencion: fechaAtencion,
+                                    finalidad: finalidadCtrl,
+                                    modalidad: mapModalidadOficial(evoData.modalidadAtencion),
+                                    grupoServicios: "01",
+                                    causaMotivoAtencion: mapCausaOficial(evoData.causaMotivoAtencion, finalidadCtrl),
+                                    tipoDiagnosticoPrincipal: evoData.tipoDiagnosticoPrincipal || "01",
+                                    vrServicio: valorServ,
+                                    conceptoRecaudo: "05",
+                                    valorPagoModerador: 0,
+                                    profesional: profObj,
+                                });
+                            }
+                            if (itemErrors.length > 0) invoiceErrors.push(...itemErrors);
+                            continue;
+                        }
 
                         const procRow = {
                             docPaciente: patientDoc,

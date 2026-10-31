@@ -497,6 +497,19 @@ const cupsCodeCache = new Map();
 // Mapa indexado en memoria para búsquedas O(1) ultra rápidas desde catálogos oficiales empaquetados
 let localCupsMap = null;
 
+/**
+ * Consulta (archivo AC) = códigos del grupo 89.0 (890101 a 890899: consultas, interconsultas, controles).
+ * Los demás 89xxxx (ej. 893101, 893104) son procedimientos diagnósticos y van en procedimientos (AP).
+ */
+export function esCodigoConsulta(code) {
+  return /^890\d{3}$/.test(String(code ?? "").trim());
+}
+
+/** Consulta de control o de seguimiento (8903xx), p. ej. 890303 control por odontología general. */
+export function esCodigoControl(code) {
+  return /^8903\d{2}$/.test(String(code ?? "").trim());
+}
+
 function getLocalCupsEntry(cleanCode) {
   if (!localCupsMap) {
     localCupsMap = new Map();
@@ -506,7 +519,7 @@ function getLocalCupsEntry(cleanCode) {
         const item = CUPS_COMPLETO[i];
         if (item && item.code) {
           const codeUpper = String(item.code).trim().toUpperCase();
-          const isConsulta = codeUpper.startsWith("89");
+          const isConsulta = esCodigoConsulta(codeUpper);
           localCupsMap.set(codeUpper, {
             codigo: codeUpper,
             descripcionOficial: item.name || item.descripcion || "PROCEDIMIENTO O CONSULTA",
@@ -534,7 +547,7 @@ function getLocalCupsEntry(cleanCode) {
         const item = CUPS_RIPS_2026_ENTRIES[i];
         if (item && item.codigo) {
           const codeUpper = String(item.codigo).trim().toUpperCase();
-          const isConsulta = item.correspondeBloqueConsultas ?? (item.capitulo === "17" || codeUpper.startsWith("89"));
+          const isConsulta = item.correspondeBloqueConsultas ?? (item.capitulo === "17" || esCodigoConsulta(codeUpper));
           localCupsMap.set(codeUpper, {
             codigo: codeUpper,
             descripcionOficial: item.descripcionOficial || item.descripcion || "PROCEDIMIENTO O CONSULTA",
