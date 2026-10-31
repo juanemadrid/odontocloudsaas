@@ -28,6 +28,7 @@ import {
     PROVIDER_TYPES
 } from "../rips/v003/services/ripsProviderProfileService";
 import Input from "../../components/ui/Input";
+import { SERVICIOS_REPS_ODONTOLOGIA } from "../rips/v003/ripsServicioReps";
 
 const normalizeDate = (val) => {
     if (!val) return "";
@@ -174,6 +175,7 @@ export default function EmpresaUsuarios() {
         ripsTipoPrestador: "unico", // "unico" | "sucursal"
         ripsCodigoUnico: "",
         ripsSucursales: {},
+        ripsCodServicio: "334",
         sisproUsuario: "",
         sisproTipoDoc: "CC",
         newSisproPassword: "",
@@ -260,6 +262,7 @@ export default function EmpresaUsuarios() {
                     ripsTipoPrestador: detail.ripsTipoPrestador || u.ripsTipoPrestador || "unico",
                     ripsCodigoUnico: detail.ripsCodigoUnico || u.ripsCodigoUnico || "",
                     ripsSucursales: detail.ripsSucursales || u.ripsSucursales || {},
+                    ripsCodServicio: detail.ripsCodServicio || u.ripsCodServicio || "334",
                     activo: u.activo !== false
                 });
             });
@@ -305,6 +308,7 @@ export default function EmpresaUsuarios() {
                     ripsTipoPrestador: u.ripsTipoPrestador || existing.ripsTipoPrestador || "unico",
                     ripsCodigoUnico: u.ripsCodigoUnico || existing.ripsCodigoUnico || "",
                     ripsSucursales: u.ripsSucursales || existing.ripsSucursales || {},
+                    ripsCodServicio: u.ripsCodServicio || existing.ripsCodServicio || "334",
                     activo: u.activo !== false
                 });
             });
@@ -426,6 +430,7 @@ export default function EmpresaUsuarios() {
                 ripsTipoPrestador: user.ripsTipoPrestador || "unico",
                 ripsCodigoUnico: user.ripsCodigoUnico || "",
                 ripsSucursales: user.ripsSucursales || {},
+                ripsCodServicio: user.ripsCodServicio || "334",
                 sisproUsuario: user.sisproUsuario || "",
                 sisproTipoDoc: user.sisproTipoDoc || "CC",
                 newSisproPassword: "",
@@ -650,6 +655,7 @@ export default function EmpresaUsuarios() {
                 ripsTipoPrestador: formData.ripsTipoPrestador || "unico",
                 ripsCodigoUnico: formData.ripsCodigoUnico || "",
                 ripsSucursales: formData.ripsSucursales || {},
+                ripsCodServicio: formData.ripsCodServicio || "334",
                 sisproUsuario: formData.sisproUsuario || "",
                 sisproTipoDoc: formData.sisproTipoDoc || "CC",
             };
@@ -1218,6 +1224,23 @@ export default function EmpresaUsuarios() {
 
                                             {/* Columna Derecha: Habilitación en Salud & RIPS / SISPRO */}
                                             <div className="space-y-3">
+                                                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-1.5">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <label htmlFor="select-rips-servicio" className="text-[11px] font-bold text-slate-700">Servicio REPS para RIPS</label>
+                                                        <FiHelpCircle size={12} className="text-slate-400 cursor-help" title="Servicio habilitado en el REPS en el que atiende este profesional. Va en el RIPS de cada consulta y procedimiento. Odontólogo general: 334." />
+                                                    </div>
+                                                    <select
+                                                        id="select-rips-servicio"
+                                                        value={formData.ripsCodServicio || "334"}
+                                                        onChange={e => handleFieldChange("ripsCodServicio", e.target.value)}
+                                                        className="w-full h-8 bg-white border border-slate-200 rounded-lg px-2 text-[12px] text-slate-700 outline-none focus:border-blue-500"
+                                                    >
+                                                        {SERVICIOS_REPS_ODONTOLOGIA.map(s => (
+                                                            <option key={s.codigo} value={s.codigo}>{s.codigo} · {s.nombre}</option>
+                                                        ))}
+                                                    </select>
+                                                    <p className="text-[10px] text-slate-400 leading-snug">Debe estar habilitado en el REPS del código de prestador con el que se reporta.</p>
+                                                </div>
                                                 {(tenantProviderType !== PROVIDER_TYPES.IPS) ? (
                                                     <div className="space-y-3">
                                                         <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 transition-all">

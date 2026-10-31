@@ -53,6 +53,7 @@ import { downloadFactusAttachedDocumentXml } from '../../services/factusProxySer
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { buildDashboardPath } from "../../utils/dashboardBasePath";
+import { resolveCodServicio, alertaConsultaServicio } from "./v003/ripsServicioReps";
 
 /**
  * Validador de cruce obligatorio JSON ↔ XML AttachedDocument
@@ -817,6 +818,17 @@ export default function RipsGenerator() {
         return null;
     };
 
+    // Servicio REPS de la atención: el del profesional que atendió; si no lo tiene configurado y es
+    // un profesional independiente, el del profesional seleccionado; si no, 334 (Odontología general).
+    const servicioRepsDe = (prof) => {
+        if (prof?.codServicio) return Number(prof.codServicio);
+        if (!isIps && selectedDoctor) {
+            const seleccionado = doctorRipsList.find(d => d.id === selectedDoctor);
+            if (seleccionado) return resolveCodServicio(seleccionado);
+        }
+        return resolveCodServicio(null);
+    };
+
     const resolveDoctorInfo = (docIdOrName, profilesList = [], tenantCfg = {}) => {
         const defaultDocType = "CC";
         const defaultDocNum = String(tenantCfg?.nit || "").replace(/\D/g, "");
@@ -840,6 +852,7 @@ export default function RipsGenerator() {
                 ...docIdOrName,
                 tipoDocumentoIdentificacion: docType,
                 numDocumentoIdentificacion: numDoc,
+                codServicio: docIdOrName.ripsCodServicio ? resolveCodServicio(docIdOrName) : null,
             };
         }
         const target = String(docIdOrName).trim().toLowerCase();
@@ -855,6 +868,7 @@ export default function RipsGenerator() {
             return {
                 tipoDocumentoIdentificacion: validTypes.includes(docType) ? docType : defaultDocType,
                 numDocumentoIdentificacion: docNum || defaultDocNum,
+                codServicio: profMatch.ripsCodServicio ? resolveCodServicio(profMatch) : null,
             };
         }
         return {
@@ -1377,6 +1391,9 @@ export default function RipsGenerator() {
                             if (!usesClinicalSources && isAssignedToOtherDoctor) continue;
                         }
                         const fechaAtencion = formatDateTimeRips(matchedDoc?.fecha || docMeta.fechaIso || matchedDoc?.created_at || fechaDoc);
+                        const codServicioConsulta = servicioRepsDe(profObj);
+                        const alertaServicio = alertaConsultaServicio(docCups, codServicioConsulta);
+                        if (alertaServicio) itemErrors.push(alertaServicio);
 
                         const consultaRow = {
                             docPaciente: patientDoc,
@@ -1388,7 +1405,7 @@ export default function RipsGenerator() {
                             codConsulta: docCups || "SIN_CUPS",
                             modalidadGrupoServicioTecSal: mapModalidadOficial(docMeta.modalidad),
                             grupoServicios: "01",
-                            codServicio: 334,
+                            codServicio: codServicioConsulta,
                             finalidadTecnologiaSalud: mapFinalidadOficial(docMeta.finalidad, { isConsulta: true }),
                             causaMotivoAtencion: mapCausaOficial(docMeta.causaMotivoAtencion, mapFinalidadOficial(docMeta.finalidad, { isConsulta: true })),
                             dxPrincipal: codDxPrincipal || "SIN_DX",
@@ -1409,6 +1426,7 @@ export default function RipsGenerator() {
                             adaptedAtencionesForInvoice.push({
                                 tipoAtencion: "consulta",
                                 cupsCode: docCups,
+                                codServicio: codServicioConsulta,
                                 codDiagnosticoPrincipal: codDxPrincipal,
                                 codDiagnosticoRelacionado1: codDxRel1,
                                 fechaInicioAtencion: fechaAtencion,
@@ -1513,7 +1531,7 @@ export default function RipsGenerator() {
                             viaIngresoServicioSalud: "01",
                             modalidadGrupoServicioTecSal: mapModalidadRips(evoData.modalidadAtencion),
                             grupoServicios: "01",
-                            codServicio: 334,
+                            codServicio: servicioRepsDe(profObj),
                             finalidadTecnologiaSalud: mapFinalidadRips(evoData.finalidad || evoData.tipoServicio, false),
                             tipoPersonal: "01",
                             dxPrincipal: codDxPrincipal || "SIN_DX",
@@ -1535,6 +1553,7 @@ export default function RipsGenerator() {
                             adaptedAtencionesForInvoice.push({
                                 tipoAtencion: "procedimiento",
                                 cupsCode: procCups,
+                                codServicio: procRow.codServicio,
                                 codDiagnosticoPrincipal: codDxPrincipal,
                                 codDiagnosticoRelacionado: codDxRel,
                                 codComplicacion: codComp,

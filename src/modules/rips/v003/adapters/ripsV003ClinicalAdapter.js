@@ -510,7 +510,10 @@ export async function adaptClinicalDataToRipsV003(input) {
         vrServicio,
         valorPagoModerador,
         codPrestador,
-        codServicio: codServicioNum,
+        // Servicio REPS propio de la atención (el del profesional); si no viene, el general del prestador.
+        codServicio: at.codServicio !== undefined && at.codServicio !== null && at.codServicio !== ""
+          ? requireValidNumber(at.codServicio, `${prefix}.codServicio`)
+          : codServicioNum,
         paciente: {
           tipoDocumentoIdentificacion: tipoDocPac,
           numDocumentoIdentificacion: numDocPac,
