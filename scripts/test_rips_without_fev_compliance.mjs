@@ -182,6 +182,7 @@ await asyncTest("6. RIPS sin FEV genera estrictamente numFactura === null", asyn
         fechaNacimiento: "1990-05-15",
         codSexo: "F",
         codPaisResidencia: "170",
+        codPaisOrigen: "170", // DT1: país de nacimiento obligatorio
         codMunicipioResidencia: "70001",
         codZonaTerritorialResidencia: "01",
         incapacidad: "02",
@@ -260,6 +261,7 @@ await asyncTest("9. RIPS sin FEV preserva paciente, CUPS, CIE-10 y profesional",
       fechaNacimiento: "1988-11-20",
       codSexo: "F",
       codPaisResidencia: "170",
+      codPaisOrigen: "170", // DT1: país de nacimiento obligatorio
       codMunicipioResidencia: "70001",
       codZonaTerritorialResidencia: "01",
       incapacidad: "02",
@@ -277,6 +279,7 @@ await asyncTest("9. RIPS sin FEV preserva paciente, CUPS, CIE-10 y profesional",
       valor: 150000,
       total: 150000,
       cie10: "K051",
+      fechaInicioAtencion: "2026-09-20 08:00", // la fecha de la atención ya no se inventa
       finalidad: "44",
       causaExterna: "38",
       tipoDiagnostico: "01",
@@ -389,6 +392,7 @@ await asyncTest("17. Validador RIPS v003 rechaza si numFactura no es null en RIP
       fechaNacimiento: "1990-05-15",
       codSexo: "F",
       codPaisResidencia: "170",
+      codPaisOrigen: "170", // DT1: país de nacimiento obligatorio
       codMunicipioResidencia: "70001",
       codZonaTerritorialResidencia: "01",
       incapacidad: "02",

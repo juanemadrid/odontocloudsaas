@@ -12,6 +12,15 @@ import {
 import {
     adaptClinicalDataToRipsV003
 } from './v003/adapters/ripsV003ClinicalAdapter';
+import {
+    mapFinalidadOficial,
+    mapCausaOficial,
+    mapModalidadOficial,
+    mapZonaOficial,
+    mapTipoDocumentoOficial,
+    documentoAcordeEdad,
+} from './v003/ripsV003Catalogs';
+import { resolveResidence, resolveCountry } from './v003/ripsResidence';
 import { readRipsSource, ripsDocumentInRange, buildRipsClinicalSources, collectRipsConsultations, getRipsPlanItems, splitRipsClinicalSources } from './v003/services/ripsSourceService';
 import { resolveRipsTariffItem, resolveRipsServiceSettings } from './v003/services/ripsTariffService';
 import { applyRipsHistoricalLinks, ripsHistoricalLinkKey, ripsHistoricalLinkOptions } from './v003/services/ripsHistoricalLinkService';
@@ -178,8 +187,10 @@ export default function RipsGenerator() {
     const providerWarning = configWarning || (!isIps && !selectedDoctor
         ? 'Seleccione el profesional que genera RIPS. Sus datos se configuran en Configuración → Usuarios.'
         : (!currentProviderContext.obligatedDocument ? 'Falta el documento del prestador responsable.'
-            : (!/^\d{10}(\d{2})?$/.test(currentProviderContext.providerCode || '')
-                ? (isIps ? 'Falta o es inválido el código REPS institucional.' : 'Revise el código REPS del profesional o de la sede en Configuración → Usuarios.') : '')));
+            : (!/^\d{12}$/.test(currentProviderContext.providerCode || '')
+                ? (isIps
+                    ? 'El código REPS de la institución debe tener 12 dígitos (10 del prestador + 2 de la sede, ej. 700010165701). Revíselo en Configuración → Datos de la empresa.'
+                    : 'El código REPS del profesional debe tener 12 dígitos (10 del prestador + 2 de la sede, ej. 700010165701). Revíselo en Configuración → Usuarios.') : '')));
 
     // Estado Preflight RIPS v003
     const [preflightStatus, setPreflightStatus] = useState(null); // null | 'VALIDATING' | 'READY' | 'HAS_ERRORS'
@@ -738,23 +749,19 @@ export default function RipsGenerator() {
     // HELPERS DE NORMALIZACIÓN CLÍNICA NORMATIVA RIPS v003
     // ─────────────────────────────────────────────────────────────
 
-    const mapModalidadRips = (mod) => {
-        if (!mod) return "01";
-        const s = String(mod).toLowerCase().trim();
-        if (s.includes("extra") || s.includes("domicil")) return "03";
-        if (s.includes("movil") || s.includes("móvil")) return "02";
-        if (s.includes("tele") || s.includes("virtual")) return "04";
-        return "01";
-    };
+    // Tablas oficiales SISPRO (antes se enviaban códigos que el validador del Ministerio no acepta).
+    const mapModalidadRips = (mod) => mapModalidadOficial(mod);
+    const mapFinalidadRips = (fin, isConsulta = false) => mapFinalidadOficial(fin, { isConsulta });
 
-    const mapFinalidadRips = (fin, isConsulta = false) => {
-        if (!fin) return isConsulta ? "10" : "02";
-        const s = String(fin).toLowerCase().trim();
-        if (s.includes("diag") || s === "10" || s === "01") return isConsulta ? "10" : "01";
-        if (s.includes("terap") || s === "11" || s === "02") return isConsulta ? "11" : "02";
-        if (s.includes("protec") || s === "16" || s === "03") return isConsulta ? "16" : "03";
-        if (s.includes("detec") || s === "04") return isConsulta ? "10" : "04";
-        return isConsulta ? "10" : "02";
+    // Fecha y hora de la atención en hora de Colombia. Si solo hay fecha, se usa la hora registrada en la atención.
+    const atencionDateTime = (val, hora) => {
+        const s = String(val || '').trim();
+        const h = String(hora || '').trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s) && /^\d{1,2}:\d{2}/.test(h)) {
+            const [hh, mm] = h.split(':');
+            return `${s} ${hh.padStart(2, '0')}:${mm.slice(0, 2)}`;
+        }
+        return formatDateTimeRips(val);
     };
 
     const formatDateTimeRips = (val) => {
@@ -769,6 +776,15 @@ export default function RipsGenerator() {
             const s = val.trim();
             if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(s)) return s;
             if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(s)) {
+                // Con zona horaria (Z o ±hh:mm): convertir a hora de Colombia. Sin zona: ya es hora local.
+                if (/(Z|[+-]\d{2}:?\d{2})$/.test(s)) {
+                    const d = new Date(s);
+                    if (!isNaN(d.getTime())) {
+                        const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit',
+                            day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(d).map(p => [p.type, p.value]));
+                        return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+                    }
+                }
                 return s.replace('T', ' ').substring(0, 16);
             }
             if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
@@ -787,6 +803,18 @@ export default function RipsGenerator() {
             }
         } catch (_) {}
         return `${new Date().toISOString().substring(0, 10)} 08:00`;
+    };
+
+    // El RIPS debe llevar el documento real del profesional que atendió. Si no se encontró, antes se
+    // ponía el NIT de la clínica: eso es un dato falso cuando la clínica es una empresa (NIT 8xx/9xx).
+    const professionalIdError = (prof, tenantCfg = {}) => {
+        const num = String(prof?.numDocumentoIdentificacion || "").replace(/\D/g, "");
+        const nit = String(tenantCfg?.nit || "").replace(/\D/g, "");
+        if (!num) return "MISSING_PROFESSIONAL_ID: El profesional que atendió no tiene número de documento. Complételo en Configuración → Usuarios.";
+        if (nit && num === nit && /^[89]\d{8}$/.test(nit)) {
+            return "MISSING_PROFESSIONAL_ID: No se encontró el documento del profesional que atendió (se estaba usando el NIT de la clínica). Asigne el profesional en la atención y complete su documento en Configuración → Usuarios.";
+        }
+        return null;
     };
 
     const resolveDoctorInfo = (docIdOrName, profilesList = [], tenantCfg = {}) => {
@@ -1127,7 +1155,7 @@ export default function RipsGenerator() {
                 if (!nitObligado) invoiceErrors.push("Falta documento del prestador responsable");
                 if (normalizedDoc.modeEligibilityError) invoiceErrors.push(normalizedDoc.modeEligibilityError);
                 if (currentProviderContext.valid === false) invoiceErrors.push(currentProviderContext.error || 'Configuración del prestador incompleta');
-                if (!codPrestador || codPrestador.length < 10) invoiceErrors.push("Código REPS inválido o ausente");
+                if (!/^\d{12}$/.test(codPrestador)) invoiceErrors.push(`Código REPS ${codPrestador ? `'${codPrestador}' inválido` : 'ausente'}: debe tener 12 dígitos (10 del prestador + 2 de la sede). ${isIps ? 'Configuración → Datos de la empresa' : 'Configuración → Usuarios'}.`);
                 if (normalizedDoc.metadataError) invoiceErrors.push(normalizedDoc.metadataError);
 
                 // Datos demográficos canónicos del paciente
@@ -1138,26 +1166,41 @@ export default function RipsGenerator() {
                 else if (rawSexo === "I" || rawSexo === "INDETERMINADO") codSexo = "I";
 
                 const rawTipoUsuario = String(pacienteData?.tipoUsuario || pacienteData?.tipo_usuario || "12").trim().padStart(2, "0");
-                const rawMunicipio = String(pacienteData?.codMunicipioResidencia || pacienteData?.codigoMunicipio || "70001").trim();
-                const rawZona = String(pacienteData?.codZonaTerritorialResidencia || (pacienteData?.zona === "Rural" ? "02" : "01")).trim().padStart(2, "0");
+                // Residencia real del paciente (ciudad y país de su ficha → códigos DANE / ISO). Antes se usaba 70001 para todos.
+                const residencia = pacienteData?.codMunicipioResidencia
+                    ? { codPaisResidencia: "170", codMunicipioResidencia: String(pacienteData.codMunicipioResidencia).trim(), error: null }
+                    : resolveResidence({ ciudad: pacienteData?.ciudad_domicilio || pacienteData?.ciudadDomicilio || pacienteData?.ciudad || pacienteData?.lugar_residencia,
+                        pais: pacienteData?.pais_domicilio || pacienteData?.paisDomicilio });
+                const rawMunicipio = residencia.codMunicipioResidencia;
+                // ZonaVersion2: 01 = Rural, 02 = Urbano (la ficha guarda "Urbana"/"Urbano"/"Rural" en zona_residencial).
+                const rawZona = pacienteData?.codZonaTerritorialResidencia
+                    ? String(pacienteData.codZonaTerritorialResidencia).trim().padStart(2, "0")
+                    : mapZonaOficial(pacienteData?.zona_residencial || pacienteData?.zonaResidencial || pacienteData?.zona);
                 const rawIncapacidad = pacienteData?.incapacidad !== undefined ? (pacienteData.incapacidad ? "01" : "02") : "02";
+                // La ficha guarda el tipo de documento en texto ("Cédula de ciudadanía"): se traduce al código RIPS.
+                const tipoDocPaciente = mapTipoDocumentoOficial(pacienteData?.tipoDoc || pacienteData?.tipoDocumento || pacienteData?.tipo_documento || "CC") || "CC";
+                const codPaisOrigen = resolveCountry(pacienteData?.pais_nacimiento || pacienteData?.paisNacimiento);
+                const fechaNacPaciente = normalizeFecha(pacienteData?.fechaNacimiento || pacienteData?.fecha_nacimiento) || "";
 
                 const patientErrors = [];
                 if (!pacienteData?.fechaNacimiento && !pacienteData?.fecha_nacimiento) patientErrors.push("Falta fecha de nacimiento del paciente");
                 if (!codSexo) patientErrors.push("Falta o es inválido el sexo/género del paciente (permitidos: M, F, I)");
-                if (!/^\d{5}$/.test(rawMunicipio)) patientErrors.push("Código DIVIPOLA de municipio inválido (debe tener 5 dígitos)");
+                if (residencia.error) patientErrors.push(residencia.error);
+                if (!codPaisOrigen) patientErrors.push("País de nacimiento del paciente no reconocido (revise la ficha del paciente).");
+                const docEdad = documentoAcordeEdad(tipoDocPaciente, fechaNacPaciente);
+                if (!docEdad.ok) patientErrors.push(`Tipo de documento ${tipoDocPaciente} no corresponde a la edad del paciente (${docEdad.age} años): debería ser ${docEdad.expected}. Corríjalo en la ficha del paciente (el Ministerio rechaza este caso).`);
 
                 const usuarioWithValidation = {
                     numDocumentoIdentificacion: patientDoc || pacienteData?.nroDocumento || pacienteData?.cedula || "0",
-                    tipoDocumentoIdentificacion: String(pacienteData?.tipoDoc || pacienteData?.tipoDocumento || "CC").toUpperCase(),
+                    tipoDocumentoIdentificacion: tipoDocPaciente,
                     tipoUsuario: rawTipoUsuario,
-                    fechaNacimiento: normalizeFecha(pacienteData?.fechaNacimiento || pacienteData?.fecha_nacimiento) || "",
+                    fechaNacimiento: fechaNacPaciente,
                     codSexo,
-                    codPaisResidencia: "170",
+                    codPaisResidencia: residencia.codPaisResidencia || "170",
                     codMunicipioResidencia: rawMunicipio,
                     codZonaTerritorialResidencia: rawZona,
                     incapacidad: rawIncapacidad === "01" || pacienteData?.incapacidad ? "Si" : "No",
-                    codPaisOrigen: "170",
+                    codPaisOrigen: codPaisOrigen || "170",
                     registroSiras: "",
                     nombreCompleto: pacienteData ? (pacienteData.nombreCompleto || `${pacienteData.nombres || ""} ${pacienteData.apellidos || ""}`.trim()) : pacNombre,
                     errors: patientErrors
@@ -1317,6 +1360,8 @@ export default function RipsGenerator() {
                         const codDxRel1 = dxRelArray[0]?.code || dxRelArray[0] || null;
 
                         const profObj = resolveDoctorInfo(matchedDoc?.profesional_id || docMeta.profesionalNombre || docMeta.profesional, profilesList, tenantConfig);
+                        const profIdErr = professionalIdError(profObj, tenantConfig);
+                        if (profIdErr) itemErrors.push(profIdErr);
                         if (!isIps && selectedDoctor) {
                             const isAssignedToOtherDoctor = doctorRipsList.some(otherDoc => {
                                 if (otherDoc.id === selectedDoctor) return false;
@@ -1341,11 +1386,11 @@ export default function RipsGenerator() {
                             fechaInicio: fechaAtencion,
                             numAutorizacion: f.nroAutorizacion || f.autorizacion || null,
                             codConsulta: docCups || "SIN_CUPS",
-                            modalidadGrupoServicioTecSal: docMeta.modalidad || "01",
+                            modalidadGrupoServicioTecSal: mapModalidadOficial(docMeta.modalidad),
                             grupoServicios: "01",
                             codServicio: 334,
-                            finalidadTecnologiaSalud: docMeta.finalidad || "10",
-                            causaMotivoAtencion: docMeta.causaMotivoAtencion || "38",
+                            finalidadTecnologiaSalud: mapFinalidadOficial(docMeta.finalidad, { isConsulta: true }),
+                            causaMotivoAtencion: mapCausaOficial(docMeta.causaMotivoAtencion, mapFinalidadOficial(docMeta.finalidad, { isConsulta: true })),
                             dxPrincipal: codDxPrincipal || "SIN_DX",
                             codDiagnosticoRelacionado1: codDxRel1,
                             tipoDiagnosticoPrincipal: docMeta.tipoDiagnosticoPrincipal || "01",
@@ -1367,10 +1412,10 @@ export default function RipsGenerator() {
                                 codDiagnosticoPrincipal: codDxPrincipal,
                                 codDiagnosticoRelacionado1: codDxRel1,
                                 fechaInicioAtencion: fechaAtencion,
-                                finalidad: docMeta.finalidad || "10",
-                                modalidad: docMeta.modalidad || "01",
+                                finalidad: mapFinalidadOficial(docMeta.finalidad, { isConsulta: true }),
+                                modalidad: mapModalidadOficial(docMeta.modalidad),
                                 grupoServicios: "01",
-                                causaMotivoAtencion: docMeta.causaMotivoAtencion || "38",
+                                causaMotivoAtencion: mapCausaOficial(docMeta.causaMotivoAtencion, mapFinalidadOficial(docMeta.finalidad, { isConsulta: true })),
                                 tipoDiagnosticoPrincipal: docMeta.tipoDiagnosticoPrincipal || "01",
                                 vrServicio: valorServ,
                                 conceptoRecaudo: "05",
@@ -1438,6 +1483,8 @@ export default function RipsGenerator() {
                         const codDxRel = evoData.dxRelacionado?.code || evoData.dxRelacionado || null;
                         const codComp = evoData.complicacion?.code || evoData.complicacion || null;
                         const profObj = resolveDoctorInfo(matchedEvo?.profesional_id || evoData.doctorId, profilesList, tenantConfig);
+                        const profIdErr = professionalIdError(profObj, tenantConfig);
+                        if (profIdErr) itemErrors.push(profIdErr);
                         if (!isIps && selectedDoctor) {
                             const isAssignedToOtherDoctor = doctorRipsList.some(otherDoc => {
                                 if (otherDoc.id === selectedDoctor) return false;
@@ -1453,7 +1500,7 @@ export default function RipsGenerator() {
                             });
                             if (!usesClinicalSources && isAssignedToOtherDoctor) continue;
                         }
-                        const fechaAtencion = formatDateTimeRips(matchedEvo?.fecha || evoData.date || matchedPlanItem?.fechaRealizado || fechaDoc);
+                        const fechaAtencion = atencionDateTime(matchedEvo?.fecha || evoData.date || matchedPlanItem?.fechaRealizado || fechaDoc, evoData.horaInicio);
 
                         const procRow = {
                             docPaciente: patientDoc,
@@ -1465,7 +1512,7 @@ export default function RipsGenerator() {
                             codProcedimiento: procCups || "SIN_CUPS",
                             viaIngresoServicioSalud: "01",
                             modalidadGrupoServicioTecSal: mapModalidadRips(evoData.modalidadAtencion),
-                            grupoServicios: "02",
+                            grupoServicios: "01",
                             codServicio: 334,
                             finalidadTecnologiaSalud: mapFinalidadRips(evoData.finalidad || evoData.tipoServicio, false),
                             tipoPersonal: "01",
@@ -1494,7 +1541,7 @@ export default function RipsGenerator() {
                                 viaIngresoServicioSalud: "01",
                                 fechaInicioAtencion: fechaAtencion,
                                 modalidad: mapModalidadRips(evoData.modalidadAtencion),
-                                grupoServicios: "02",
+                                grupoServicios: "01", // Odontología general (334) es del grupo Consulta externa
                                 finalidad: mapFinalidadRips(evoData.finalidad || evoData.tipoServicio, false),
                                 vrServicio: valorServ,
                                 conceptoRecaudo: "05",
@@ -1553,6 +1600,7 @@ export default function RipsGenerator() {
                                 codMunicipioResidencia: usuarioWithValidation.codMunicipioResidencia,
                                 codZonaTerritorialResidencia: usuarioWithValidation.codZonaTerritorialResidencia,
                                 incapacidad: usuarioWithValidation.incapacidad,
+                                codPaisOrigen: usuarioWithValidation.codPaisOrigen,
                             },
                             profesional: resolveDoctorInfo(selectedDoctorObj, profilesList, tenantConfig),
                             atenciones: adaptedAtencionesForInvoice,
@@ -2149,7 +2197,7 @@ export default function RipsGenerator() {
             "Modalidad": c.modalidadGrupoServicioTecSal || "01",
             "Grupo servicio": c.grupoServicios || "01",
             "Cod. servicio": c.codServicio || 334,
-            "Finalidad de la consulta": c.finalidadTecnologiaSalud || "10",
+            "Finalidad de la consulta": c.finalidadTecnologiaSalud || "15",
             "Causa/motivo atención": c.causaMotivoAtencion || "38",
             "Cód dx Principal": c.dxPrincipal || "",
             "Cód dx Rel 1": c.codDiagnosticoRelacionado1 || "",
@@ -2204,7 +2252,7 @@ export default function RipsGenerator() {
             "Nro.Identificación del Profesional": p.numDocumentoIdentificacion || "",
             "Cód dx Principal": p.dxPrincipal || "",
             "Cód dx Relacionado": p.codDiagnosticoRelacionado || "",
-            "Finalidad del procedimiento": p.finalidadTecnologiaSalud || "02",
+            "Finalidad del procedimiento": p.finalidadTecnologiaSalud || "16",
             "Complicación": p.codComplicacion || "",
             "Valor del servicio": p.valorServicio || 0,
             "Concepto recaudo": p.conceptoRecaudo || "05",
@@ -3529,7 +3577,7 @@ export default function RipsGenerator() {
                                                         <td className="py-2 px-3 font-mono">{c.modalidadGrupoServicioTecSal || '01'}</td>
                                                         <td className="py-2 px-3 font-mono">{c.grupoServicios || '01'}</td>
                                                         <td className="py-2 px-3 font-mono">{c.codServicio || 334}</td>
-                                                        <td className="py-2 px-3 font-mono">{c.finalidadTecnologiaSalud || '10'}</td>
+                                                        <td className="py-2 px-3 font-mono">{c.finalidadTecnologiaSalud || '15'}</td>
                                                         <td className="py-2 px-3 font-mono">{c.causaMotivoAtencion || '38'}</td>
                                                         <td className="py-2 px-3 font-mono font-bold text-emerald-600">{c.dxPrincipal}</td>
                                                         <td className="py-2 px-3 font-mono">{c.codDiagnosticoRelacionado1 || '-'}</td>
@@ -3664,7 +3712,7 @@ export default function RipsGenerator() {
                                                         <td className="py-2 px-3 font-mono">{p.numDocumentoIdentificacion}</td>
                                                         <td className="py-2 px-3 font-mono font-bold text-emerald-600">{p.dxPrincipal}</td>
                                                         <td className="py-2 px-3 font-mono">{p.codDiagnosticoRelacionado || '-'}</td>
-                                                        <td className="py-2 px-3 font-mono">{p.finalidadTecnologiaSalud || '02'}</td>
+                                                        <td className="py-2 px-3 font-mono">{p.finalidadTecnologiaSalud || '16'}</td>
                                                         <td className="py-2 px-3 font-mono">{p.codComplicacion || '-'}</td>
                                                         <td className="py-2 px-3 text-right font-bold">{fmt(p.valorServicio)}</td>
                                                         <td className="py-2 px-3 font-mono">{p.conceptoRecaudo || '05'}</td>

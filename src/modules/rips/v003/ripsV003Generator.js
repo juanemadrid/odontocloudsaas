@@ -1,5 +1,5 @@
 import { isFevRips0948Enabled } from "./ripsFeatureFlagService.js";
-import { validateCatalogValue, getCupsClassification } from "./ripsV003Catalogs.js";
+import { validateCatalogValue, getCupsClassification, mapFinalidadOficial, mapCausaOficial } from "./ripsV003Catalogs.js";
 import { isServiceHabilitadoEnSede } from "./ripsV003RepsService.js";
 import { validateRipsV003, isValidCalendarDateTime, CUPS_REGEX } from "./ripsV003Validator.js";
 
@@ -151,8 +151,9 @@ export async function generateRipsV003({
       if (!pac.codPaisResidencia || String(pac.codPaisResidencia).trim() === "") {
         throw new Error("codPaisResidencia del paciente es obligatorio.");
       }
-      if (!pac.codMunicipioResidencia || String(pac.codMunicipioResidencia).trim() === "") {
-        throw new Error("codMunicipioResidencia del paciente es obligatorio.");
+      const viveEnColombia = String(pac.codPaisResidencia).trim() === "170";
+      if (viveEnColombia && (!pac.codMunicipioResidencia || String(pac.codMunicipioResidencia).trim() === "")) {
+        throw new Error("codMunicipioResidencia del paciente es obligatorio cuando reside en Colombia.");
       }
       if (!pac.codZonaTerritorialResidencia || String(pac.codZonaTerritorialResidencia).trim() === "") {
         throw new Error("codZonaTerritorialResidencia del paciente es obligatorio.");
@@ -165,7 +166,7 @@ export async function generateRipsV003({
         fechaNacimiento: String(pac.fechaNacimiento).trim(),
         codSexo: pac.codSexo !== undefined && pac.codSexo !== null ? String(pac.codSexo).trim().toUpperCase() : "",
         codPaisResidencia: String(pac.codPaisResidencia).trim(),
-        codMunicipioResidencia: String(pac.codMunicipioResidencia).trim(),
+        codMunicipioResidencia: viveEnColombia ? String(pac.codMunicipioResidencia).trim() : null,
         codZonaTerritorialResidencia: String(pac.codZonaTerritorialResidencia).trim().padStart(2, "0"),
         incapacidad: incCode, // "01" (SI) o "02" (NO)
         codPaisOrigen: pac.codPaisOrigen !== undefined && pac.codPaisOrigen !== null && String(pac.codPaisOrigen).trim() !== "" ? String(pac.codPaisOrigen).trim() : null,
@@ -558,8 +559,9 @@ export async function generateRipsV003({
         modalidadGrupoServicioTecSal: String(modalidadVal).trim().padStart(2, "0"),
         grupoServicios: String(atencion.grupoServicios).trim().padStart(2, "0"),
         codServicio: codServicioNum,
-        finalidadTecnologiaSalud: String(finalidadVal).trim().padStart(2, "0"),
-        causaMotivoAtencion: String(atencion.causaMotivoAtencion).trim().padStart(2, "0"),
+        // Tabla oficial RIPSFinalidadConsultaVersion2 / RIPSCausaExternaVersion2 (traduce códigos viejos).
+        finalidadTecnologiaSalud: mapFinalidadOficial(finalidadVal, { isConsulta: true }),
+        causaMotivoAtencion: mapCausaOficial(atencion.causaMotivoAtencion, mapFinalidadOficial(finalidadVal, { isConsulta: true })),
         codDiagnosticoPrincipal: codDxPrincipal,
         codDiagnosticoPrincipalCIE11: codCie11,
         nomCodDiagnosticoPrincipalCIE11: nomCie11,
@@ -608,14 +610,14 @@ export async function generateRipsV003({
       usuarioObj.servicios.procedimientos.push({
         codPrestador: codPrestadorAtencion,
         fechaInicioAtencion,
-        idMIPRES: atencion.idMIPRES !== undefined && atencion.idMIPRES !== null ? Number(atencion.idMIPRES) : null,
+        idMIPRES: cleanOptionalString(atencion.idMIPRES), // DT1: tipo C (texto), 0-19
         numAutorizacion: cleanOptionalString(atencion.numAutorizacion),
         codProcedimiento: explicitCups,
         viaIngresoServicioSalud: String(atencion.viaIngresoServicioSalud).trim().padStart(2, "0"),
         modalidadGrupoServicioTecSal: String(atencion.modalidad).trim().padStart(2, "0"),
         grupoServicios: String(atencion.grupoServicios).trim().padStart(2, "0"),
         codServicio: codServicioNum,
-        finalidadTecnologiaSalud: String(atencion.finalidad).trim().padStart(2, "0"),
+        finalidadTecnologiaSalud: mapFinalidadOficial(atencion.finalidad), // 11..44 (los 01-05 viejos se traducen)
         codDiagnosticoPrincipal: codDxPrincipal,
         codDiagnosticoPrincipalCIE11: codCie11,
         nomCodDiagnosticoPrincipalCIE11: nomCie11,

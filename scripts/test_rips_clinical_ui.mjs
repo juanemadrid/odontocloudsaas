@@ -10,7 +10,7 @@ const tenant = '00000000-0000-4000-a000-000000000001';
 const doctor = '00000000-0000-4000-a000-000000000002';
 const patient = '00000000-0000-4000-a000-000000000003';
 const professional = { id: doctor, tenant_id: tenant, role: 'doctor', full_name: 'Profesional Prueba',
-  nombreCompleto: 'Profesional Prueba', numeroDocumento: '12345678', generaRips: true, esDoctor: true, ripsCodigoUnico: '7000101658' };
+  nombreCompleto: 'Profesional Prueba', numeroDocumento: '12345678', generaRips: true, esDoctor: true, ripsCodigoUnico: '700010165801' }; // REPS de 12 dígitos (10 del prestador + 2 de la sede)
 const tables = {
   tenants: [{ id: tenant, nit: '901234567', esIps: false }],
   website_config: [{ tenant_id: tenant, config: { empresa_datos: { providerType: 'PROFESIONAL_INDEPENDIENTE',

@@ -1,4 +1,4 @@
-import { validateCatalogValue, getCupsClassification } from "./ripsV003Catalogs.js";
+import { validateCatalogValue, getCupsClassification, FINALIDAD_CODES, CAUSA_EXTERNA_CODES, MODALIDAD_CODES, VIA_INGRESO_CODES } from "./ripsV003Catalogs.js";
 import { CUPS_DENTAL_CODES } from "../../../data/cupsCodes.js";
 import cie10List from "../../../data/cie10.json" with { type: "json" };
 
@@ -15,6 +15,11 @@ export const DATE_FORMAT_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 export const DATETIME_FORMAT_REGEX = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/;
 export const CUPS_REGEX = /^[A-Z0-9]{6}$/i;
 export const CIE10_REGEX = /^[A-Z][0-9]{2}[0-9A-Z]?$/i;
+// Código de habilitación REPS: 10 dígitos del prestador + 2 de la sede (tabla IPSCodHabilitacion).
+export const COD_PRESTADOR_REGEX = /^\d{12}$/;
+const GRUPO_SERVICIOS_CODES = new Set(["01", "02", "03", "04", "05"]);
+const codPrestadorError = (prefix, value) =>
+  `${prefix}: codPrestador '${value ?? ""}' debe tener exactamente 12 dígitos (código REPS de 10 dígitos + 2 de la sede, ej. 700010165701). Corríjalo en Configuración → Datos de la empresa.`;
 
 // Set de códigos oficiales CUPS odontológicos
 const VALID_DENTAL_CUPS = new Set(CUPS_DENTAL_CODES.map(c => c.code.toUpperCase()));
@@ -180,11 +185,14 @@ export async function validateRipsV003(ripsJson, options = {}) {
     if (!/^\d{3}$/.test(String(u.codPaisResidencia || ""))) {
       errors.push(`${uPrefix}: codPaisResidencia debe tener 3 dígitos (ej: 170).`);
     }
-    if (!/^\d{5}$/.test(String(u.codMunicipioResidencia || ""))) {
-      errors.push(`${uPrefix}: codMunicipioResidencia debe tener 5 dígitos DIVIPOLA.`);
+    // El municipio es obligatorio cuando el país de residencia es Colombia (170).
+    if (String(u.codPaisResidencia || "") === "170" || (u.codMunicipioResidencia !== null && u.codMunicipioResidencia !== undefined)) {
+      if (!/^\d{5}$/.test(String(u.codMunicipioResidencia || ""))) {
+        errors.push(`${uPrefix}: codMunicipioResidencia debe tener 5 dígitos DIVIPOLA.`);
+      }
     }
     if (!["01", "02"].includes(String(u.codZonaTerritorialResidencia || ""))) {
-      errors.push(`${uPrefix}: codZonaTerritorialResidencia debe ser '01' o '02'.`);
+      errors.push(`${uPrefix}: codZonaTerritorialResidencia debe ser '01' (Rural) o '02' (Urbano) según ZonaVersion2.`);
     }
 
     // REGLA OFICIAL INCAPACIDAD: Catálogo LstSiNo exige "01" (SI) o "02" (NO)
@@ -193,10 +201,9 @@ export async function validateRipsV003(ripsJson, options = {}) {
       errors.push(`${uPrefix}: incapacidad '${incVal}' es inválido. Debe ser '01' (SI) o '02' (NO) según la tabla oficial LstSiNo de SISPRO.`);
     }
 
-    if (u.codPaisOrigen !== null && u.codPaisOrigen !== undefined) {
-      if (!/^\d{3}$/.test(String(u.codPaisOrigen).trim())) {
-        errors.push(`${uPrefix}: codPaisOrigen debe tener 3 dígitos.`);
-      }
+    // codPaisOrigen (U11) es obligatorio: país de nacimiento, 3 dígitos ISO 3166-1 (Colombia = 170).
+    if (!/^\d{3}$/.test(String(u.codPaisOrigen ?? "").trim())) {
+      errors.push(`${uPrefix}: codPaisOrigen es obligatorio y debe tener 3 dígitos (ej: 170).`);
     }
     if (typeof u.consecutivo !== "number" || u.consecutivo < 1) {
       errors.push(`${uPrefix}: consecutivo de usuario debe ser un número entero mayor o igual a 1.`);
@@ -215,8 +222,17 @@ export async function validateRipsV003(ripsJson, options = {}) {
         const c = serv.consultas[cIdx];
         const cPrefix = `${uPrefix} Consulta [${cIdx + 1}]`;
 
-        if (!c.codPrestador || String(c.codPrestador).trim().length < 10) {
-          errors.push(`${cPrefix}: codPrestador REPS es obligatorio (10 o 12 dígitos) y no puede estar vacío.`);
+        if (!COD_PRESTADOR_REGEX.test(String(c.codPrestador ?? "").trim())) {
+          errors.push(codPrestadorError(cPrefix, c.codPrestador));
+        }
+        if (!MODALIDAD_CODES.has(String(c.modalidadGrupoServicioTecSal || ""))) {
+          errors.push(`${cPrefix}: modalidadGrupoServicioTecSal '${c.modalidadGrupoServicioTecSal}' no existe en la tabla oficial (01 a 09).`);
+        }
+        if (!GRUPO_SERVICIOS_CODES.has(String(c.grupoServicios || ""))) {
+          errors.push(`${cPrefix}: grupoServicios '${c.grupoServicios}' debe ser '01'..'05'.`);
+        }
+        if (!FINALIDAD_CODES.has(String(c.finalidadTecnologiaSalud || ""))) {
+          errors.push(`${cPrefix}: finalidadTecnologiaSalud '${c.finalidadTecnologiaSalud}' no existe en RIPSFinalidadConsultaVersion2 (códigos 11 a 44; ej. 15 Diagnóstico, 16 Tratamiento).`);
         }
         if (!DATETIME_FORMAT_REGEX.test(String(c.fechaInicioAtencion || ""))) {
           errors.push(`${cPrefix}: fechaInicioAtencion debe tener formato YYYY-MM-DD HH:mm.`);
@@ -245,6 +261,8 @@ export async function validateRipsV003(ripsJson, options = {}) {
 
         if (!c.causaMotivoAtencion || String(c.causaMotivoAtencion).trim() === "") {
           errors.push(`${cPrefix}: causaMotivoAtencion es obligatoria en consultas.`);
+        } else if (!CAUSA_EXTERNA_CODES.has(String(c.causaMotivoAtencion).trim())) {
+          errors.push(`${cPrefix}: causaMotivoAtencion '${c.causaMotivoAtencion}' no existe en RIPSCausaExternaVersion2 (códigos 21 a 49; ej. 38 Enfermedad general).`);
         }
         if (!c.conceptoRecaudo || String(c.conceptoRecaudo).trim() === "") {
           errors.push(`${cPrefix}: conceptoRecaudo es obligatorio en consultas.`);
@@ -317,8 +335,17 @@ export async function validateRipsV003(ripsJson, options = {}) {
           errors.push(`${pPrefix}: El campo 'codDiagnosticoComplicacion' es inválido en v003; el nombre oficial es 'codComplicacion'.`);
         }
 
-        if (!p.codPrestador || String(p.codPrestador).trim().length < 10) {
-          errors.push(`${pPrefix}: codPrestador REPS es obligatorio y no puede estar vacío.`);
+        if (!COD_PRESTADOR_REGEX.test(String(p.codPrestador ?? "").trim())) {
+          errors.push(codPrestadorError(pPrefix, p.codPrestador));
+        }
+        if (!MODALIDAD_CODES.has(String(p.modalidadGrupoServicioTecSal || ""))) {
+          errors.push(`${pPrefix}: modalidadGrupoServicioTecSal '${p.modalidadGrupoServicioTecSal}' no existe en la tabla oficial (01 a 09).`);
+        }
+        if (!GRUPO_SERVICIOS_CODES.has(String(p.grupoServicios || ""))) {
+          errors.push(`${pPrefix}: grupoServicios '${p.grupoServicios}' debe ser '01'..'05'.`);
+        }
+        if (p.idMIPRES !== null && p.idMIPRES !== undefined && (typeof p.idMIPRES !== "string" || p.idMIPRES.length > 19)) {
+          errors.push(`${pPrefix}: idMIPRES debe ser texto de máximo 19 caracteres o null.`);
         }
         if (!DATETIME_FORMAT_REGEX.test(String(p.fechaInicioAtencion || ""))) {
           errors.push(`${pPrefix}: fechaInicioAtencion debe tener formato YYYY-MM-DD HH:mm.`);
@@ -341,14 +368,14 @@ export async function validateRipsV003(ripsJson, options = {}) {
           }
         }
 
-        if (!["01", "02", "03"].includes(String(p.viaIngresoServicioSalud || ""))) {
-          errors.push(`${pPrefix}: viaIngresoServicioSalud debe ser '01', '02' o '03'.`);
+        if (!VIA_INGRESO_CODES.has(String(p.viaIngresoServicioSalud || ""))) {
+          errors.push(`${pPrefix}: viaIngresoServicioSalud '${p.viaIngresoServicioSalud}' no existe en la tabla oficial ViaIngresoUsuario (01 a 14).`);
         }
         if (typeof p.codServicio !== "number" || p.codServicio <= 0) {
           errors.push(`${pPrefix}: codServicio debe ser un número entero válido (REPS, ej: 334).`);
         }
-        if (!["01", "02", "03", "04", "05"].includes(String(p.finalidadTecnologiaSalud || ""))) {
-          errors.push(`${pPrefix}: finalidadTecnologiaSalud para procedimiento debe ser '01'..'05'.`);
+        if (!FINALIDAD_CODES.has(String(p.finalidadTecnologiaSalud || ""))) {
+          errors.push(`${pPrefix}: finalidadTecnologiaSalud '${p.finalidadTecnologiaSalud}' no existe en RIPSFinalidadConsultaVersion2 (códigos 11 a 44; ej. 15 Diagnóstico, 16 Tratamiento). Los códigos 01-05 de la Resolución 3374 ya no son válidos.`);
         }
         if (!p.conceptoRecaudo || String(p.conceptoRecaudo).trim() === "") {
           errors.push(`${pPrefix}: conceptoRecaudo es obligatorio en procedimientos.`);
@@ -424,8 +451,8 @@ export async function validateRipsV003(ripsJson, options = {}) {
             errors.push(`${osPrefix}: codPrestador no puede ser una cadena vacía; debe ser REPS de 10-12 dígitos o null.`);
           } else {
             const strCod = os.codPrestador.trim();
-            if (strCod.length < 10 || strCod.length > 12) {
-              errors.push(`${osPrefix}: codPrestador debe tener 10 o 12 dígitos REPS, o null si no aplica.`);
+            if (!COD_PRESTADOR_REGEX.test(strCod)) {
+              errors.push(codPrestadorError(osPrefix, strCod));
             }
           }
         }

@@ -186,14 +186,18 @@ export async function adaptClinicalDataToRipsV003(input) {
     }
 
     const codPaisResidencia = requireNonEmptyString(pac.codPaisResidencia, "paciente.codPaisResidencia");
-    const codMunicipioResidencia = requireNonEmptyString(pac.codMunicipioResidencia, "paciente.codMunicipioResidencia");
-    if (!/^\d{5}$/.test(codMunicipioResidencia)) {
-      throw new Error("INVALID_DIVIPOLA: 'paciente.codMunicipioResidencia' debe ser un código DIVIPOLA de 5 dígitos.");
+    // El municipio (DIVIPOLA) es obligatorio cuando vive en Colombia (170); si vive en otro país va null.
+    let codMunicipioResidencia = null;
+    if (String(codPaisResidencia).trim() === "170") {
+      codMunicipioResidencia = requireNonEmptyString(pac.codMunicipioResidencia, "paciente.codMunicipioResidencia");
+      if (!/^\d{5}$/.test(codMunicipioResidencia)) {
+        throw new Error("INVALID_DIVIPOLA: 'paciente.codMunicipioResidencia' debe ser un código DIVIPOLA de 5 dígitos.");
+      }
     }
 
     const codZonaTerritorial = requireNonEmptyString(pac.codZonaTerritorialResidencia, "paciente.codZonaTerritorialResidencia").padStart(2, "0");
     if (codZonaTerritorial !== "01" && codZonaTerritorial !== "02") {
-      throw new Error("INVALID_TERRITORIAL_ZONE: 'paciente.codZonaTerritorialResidencia' debe ser '01' (Urbana) o '02' (Rural).");
+      throw new Error("INVALID_TERRITORIAL_ZONE: 'paciente.codZonaTerritorialResidencia' debe ser '01' (Rural) o '02' (Urbano) según ZonaVersion2.");
     }
 
     // REGLA CRÍTICA: Prohibido default silencioso de incapacidad.
@@ -476,7 +480,8 @@ export async function adaptClinicalDataToRipsV003(input) {
         throw new Error(`INVALID_CIE10_CODE: ${prefix}.codDiagnosticoPrincipal '${codDxPrincipal}' no cumple con el formato estándar CIE-10 (ej: K021).`);
       }
 
-      const rawFecha = at.fechaInicioAtencion || (at.fecha ? `${at.fecha} 08:00` : "2026-09-20 08:00");
+      // Nunca se inventa la fecha de la atención (antes, sin fecha, se ponía 2026-09-20 08:00).
+      const rawFecha = at.fechaInicioAtencion || (at.fecha ? `${at.fecha} 08:00` : "");
       const fechaInicioAtencion = requireNonEmptyString(rawFecha, `${prefix}.fechaInicioAtencion`);
       if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(fechaInicioAtencion)) {
         throw new Error(`INVALID_DATETIME_FORMAT: ${prefix}.fechaInicioAtencion '${fechaInicioAtencion}' debe tener formato YYYY-MM-DD HH:mm.`);

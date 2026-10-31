@@ -35,6 +35,7 @@ function createBaseFixture() {
       fechaNacimiento: "1994-05-12",
       codSexo: "F",
       codPaisResidencia: "170",
+      codPaisOrigen: "170", // DT1: país de nacimiento obligatorio
       codMunicipioResidencia: "70001",
       codZonaTerritorialResidencia: "01",
       incapacidad: "02",
