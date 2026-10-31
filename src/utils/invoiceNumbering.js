@@ -62,3 +62,33 @@ export const creditAdjustment = (invoice) => {
   return { annulled, partial: !annulled && status === "PARTIALLY_CREDITED", notes, label: notes.join(", ") };
 };
 
+
+// Orden de la lista de facturas de venta: por consecutivo fiscal de mayor a menor
+// (FCEV1357, 1356, 1355…), aunque la factura esté anulada o se haya creado otro día.
+// Los intentos sin número DIAN (borradores, rechazados) van arriba, del más reciente al más antiguo.
+const consecutiveNumber = (invoice) => {
+  const digits = String(fiscalInvoiceNumber(invoice) || "").match(/(\d+)\s*$/);
+  return digits ? Number(digits[1]) : null;
+};
+const createdTime = (invoice) => {
+  const raw = invoice?.createdAt?.toDate ? invoice.createdAt.toDate() : (invoice?.createdAt || invoice?.created_at || invoice?.fecha_emision);
+  const t = new Date(raw || 0).getTime();
+  return Number.isFinite(t) ? t : 0;
+};
+export const sortInvoicesByConsecutive = (list) => [...(Array.isArray(list) ? list : [])].sort((a, b) => {
+  const na = consecutiveNumber(a);
+  const nb = consecutiveNumber(b);
+  if (na == null && nb == null) return createdTime(b) - createdTime(a);
+  if (na == null) return -1;
+  if (nb == null) return 1;
+  return nb - na || createdTime(b) - createdTime(a);
+});
+
+/** Página `page` (desde 1) de tamaño `size`, con datos para el paginador. */
+export const paginate = (list, page, size = 10) => {
+  const total = Array.isArray(list) ? list.length : 0;
+  const pages = Math.max(1, Math.ceil(total / size));
+  const current = Math.min(Math.max(1, Number(page) || 1), pages);
+  const start = (current - 1) * size;
+  return { rows: (list || []).slice(start, start + size), page: current, pages, total, from: total ? start + 1 : 0, to: Math.min(start + size, total) };
+};

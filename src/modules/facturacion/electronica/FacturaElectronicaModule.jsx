@@ -29,7 +29,7 @@ import {
   FEV_STAGE,
   FEV_LOCK_STATE,
 } from "../../../services/factusRetryService";
-import { creditAdjustment, fiscalInvoiceNumber, invoiceDisplayNumber, isDiscardedInvoice } from "../../../utils/invoiceNumbering.js";
+import { creditAdjustment, fiscalInvoiceNumber, invoiceDisplayNumber, isDiscardedInvoice, paginate, sortInvoicesByConsecutive } from "../../../utils/invoiceNumbering.js";
 import { canDiscardInvoice, discardBlockReason, discardRejectedInvoice } from "../../../services/invoiceDiscardService.js";
 
 // Código DIAN del documento del adquiriente según la respuesta validada de Factus.
@@ -102,6 +102,8 @@ export default function FacturaElectronicaModule() {
   const [creditNoteModalFactura, setCreditNoteModalFactura] = useState(null);
   const [viewingFacturaDetails, setViewingFacturaDetails] = useState(null);
   const [showDiscarded, setShowDiscarded] = useState(false);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
   const [discardTarget, setDiscardTarget] = useState(null);
   const [discardReason, setDiscardReason] = useState("");
   const [discarding, setDiscarding] = useState(false);
@@ -327,7 +329,8 @@ export default function FacturaElectronicaModule() {
   useEffect(() => { loadFacturas(); }, [inquilino]);
 
   const filtered = useMemo(() => {
-    return facturas.filter((f) => {
+    // Ordenadas por consecutivo (FCEV1357, 1356…), también las anuladas.
+    return sortInvoicesByConsecutive(facturas).filter((f) => {
       if (!showDiscarded && isDiscardedInvoice(f)) return false;
       const numStr = `${invoiceDisplayNumber(f)} ${f.numero || ""} ${f.id || ""}`;
       const pacStr = String(f.pacienteNombre || "");
@@ -340,6 +343,10 @@ export default function FacturaElectronicaModule() {
       return matchSearch && matchDesde && matchHasta;
     });
   }, [facturas, search, desde, hasta, showDiscarded]);
+
+  // Paginación: 10 facturas por página; al cambiar la búsqueda o las fechas vuelve a la primera.
+  useEffect(() => { setPage(1); }, [search, desde, hasta, showDiscarded]);
+  const pageData = useMemo(() => paginate(filtered, page, PAGE_SIZE), [filtered, page]);
 
   const discardedCount = useMemo(() => facturas.filter(isDiscardedInvoice).length, [facturas]);
 
@@ -723,7 +730,7 @@ export default function FacturaElectronicaModule() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filtered.map((f) => {
+                {pageData.rows.map((f) => {
                   const docNum = invoiceDisplayNumber(f);
                   const discarded = isDiscardedInvoice(f);
                   const credit = creditAdjustment(f);
@@ -777,8 +784,7 @@ export default function FacturaElectronicaModule() {
                             </button>
                           ) : (
                             <div className="flex items-center gap-1.5">
-                              <span className="text-slate-400 italic">No hay recibo de caja asociado</span>
-                              {!discarded && !credit.annulled && <button
+                              {discarded || credit.annulled ? <span className="text-slate-300">—</span> : <button
                                 onClick={() => { setTargetInvoiceForLink(f); setShowAsociarReciboModal(true); }}
                                 className="text-[10px] text-blue-600 hover:text-blue-800 font-bold underline cursor-pointer bg-transparent border-0"
                               >
@@ -999,6 +1005,28 @@ export default function FacturaElectronicaModule() {
                 })}
               </tbody>
             </table>
+            {pageData.pages > 1 && (
+              <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 border-t border-slate-100 text-[11px] text-slate-500">
+                <span>Mostrando {pageData.from}–{pageData.to} de {pageData.total} facturas</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setPage(pageData.page - 1)}
+                    disabled={pageData.page <= 1}
+                    className="px-2.5 py-1 rounded-md border border-slate-200 font-bold text-slate-600 bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50"
+                  >
+                    Anterior
+                  </button>
+                  <span className="px-2 font-bold text-slate-700">Página {pageData.page} de {pageData.pages}</span>
+                  <button
+                    onClick={() => setPage(pageData.page + 1)}
+                    disabled={pageData.page >= pageData.pages}
+                    className="px-2.5 py-1 rounded-md border border-slate-200 font-bold text-slate-600 bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50"
+                  >
+                    Siguiente
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

@@ -12,7 +12,7 @@ assert.deepEqual(creditAdjustment({ estado: 'Emitido', detalles: {} }), { annull
 console.log('PASS: se distingue factura anulada, ajustada parcialmente y vigente.');
 
 const ui = await readFile(new URL('../src/modules/facturacion/electronica/FacturaElectronicaModule.jsx', import.meta.url), 'utf8');
-for (const text of ['credit.annulled ? "ANULADA"', 'const saldoPendienteNum = credit.annulled ? 0', '!discarded && !credit.annulled && <button',
+for (const text of ['credit.annulled ? "ANULADA"', 'const saldoPendienteNum = credit.annulled ? 0', 'discarded || credit.annulled ? <span className="text-slate-300">—</span> : <button',
   'Ver ${credit.label || "nota crédito"} (anulada)', 'Anulada con ${creditAdjustment(detailModalFactura).label']) assert.ok(ui.includes(text), text);
 const link = await readFile(new URL('../src/services/billingReceiptLinkService.js', import.meta.url), 'utf8');
 assert.ok(link.includes('fue anulada con nota crédito; no se le pueden asociar recibos'));
