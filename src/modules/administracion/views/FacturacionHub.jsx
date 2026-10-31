@@ -92,7 +92,11 @@ export default function FacturacionHub() {
     if (urlSub) {
       const base = urlSub.replace("_form", "");
       const targetOpt = FACT_OPTIONS.find(o => o.id === base);
-      if (targetOpt?.perm && !can("Administración", targetOpt.perm, "consultar")) {
+      // Misma regla que el menú: Traslados usa canTraslados (antes se abría y se cerraba solo).
+      const allowed = base === "traslados"
+        ? canTraslados
+        : !(targetOpt?.perm && !can("Administración", targetOpt.perm, "consultar"));
+      if (!allowed) {
         setActiveSubView(null);
         return;
       }
@@ -103,7 +107,7 @@ export default function FacturacionHub() {
     } else {
       sessionStorage.setItem("fact_sub", urlSub);
     }
-  }, [urlSub, can]);
+  }, [urlSub, can, canTraslados]);
 
   // ─── RENDERING SUB-VIEWS ───
   if (activeSubView) {

@@ -79,4 +79,5 @@ const detalle = await read('src/modules/caja/components/CajaDetalleView.jsx');
 assert.ok(detalle.includes('Traslados a bancos al cierre'));
 const hub = await read('src/modules/administracion/views/FacturacionHub.jsx');
 assert.ok(hub.includes('if (opt.id === "traslados") return canTraslados;'));
+assert.ok(hub.includes('const allowed = base === "traslados"') && hub.includes('[urlSub, can, canTraslados]'), 'al hacer clic no se vuelve a cerrar');
 console.log('PASS: cierre, lista de cajas, detalle, Bancos, Traslados y el menú de Facturación quedan conectados.');
