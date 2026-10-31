@@ -860,9 +860,10 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
         profesional_nombre: profNombreSelected,
         items: items.map((it, idx) => {
           const rawCode = it.codigo_cups || it.cups || (typeof it.concepto === "string" ? it.concepto.match(/^(\d{4,8})/)?.[1] : null);
-          // Concepto escrito a mano (sin código de la lista de precios): código interno ordenado
-          // por línea (001, 002…), válido ante la DIAN como código propio del facturador.
-          const cups = rawCode || (isSalud ? "SERV-0001" : String(idx + 1).padStart(3, "0"));
+          // Concepto escrito a mano (sin código de la lista de precios ni CUPS): código interno
+          // ordenado por línea (001, 002…), igual en facturas de salud y comerciales; válido ante
+          // la DIAN como código propio del facturador.
+          const cups = rawCode || String(idx + 1).padStart(3, "0");
           const lineId = it.invoiceLineId || (crypto?.randomUUID ? crypto.randomUUID() : `line-${idx + 1}-${Date.now()}`);
           const sourceId = it.clinicalSourceId || it.planItemId || (it.planId && it.id ? it.id : null);
           const sourceType = it.clinicalSourceType || (it.planItemId || it.planId ? "PLAN_ITEM" : null);

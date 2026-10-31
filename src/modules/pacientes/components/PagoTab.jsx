@@ -378,6 +378,7 @@ export default function PagoTab({ patient }) {
                         return {
                             id: it.id,
                             desc: it.desc,
+                            codigo_cups: String(it.codigo_cups || it.cups || it.code || it.codigo || "").trim(),
                             saldo: Math.max(0, totalCost - paid)
                         };
                     });
@@ -390,6 +391,8 @@ export default function PagoTab({ patient }) {
                         itemPayments.push({
                             itemId: item.id,
                             desc: item.desc,
+                            // El CUPS queda en el recibo: la factura lo usa aunque el presupuesto cambie después.
+                            ...(item.codigo_cups ? { codigo_cups: item.codigo_cups } : {}),
                             monto: allocated
                         });
                         remaining -= allocated;

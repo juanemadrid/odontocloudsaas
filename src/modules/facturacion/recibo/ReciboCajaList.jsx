@@ -17,7 +17,7 @@ import { consumeNextConsecutivo, CONSECUTIVO_TYPES } from "../../../services/con
 import FacturaElectronicaForm from "../electronica/FacturaElectronicaForm";
 import { getFactusCredentialsForTenant } from "../../../services/factusAdminService";
 import { createReceiptInvoiceDraft } from "../../../services/receiptInvoiceDraftService";
-import { receiptConceptAmounts } from "../../../services/receiptInvoiceItems.js";
+import { receiptConceptAmounts, paymentConcepts, invoiceLineCode } from "../../../services/receiptInvoiceItems.js";
 import { queryOptionalBillingTable } from "../../../services/optionalBillingTables.js";
 
 const fmt = (n) => {
@@ -183,11 +183,14 @@ export default function ReciboCajaList({ onNew }) {
             }
 
             // 4. Mapear conceptos e ítems del o los recibos seleccionados
+            // Código de cada renglón: el CUPS del procedimiento pagado; si el concepto no tiene
+            // CUPS (escrito a mano o abono general), 001, 002… según el renglón de la factura.
+            let lineNumber = 0;
             const invoiceItems = selectedList.flatMap((r, rIdx) => {
                 if (Array.isArray(r.conceptos) && r.conceptos.length > 0) {
                     return r.conceptos.map((c, cIdx) => ({
                         id: `rc_${r.id}_${cIdx}`,
-                        code: c.code || `SERV-${String(cIdx + 1).padStart(4, "0")}`,
+                        code: invoiceLineCode(c, ++lineNumber),
                         nombre: c.concepto || c.nombre || `Recibo #${r.consecutivoNumero}`,
                         concepto: c.concepto || c.nombre || `Recibo #${r.consecutivoNumero}`,
                         descripcion: c.descripcion || c.concepto || `RC #${r.consecutivoNumero} - ${r.pacienteNombre}`,
@@ -197,7 +200,7 @@ export default function ReciboCajaList({ onNew }) {
                 const conceptoDesc = r.concepto || r.observaciones || `Recibo de caja #${r.consecutivoNumero}`;
                 return [{
                     id: `rc_${r.id}_${rIdx}`,
-                    code: `SERV-${String(rIdx + 1).padStart(4, "0")}`,
+                    code: invoiceLineCode(null, ++lineNumber),
                     nombre: conceptoDesc,
                     concepto: conceptoDesc,
                     descripcion: `Abono según RC #${r.consecutivoNumero} - ${r.pacienteNombre}`,
@@ -1157,11 +1160,11 @@ export default function ReciboCajaList({ onNew }) {
                     // Extraer conceptos reales de los procedimientos cancelados
                     let pagoConceptos = [];
                     if (Array.isArray(metadata.itemPayments) && metadata.itemPayments.length > 0) {
-                        pagoConceptos = metadata.itemPayments.map(it => ({
-                            concepto: it.desc || it.concepto || metadata.concepto || "Procedimiento Odontológico",
-                            precioUnitario: Number(it.monto || 0),
-                            cantidad: 1,
-                            total: Number(it.monto || 0)
+                        // Cada procedimiento pagado conserva el CUPS de su presupuesto.
+                        const paidPlan = pMap[metadata.planId || pData.planId] || null;
+                        pagoConceptos = paymentConcepts(metadata.itemPayments, paidPlan).map(c => ({
+                            ...c,
+                            concepto: c.concepto || metadata.concepto || "Procedimiento Odontológico"
                         }));
                     } else if (metadata.concepto || pData.concepto) {
                         pagoConceptos = [{
