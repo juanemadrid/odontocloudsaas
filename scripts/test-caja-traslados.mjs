@@ -119,7 +119,13 @@ assert.ok(!reporte.includes('centro del dolor') && !reporte.includes('includes("
 assert.equal((reporte.match(/rowMatchesProfessional\(r, /g) || []).length, 2, 'selector y tabla usan la misma regla de profesional');
 assert.equal((reporte.match(/rowMatchesOffice\(r, /g) || []).length, 2, 'selector y tabla usan la misma regla de sede');
 assert.ok(reporte.includes('&& !isTransferRow(r) && r.estado !== "Anulado"'), 'los traslados no suman a ingresos ni egresos');
-assert.ok(reporte.includes('Traslados entre cuentas:'));
+assert.ok(reporte.includes('Traslados (+):') && reporte.includes('Traslados (−):'));
+// Traslado+ = entra a un banco; Traslado− = sale de un banco (traslados y pagos hechos desde el banco).
+assert.ok(reporte.includes('if (entraBanco) allRows.push(fila("Traslado+"));'), 'caja → banco solo es Traslado+');
+assert.ok(reporte.includes('if (saleBanco || !entraBanco) allRows.push(fila("Traslado-"));'), 'banco → caja solo es Traslado−');
+assert.ok(reporte.includes('salidaBanco: esBanco(pp.bancoCaja)'), 'se sabe si un pago salió de un banco');
+assert.ok(reporte.includes('!(rowType === "Egreso-" && r.salidaBanco)'), 'el filtro Traslado− incluye los pagos hechos desde el banco');
+assert.ok(reporte.includes('if (rowType === "Egreso-" && t.salidaBanco) counts["Traslado-"]'), 'el número del selector coincide con la tabla');
 // Las reglas del reporte, probadas de verdad (se toman del archivo tal cual).
 const block = reporte.slice(reporte.indexOf('const rowDate = '), reporte.indexOf('export default function ReporteFinanciero'));
 const rules = new Function('localDate', block + '; return { rowInRange, rowMatchesOffice, rowMatchesProfessional, isTransferRow };')(localDate);
@@ -141,4 +147,4 @@ assert.ok(!rules.rowMatchesProfessional({ profesional: 'Andrea Gómez' }, 'Andre
 assert.ok(rules.rowMatchesProfessional({ profesional: 'Dra. Andrea Pérez' }, 'Andrea Pérez', profs));
 assert.ok(rules.rowMatchesProfessional({ profesional: 'x' }, 'Todos', profs));
 assert.ok(rules.isTransferRow({ tipoDocumento: 'Traslado-' }) && !rules.isTransferRow({ tipoDocumento: 'Egreso-' }));
-console.log('PASS: Reporte de facturación: fechas del día correcto, sede y profesional bien filtrados, traslados aparte de ingresos y egresos.');
+console.log('PASS: Reporte de facturación: fechas del día correcto, sede y profesional bien filtrados, traslados aparte de ingresos y egresos; Traslado+ entra al banco y Traslado− sale del banco (incluye pagos).');

@@ -10,7 +10,7 @@ import { FiDollarSign, FiSearch, FiFileText, FiFilter, FiDownload, FiCheck, FiX,
 import { format } from "date-fns";
 import XLSX from "xlsx-js-style";
 import { NO_FISCAL_NUMBER_LABEL, isDiscardedInvoice, isProvisionalInvoiceNumber } from "../../../utils/invoiceNumbering.js";
-import { tidyTransferText, localDate } from "../../../services/bankTransferService";
+import { tidyTransferText, localDate, bankNames, normalizeAccountName } from "../../../services/bankTransferService";
 
 const cleanObservaciones = (rawVal) => {
   if (!rawVal) return "";
@@ -319,7 +319,8 @@ export default function ReporteFinanciero() {
         cfgFacturasCompra,
         cfgPagosProv,
         tenantRes,
-        empresaConfigRes
+        empresaConfigRes,
+        bancosRes
       ] = await Promise.all([
         getConfigItems(tenantId, "sucursales", "sucursales").catch(() => []),
         supabase.from("pacientes").select("*").eq("tenant_id", tenantId),
@@ -340,8 +341,15 @@ export default function ReporteFinanciero() {
         getConfigSection(tenantId, "facturas_compra", []).catch(() => []),
         getConfigSection(tenantId, "pagos_proveedor", []).catch(() => []),
         supabase.from("tenants").select("id, nombre, nit, direccion, telefono, logo_url").eq("id", tenantId).maybeSingle().then(r => r, () => ({ data: null })),
-        getConfigSection(tenantId, "empresa_datos", {}).catch(() => ({}))
+        getConfigSection(tenantId, "empresa_datos", {}).catch(() => ({})),
+        getConfigItems(tenantId, "bancos", "bancos").catch(() => [])
       ]);
+
+      // Bancos de Configuración → Bancos. Traslado+ = entra dinero a un banco;
+      // Traslado− = sale dinero de un banco (hacia una caja u otro banco). Los pagos hechos
+      // desde un banco son Egreso− y también aparecen al filtrar Traslado− (son salidas del banco).
+      const bancosNombres = bankNames([...(Array.isArray(bancosRes) ? bancosRes : []), ...((cfgRes?.data?.config?.bancos) || [])]);
+      const esBanco = (name) => Boolean(String(name || "").trim()) && bancosNombres.some(b => normalizeAccountName(b) === normalizeAccountName(name));
 
       // 0. Sincronizar datos reales de la Clínica / Institución
       const tData = tenantRes?.data || {};
@@ -911,6 +919,7 @@ export default function ReporteFinanciero() {
           observaciones: cleanObservaciones(rawObs),
           cuentaContable: "510506 - Gastos y Pagos a Proveedores",
           oficina: pp.oficina || pp.sucursal || pp.sede || "",
+          salidaBanco: esBanco(pp.bancoCaja),
           rawEgreso: pp
         });
       });
@@ -1005,66 +1014,43 @@ export default function ReporteFinanciero() {
 
         const refDoc = tr.referencia || `TR-${tIdx++}`;
         const isAnulado = (tr.estado || "").toLowerCase() === "anulado";
-
-        // Salida (Traslado-)
-        allRows.push({
-          id: `tra_sal_${tr.id}`,
+        const origen = tidyTransferText(tr.origen) || "Caja";
+        const destino = tidyTransferText(tr.destino) || "Caja";
+        const entraBanco = esBanco(tr.destino);
+        const saleBanco = esBanco(tr.origen);
+        const fila = (tipo) => ({
+          id: `${tipo === "Traslado+" ? "tra_ent" : "tra_sal"}_${tr.id}`,
           rawId: tr.id,
           numeroDocumento: refDoc,
-          tipoDocumento: "Traslado-",
+          tipoDocumento: tipo,
           fechaCreacion: tr.created_at || tr.fecha || new Date().toISOString(),
           fechaSeleccionada: tr.fecha || tr.created_at || new Date().toISOString(),
-          concepto: tidyTransferText(tr.descripcion) || `Traslado de fondos (${tidyTransferText(tr.origen)} a ${tidyTransferText(tr.destino)})`,
+          concepto: tipo === "Traslado+" ? `Entrada a ${destino} desde ${origen}` : `Salida de ${origen} hacia ${destino}`,
           valor: montoNum,
           consecutivo: "Principal",
           docReferencia: refDoc,
           documentosAsociados: "—",
           estado: isAnulado ? "Anulado" : "Activo",
-          tercero: tidyTransferText(tr.origen) || "Caja Origen",
+          tercero: tipo === "Traslado+" ? origen : destino,
           documentoTercero: "",
           profesional: "Administración",
           profesionalId: "",
-          formaPago: "Transferencia",
+          formaPago: tr.medio || "Transferencia",
           subtotal: montoNum,
           descuento: 0,
           iva: 0,
           retencion: 0,
           total: montoNum,
-          usuarioCreador: "Administración",
+          usuarioCreador: tr.usuario || "Administración",
           observaciones: cleanObservaciones(tidyTransferText(tr.descripcion) || ""),
-          cuentaContable: "110505 - Caja General",
+          cuentaContable: (tipo === "Traslado+" ? entraBanco : saleBanco) ? "111005 - Bancos" : "110505 - Caja General",
           oficina: ""
         });
 
-        // Entrada (Traslado+)
-        allRows.push({
-          id: `tra_ent_${tr.id}`,
-          rawId: tr.id,
-          numeroDocumento: refDoc,
-          tipoDocumento: "Traslado+",
-          fechaCreacion: tr.created_at || tr.fecha || new Date().toISOString(),
-          fechaSeleccionada: tr.fecha || tr.created_at || new Date().toISOString(),
-          concepto: tidyTransferText(tr.descripcion) || `Traslado de fondos (${tidyTransferText(tr.origen)} a ${tidyTransferText(tr.destino)})`,
-          valor: montoNum,
-          consecutivo: "Principal",
-          docReferencia: refDoc,
-          documentosAsociados: "—",
-          estado: isAnulado ? "Anulado" : "Activo",
-          tercero: tidyTransferText(tr.destino) || "Caja Destino",
-          documentoTercero: "",
-          profesional: "Administración",
-          profesionalId: "",
-          formaPago: "Transferencia",
-          subtotal: montoNum,
-          descuento: 0,
-          iva: 0,
-          retencion: 0,
-          total: montoNum,
-          usuarioCreador: "Administración",
-          observaciones: cleanObservaciones(tidyTransferText(tr.descripcion) || ""),
-          cuentaContable: "111005 - Bancos",
-          oficina: ""
-        });
+        // Caja → banco: solo Traslado+ (entra al banco). Banco → caja: solo Traslado− (sale del banco).
+        // Banco → banco: sale de uno (−) y entra al otro (+). Caja → caja: se registra como salida (−).
+        if (entraBanco) allRows.push(fila("Traslado+"));
+        if (saleBanco || !entraBanco) allRows.push(fila("Traslado-"));
       });
 
       // 7. Cargar Facturas de Venta / Electrónicas (facturas)
@@ -1775,6 +1761,7 @@ export default function ReporteFinanciero() {
 
     transactionsInPeriod.forEach(t => {
       const rowType = (t.tipoDocumento || "").trim();
+      if (rowType === "Egreso-" && t.salidaBanco) counts["Traslado-"] = (counts["Traslado-"] || 0) + 1;
       if (counts[rowType] !== undefined) {
         counts[rowType]++;
       } else {
@@ -1812,7 +1799,8 @@ export default function ReporteFinanciero() {
         } else if (target === "Traslado+") {
           if (rowType !== "Traslado+") return false;
         } else if (target === "Traslado-") {
-          if (rowType !== "Traslado-") return false;
+          // Salidas de bancos: traslados que salen de un banco y pagos hechos desde un banco.
+          if (rowType !== "Traslado-" && !(rowType === "Egreso-" && r.salidaBanco)) return false;
         } else if (target === "Saldo a favor+") {
           if (rowType !== "Saldo a favor+") return false;
         } else if (target === "Anticipo+") {
@@ -1898,12 +1886,13 @@ export default function ReporteFinanciero() {
       .reduce((sum, r) => sum + Number(r.valor || 0), 0);
   }, [filteredData]);
 
-  // Traslados: cada traslado tiene salida (Traslado−) y entrada (Traslado+); se informa el valor trasladado una vez.
-  const totalTraslados = useMemo(() => {
-    const out = filteredData.filter(r => r.tipoDocumento === "Traslado-" && r.estado !== "Anulado").reduce((s, r) => s + Number(r.valor || 0), 0);
-    const inn = filteredData.filter(r => r.tipoDocumento === "Traslado+" && r.estado !== "Anulado").reduce((s, r) => s + Number(r.valor || 0), 0);
-    return Math.max(out, inn);
-  }, [filteredData]);
+  // Traslados: entradas a bancos (+) y salidas de bancos (−). No son ingresos ni gastos.
+  const trasladosEntradas = useMemo(() => filteredData
+    .filter(r => r.tipoDocumento === "Traslado+" && r.estado !== "Anulado")
+    .reduce((sum, r) => sum + Number(r.valor || 0), 0), [filteredData]);
+  const trasladosSalidas = useMemo(() => filteredData
+    .filter(r => r.tipoDocumento === "Traslado-" && r.estado !== "Anulado")
+    .reduce((sum, r) => sum + Number(r.valor || 0), 0), [filteredData]);
 
   // Manejar clic en "Buscar"
   const handleSearchClick = () => {
@@ -3161,8 +3150,11 @@ export default function ReporteFinanciero() {
             <span>Recaudos / Ingresos (+): <strong className="text-emerald-600">$ {totalIngresos.toLocaleString('es-CO')}</strong></span>
             <span>Total Facturado (FEV): <strong className="text-sky-600">$ {totalFacturado.toLocaleString('es-CO')}</strong></span>
             <span>Egresos (-): <strong className="text-rose-600">$ {totalEgresos.toLocaleString('es-CO')}</strong></span>
-            {totalTraslados > 0 && (
-              <span title="Dinero movido entre la caja y los bancos. No es ingreso ni gasto.">Traslados entre cuentas: <strong className="text-purple-700">$ {totalTraslados.toLocaleString('es-CO')}</strong></span>
+            {trasladosEntradas > 0 && (
+              <span title="Dinero que entró a los bancos desde una caja u otro banco. No es ingreso.">Traslados (+): <strong className="text-purple-700">$ {trasladosEntradas.toLocaleString('es-CO')}</strong></span>
+            )}
+            {trasladosSalidas > 0 && (
+              <span title="Dinero que salió de los bancos hacia una caja u otro banco. No es gasto.">Traslados (−): <strong className="text-purple-700">$ {trasladosSalidas.toLocaleString('es-CO')}</strong></span>
             )}
             <span>Balance Neto: <strong className={totalIngresos - totalEgresos >= 0 ? "text-sky-700" : "text-rose-700"}>$ {(totalIngresos - totalEgresos).toLocaleString('es-CO')}</strong></span>
           </div>
