@@ -10,7 +10,7 @@ register('data:text/javascript,' + encodeURIComponent(`
     return next(specifier, context);
   }`));
 const svc = await import('../src/services/bankTransferService.js');
-const { buildClosingTransfers, saveTransfers, loadAllTransfers, bankMovements, bankNames } = svc;
+const { buildClosingTransfers, saveTransfers, loadAllTransfers, bankMovements, bankNames, cajaLabel, tidyTransferText } = svc;
 
 // 1. Traslados del cierre: validados y con todo lo que leen Traslados, Bancos y Reportes.
 const caja = { id: '8f2c1a90-aaaa', nombre: 'Caja Principal', usuarioNombre: 'Juan Madrid' };
@@ -19,8 +19,8 @@ const now = new Date('2026-10-31T02:19:00Z'); // 30-oct 9:19 p. m. en Colombia
 const tr = buildClosingTransfers({ caja, destinos: [{ banco: 'nequi', valor: 50000, medio: 'Efectivo' }], contado: 100000, usuario: 'Juan Madrid', now, makeId: () => `id${++n}` });
 assert.equal(tr.length, 1);
 assert.deepEqual({ ...tr[0] }, {
-  id: 'id1', tipo: 'cierre_caja', caja_id: caja.id, fecha: '2026-10-30', origen: 'Caja: Caja Principal', destino: 'nequi', monto: 50000,
-  medio: 'Efectivo', descripcion: 'Traslado por cierre de caja - Caja Principal (Efectivo)', referencia: 'TR-CIERRE-8F2C1A', estado: 'Activo',
+  id: 'id1', tipo: 'cierre_caja', caja_id: caja.id, fecha: '2026-10-30', origen: 'Caja Principal', destino: 'nequi', monto: 50000,
+  medio: 'Efectivo', descripcion: 'Traslado por cierre de Caja Principal (Efectivo)', referencia: 'TR-CIERRE-8F2C1A', estado: 'Activo',
   usuario: 'Juan Madrid', created_at: '2026-10-31T02:19:00.000Z',
 });
 assert.throws(() => buildClosingTransfers({ caja, destinos: [{ banco: 'nequi', valor: 150000 }], contado: 100000 }), /no puede ser mayor/);
@@ -81,3 +81,23 @@ const hub = await read('src/modules/administracion/views/FacturacionHub.jsx');
 assert.ok(hub.includes('if (opt.id === "traslados") return canTraslados;'));
 assert.ok(hub.includes('const allowed = base === "traslados"') && hub.includes('[urlSub, can, canTraslados]'), 'al hacer clic no se vuelve a cerrar');
 console.log('PASS: cierre, lista de cajas, detalle, Bancos, Traslados y el menú de Facturación quedan conectados.');
+
+// 6. Textos sin "Caja: Caja ..." y etiqueta del tipo en una sola línea.
+assert.equal(cajaLabel('Caja Juan Madrid'), 'Caja Juan Madrid');
+assert.equal(cajaLabel('juan madrid'), 'Caja juan madrid');
+assert.equal(cajaLabel('CAJA PRINCIPAL'), 'CAJA PRINCIPAL');
+assert.equal(cajaLabel(''), 'Caja');
+assert.equal(buildClosingTransfers({ caja: { id: 'x', nombre: 'Recepción' }, destinos: [{ banco: 'nequi', valor: 1 }], contado: 5, now })[0].origen, 'Caja Recepción');
+assert.equal(tidyTransferText('Caja: Caja Juan Madre'), 'Caja Juan Madre');
+assert.equal(tidyTransferText('Traslado por cierre de caja - Caja Juan Madre (Efectivo)'), 'Traslado por cierre de Caja Juan Madre (Efectivo)');
+assert.equal(tidyTransferText('Caja: Recepción'), 'Caja Recepción');
+assert.equal(tidyTransferText('Traslado por cierre de caja - Recepción (Efectivo)'), 'Traslado por cierre de Caja Recepción (Efectivo)');
+assert.equal(tidyTransferText('Nequi'), 'Nequi');
+assert.equal(tidyTransferText('Caja Principal (Efectivo)'), 'Caja Principal (Efectivo)');
+const old = { ...tr[0], origen: 'Caja: Caja Principal', descripcion: 'Traslado por cierre de caja - Caja Principal (Efectivo)' };
+const m6 = bankMovements('nequi', [old], []).movements[0];
+assert.equal(m6.tercero, 'Caja Principal');
+assert.equal(m6.concepto, 'Traslado por cierre de Caja Principal (Efectivo)');
+assert.ok(traslados.includes('{tidyTransferText(t.origen) || "—"}') && traslados.includes('{tidyTransferText(t.descripcion) || "—"}'));
+assert.ok(traslados.includes('>TRASLADO\u00a0+</span>') && traslados.includes('inline-block whitespace-nowrap px-2 py-1'), 'el + queda al lado');
+console.log('PASS: los traslados dicen "Caja Juan Madrid" (sin "Caja: Caja") y "TRASLADO +" se ve en una sola línea.');

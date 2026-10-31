@@ -29,6 +29,23 @@ export const bankNames = (banks) => {
   return out;
 };
 
+/** "Juan Madrid" → "Caja Juan Madrid"; "Caja Juan Madrid" se deja igual (sin "Caja: Caja ..."). */
+export const cajaLabel = (name) => {
+  const n = String(name ?? "").trim().replace(/\s+/g, " ");
+  if (!n) return "Caja";
+  return /^caja\b/i.test(n) ? n : `Caja ${n}`;
+};
+
+/** Arregla textos ya guardados con la palabra repetida ("Caja: Caja X", "cierre de caja - Caja X"). */
+export const tidyTransferText = (text) => {
+  if (text == null) return text;
+  return String(text)
+    .replace(/\bcaja:\s*(?=caja\b)/gi, "")
+    .replace(/\bcaja:\s*/gi, "Caja ")
+    .replace(/cierre de caja\s*-\s*(?=caja\b)/gi, "cierre de ")
+    .replace(/cierre de caja\s*-\s*/gi, "cierre de Caja ");
+};
+
 const newId = () => (globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `tr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
 const isVoid = (row) => String(row?.estado || "").toLowerCase() === "anulado" || row?.anulado === true;
 
@@ -48,7 +65,7 @@ export function buildClosingTransfers({ caja, destinos, contado, usuario, now = 
   if (total > Number(contado || 0) + 0.01) {
     throw new Error("El total a trasladar a bancos no puede ser mayor que el dinero contado en la caja.");
   }
-  const cajaNombre = String(caja?.nombre || caja?.usuarioNombre || "Caja").trim();
+  const cajaNombre = cajaLabel(caja?.nombre || caja?.usuarioNombre || "");
   const createdAt = now.toISOString();
   const base = String(caja?.id || "").replace(/[^a-z0-9]/gi, "").slice(0, 6).toUpperCase() || "CAJA";
   return rows.map((d, i) => ({
@@ -56,11 +73,11 @@ export function buildClosingTransfers({ caja, destinos, contado, usuario, now = 
     tipo: "cierre_caja",
     caja_id: caja?.id || null,
     fecha: todayBogota(now),
-    origen: `Caja: ${cajaNombre}`,
+    origen: cajaNombre,
     destino: d.banco,
     monto: d.monto,
     medio: d.medio,
-    descripcion: `Traslado por cierre de caja - ${cajaNombre} (${d.medio})`,
+    descripcion: `Traslado por cierre de ${cajaNombre} (${d.medio})`,
     referencia: `TR-CIERRE-${base}${rows.length > 1 ? `-${i + 1}` : ""}`,
     estado: "Activo",
     usuario: usuario || "",
@@ -122,11 +139,11 @@ export function bankMovements(bankName, transfers, expenses = []) {
     if (!(monto > 0)) continue;
     if (sameAccount(t.destino || t.banco_destino, bankName)) {
       movements.push({ id: `tr_in_${t.id || t.referencia}`, fecha: t.fecha || t.created_at, tipo: "ingreso", clase: "Traslado +",
-        concepto: t.descripcion || `Traslado desde ${t.origen || "caja"}`, documento: t.referencia || "", tercero: t.origen || "Caja", monto });
+        concepto: tidyTransferText(t.descripcion) || `Traslado desde ${tidyTransferText(t.origen) || "caja"}`, documento: t.referencia || "", tercero: tidyTransferText(t.origen) || "Caja", monto });
     }
     if (sameAccount(t.origen || t.banco_origen, bankName)) {
       movements.push({ id: `tr_out_${t.id || t.referencia}`, fecha: t.fecha || t.created_at, tipo: "egreso", clase: "Traslado −",
-        concepto: t.descripcion || `Traslado hacia ${t.destino || "caja"}`, documento: t.referencia || "", tercero: t.destino || "Caja", monto });
+        concepto: tidyTransferText(t.descripcion) || `Traslado hacia ${tidyTransferText(t.destino) || "caja"}`, documento: t.referencia || "", tercero: tidyTransferText(t.destino) || "Caja", monto });
     }
   }
   for (const p of expensesFromBank(expenses, bankName)) {

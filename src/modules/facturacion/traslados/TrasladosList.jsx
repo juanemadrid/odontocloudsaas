@@ -4,7 +4,7 @@ import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { getConfigItems, getConfigSection, saveConfigSection } from "../../../services/configPersistenceService";
 import { toast } from "sonner";
-import { bankNames, loadAllTransfers, loadBanksAndExpenses, expensesFromBank, normalizeAccountName, saveTransfers } from "../../../services/bankTransferService";
+import { bankNames, loadAllTransfers, loadBanksAndExpenses, expensesFromBank, normalizeAccountName, saveTransfers, tidyTransferText } from "../../../services/bankTransferService";
 import { todayBogota } from "../../../utils/bogotaDate";
 
 const fmt = (n) =>
@@ -273,19 +273,19 @@ export default function TrasladosList({ onNew }) {
               ) : filtered.map(t => (
                 <tr key={t.id} className="hover:bg-slate-50/30 transition-colors group">
                   <td className="px-6 py-4 pl-8 font-semibold text-slate-500">{fmtDate(t.fecha)}</td>
-                  <td className="px-6 py-4">
+                  <td className="px-6 py-4 whitespace-nowrap">
                     {(() => {
                       const tipo = tipoDe(t);
-                      if (t.esEgreso) return <span className="px-2 py-1 rounded-full text-[10px] font-black bg-rose-50 text-rose-700">EGRESO −</span>;
-                      if (tipo === "entrada") return <span className="px-2 py-1 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700">TRASLADO +</span>;
-                      if (tipo === "salida") return <span className="px-2 py-1 rounded-full text-[10px] font-black bg-rose-50 text-rose-700">TRASLADO −</span>;
-                      if (tipo === "both") return <span className="px-2 py-1 rounded-full text-[10px] font-black bg-blue-50 text-blue-700">ENTRE BANCOS</span>;
-                      return <span className="px-2 py-1 rounded-full text-[10px] font-black bg-slate-100 text-slate-600">TRASLADO</span>;
+                      if (t.esEgreso) return <span className="inline-block whitespace-nowrap px-2 py-1 rounded-full text-[10px] font-black bg-rose-50 text-rose-700">EGRESO −</span>;
+                      if (tipo === "entrada") return <span className="inline-block whitespace-nowrap px-2 py-1 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700">TRASLADO +</span>;
+                      if (tipo === "salida") return <span className="inline-block whitespace-nowrap px-2 py-1 rounded-full text-[10px] font-black bg-rose-50 text-rose-700">TRASLADO −</span>;
+                      if (tipo === "both") return <span className="inline-block whitespace-nowrap px-2 py-1 rounded-full text-[10px] font-black bg-blue-50 text-blue-700">ENTRE BANCOS</span>;
+                      return <span className="inline-block whitespace-nowrap px-2 py-1 rounded-full text-[10px] font-black bg-slate-100 text-slate-600">TRASLADO</span>;
                     })()}
                   </td>
-                  <td className="px-6 py-4 font-bold text-slate-800">{t.origen || "—"}</td>
-                  <td className="px-6 py-4 font-bold text-slate-800">{t.destino || "—"}</td>
-                  <td className="px-6 py-4 text-slate-500">{t.descripcion || "—"}</td>
+                  <td className="px-6 py-4 font-bold text-slate-800">{tidyTransferText(t.origen) || "—"}</td>
+                  <td className="px-6 py-4 font-bold text-slate-800">{tidyTransferText(t.destino) || "—"}</td>
+                  <td className="px-6 py-4 text-slate-500">{tidyTransferText(t.descripcion) || "—"}</td>
                   <td className="px-6 py-4 text-right font-black text-slate-900 font-mono">{fmt(t.monto)}</td>
                   <td className="px-6 py-4 text-center">
                     <span className={`inline-block px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
