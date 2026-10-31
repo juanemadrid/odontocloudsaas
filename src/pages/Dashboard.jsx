@@ -2,15 +2,16 @@
 // 🦷 Dashboard.jsx - Panel principal OdontoCloud (enrutado interno por URL)
 // ===============================
 import React, { useEffect, useMemo, useRef, useState, Suspense } from "react";
+import { lazyWithRetry } from "../utils/lazyWithRetry";
 
-const Agenda = React.lazy(() => import("../modules/agenda/Agenda"));
-const Pacientes = React.lazy(() => import("../modules/pacientes/Pacientes"));
-const Odontograma = React.lazy(() => import("../modules/odontograma/Odontograma"));
-const Reportes = React.lazy(() => import("../modules/reportes/Reportes"));
-const AdministracionRouter = React.lazy(() => import("../modules/administracion/AdministracionRouter"));
-const ConfigRouter = React.lazy(() => import("../modules/config/ConfigRouter"));
-const FinancieroRouter = React.lazy(() => import("../modules/financiero/FinancieroRouter"));
-const Caja = React.lazy(() => import("../modules/caja/Caja"));
+const Agenda = lazyWithRetry(() => import("../modules/agenda/Agenda"));
+const Pacientes = lazyWithRetry(() => import("../modules/pacientes/Pacientes"));
+const Odontograma = lazyWithRetry(() => import("../modules/odontograma/Odontograma"));
+const Reportes = lazyWithRetry(() => import("../modules/reportes/Reportes"));
+const AdministracionRouter = lazyWithRetry(() => import("../modules/administracion/AdministracionRouter"));
+const ConfigRouter = lazyWithRetry(() => import("../modules/config/ConfigRouter"));
+const FinancieroRouter = lazyWithRetry(() => import("../modules/financiero/FinancieroRouter"));
+const Caja = lazyWithRetry(() => import("../modules/caja/Caja"));
 
 import DashboardLayout from "../layout/DashboardLayout";
 import ErrorBoundary from "../components/shared/ErrorBoundary";

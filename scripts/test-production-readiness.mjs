@@ -42,7 +42,7 @@ assert(/\.eq\(["']tenant_id["'],\s*tenantId\)/.test(reportService),
 assert(!/path:\s*`tenants\/\$\{userProfile\.inquilino\}/.test(sourceCorpus),
   "La carga del logo no coincide con la ruta autorizada por Storage RLS.");
 assert(!/import\s+(?:Agenda|Pacientes|ConfigRouter|AdministracionRouter)\s+from/.test(dashboard)
-    && /React\.lazy\(\(\) => import\("\.\.\/modules\/pacientes\/Pacientes"\)\)/.test(dashboard),
+    && /(?:React\.lazy|lazyWithRetry)\(\(\) => import\("\.\.\/modules\/pacientes\/Pacientes"\)\)/.test(dashboard),
   "Los módulos privados dejaron de cargarse bajo demanda.");
 assert(statSync(join(root, "assets/logo.png")).size < 200_000
     && statSync(join(root, "assets/fondo.png")).size < 1_200_000,

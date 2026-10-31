@@ -1,4 +1,5 @@
 import React, { Suspense } from "react";
+import { lazyWithRetry } from "./utils/lazyWithRetry";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 // import { AnimatePresence } from "framer-motion"; // REMOVED to fix crash
 import { useAuth } from "./context/AuthContext";
@@ -25,10 +26,10 @@ import ClinicSedesPage from "./pages/landing/ClinicSedesPage";
 import LegalPage from "./pages/landing/LegalPage";
 
 // Lazy Imports
-const Dashboard = React.lazy(() => import("./pages/Dashboard"));
-const SuperAdminDashboard = React.lazy(() => import("./pages/SuperAdminPanel"));
-const UnauthorizedPage = React.lazy(() => import("./pages/UnauthorizedPage"));
-const IhceDashboard = React.lazy(() => import("./pages/IhceDashboard"));
+const Dashboard = lazyWithRetry(() => import("./pages/Dashboard"));
+const SuperAdminDashboard = lazyWithRetry(() => import("./pages/SuperAdminPanel"));
+const UnauthorizedPage = lazyWithRetry(() => import("./pages/UnauthorizedPage"));
+const IhceDashboard = lazyWithRetry(() => import("./pages/IhceDashboard"));
 
 // 🚀 Role Bridge: Automatic redirection to the correct portal
 function RoleBridge() {

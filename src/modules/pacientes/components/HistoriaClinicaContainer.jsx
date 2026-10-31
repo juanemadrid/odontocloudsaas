@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { lazyWithRetry } from "../../../utils/lazyWithRetry";
 import { 
     FiPrinter, 
     FiFileText, 
@@ -17,7 +18,7 @@ import { useToast } from "../../../context/ToastContext";
 import { useAuth } from "../../../context/AuthContext";
 import { getAnamnesis } from "../../../services/clinicalService";
 import { getDoctorSignatureAndData, validateDoctorCanSign } from "../../../services/doctorSignatureService";
-const DocClinicoModal = React.lazy(() => import("./DocClinicoModal"));
+const DocClinicoModal = lazyWithRetry(() => import("./DocClinicoModal"));
 
 const printHTMLInHiddenIframe = (htmlContent) => {
     let iframe = document.getElementById("oc-print-iframe");
