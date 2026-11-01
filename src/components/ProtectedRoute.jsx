@@ -85,7 +85,7 @@ function ExpiredOrSuspendedScreen({ isSuspended, userProfile }) {
     const endDateFmt = formatEndDate(tenant.subscriptionEndDate);
 
     const handleWhatsAppSupport = () => {
-        const phone = "573124119846";
+        const phone = "573015768935";
         const msg = `Hola OdontoCloud, el acceso a mi clínica *${clinicName}* aparece ${isSuspended ? "suspendido" : "vencido"}. ` +
             `Deseo realizar la reactivación / renovación del servicio. ¿Me pueden colaborar por favor?`;
         window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, "_blank");
@@ -161,7 +161,7 @@ function ExpiredOrSuspendedScreen({ isSuspended, userProfile }) {
                 </div>
 
                 <p className="text-[10px] text-slate-400 font-medium">
-                    Atención y soporte: soporte@odontocloudcolombia.com · WhatsApp 312 411 9846
+                    Atención y soporte: soporte@odontocloudcolombia.com · WhatsApp 301 576 8935
                 </p>
             </div>
 

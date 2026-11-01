@@ -730,20 +730,19 @@ export const getPaymentMethods = async () => {
             .maybeSingle();
 
         const methods = row?.config?.payment_methods;
-        if (Array.isArray(methods)) {
-            return methods;
+        if (Array.isArray(methods) && methods.length > 0) {
+            return methods.filter(m => m.active !== false && !String(m.number || "").includes("12345") && !String(m.type || "").toLowerCase().includes("wompi"));
         }
 
         const defaults = [
-            { id: "nequi", name: "Nequi / Bancolombia", type: "Billetera Digital", number: "3001234567", holder: "OdontoCloud SAS", logoUrl: "", active: true },
-            { id: "wompi", name: "Tarjeta de Crédito / PSE", type: "Pasarela Wompi", number: "Convenio 12345", holder: "OdontoCloud SAS", logoUrl: "", active: true }
+            { id: "nequi", name: "Nequi / Bancolombia", type: "Billetera Digital / Transferencia", number: "301 576 8935", holder: "OdontoCloud Colombia", logoUrl: "", active: true }
         ];
 
         return defaults;
     } catch (error) {
         console.error("Error al obtener métodos de pago en Supabase:", error);
         return [
-            { id: "nequi", name: "Nequi / Bancolombia", type: "Billetera Digital", number: "3001234567", holder: "OdontoCloud SAS", logoUrl: "", active: true }
+            { id: "nequi", name: "Nequi / Bancolombia", type: "Billetera Digital / Transferencia", number: "301 576 8935", holder: "OdontoCloud Colombia", logoUrl: "", active: true }
         ];
     }
 };
