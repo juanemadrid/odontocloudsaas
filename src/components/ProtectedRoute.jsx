@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import supabase from '../lib/supabaseClient';
 import PremiumLoading from './PremiumLoading';
 import { isTenantSuspended, isSubscriptionExpired } from '../utils/subscriptionHelper';
 import { FiCreditCard, FiAlertTriangle, FiLogOut, FiCalendar } from 'react-icons/fi';
@@ -68,7 +69,36 @@ export default function ProtectedRoute({ children, allowedRoles }) {
 }
 
 function ExpiredOrSuspendedScreen({ isSuspended, userProfile }) {
+    const { logout } = useAuth();
+    const [isLoggingOut, setIsLoggingOut] = useState(false);
     const [showRenewalModal, setShowRenewalModal] = useState(false);
+
+    const handleBackToLogin = async () => {
+        setIsLoggingOut(true);
+        try {
+            if (logout) {
+                await logout();
+            }
+        } catch (e) {
+            console.error("Error en logout:", e);
+        }
+        try {
+            await supabase.auth.signOut();
+        } catch (e) {
+            console.error("Error en supabase signOut:", e);
+        }
+        try {
+            sessionStorage.clear();
+            localStorage.removeItem("odc_session");
+            localStorage.removeItem("odc_device_session_id");
+            Object.keys(localStorage).forEach((k) => {
+                if (k.startsWith("sb-") || k.includes("auth-token") || k.startsWith("oc_")) {
+                    localStorage.removeItem(k);
+                }
+            });
+        } catch (e) {}
+        window.location.href = '/login';
+    };
     const tenant = userProfile?.tenant || {};
     const clinicName = tenant.name || tenant.nombre || "Tu Consultorio";
 
@@ -149,14 +179,12 @@ function ExpiredOrSuspendedScreen({ isSuspended, userProfile }) {
 
                     <button
                         type="button"
-                        onClick={() => {
-                            localStorage.removeItem("odc_session");
-                            window.location.href = '/login';
-                        }}
-                        className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer border-0"
+                        onClick={handleBackToLogin}
+                        disabled={isLoggingOut}
+                        className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer border-0 disabled:opacity-50"
                     >
                         <FiLogOut size={14} />
-                        <span>Volver al inicio de sesión</span>
+                        <span>{isLoggingOut ? "Cerrando sesión..." : "Volver al inicio de sesión"}</span>
                     </button>
                 </div>
 
