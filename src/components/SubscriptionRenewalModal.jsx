@@ -444,20 +444,8 @@ export default function SubscriptionRenewalModal({ isOpen, onClose, userProfile 
                         </div>
 
                         <p className="text-xs text-emerald-900/90 leading-relaxed">
-                            Una vez realizada la transferencia para el <strong>{planName} ({selectedDuration === 'yearly' ? 'Anual' : 'Mensual'})</strong>, presiona el botón a continuación para enviar el comprobante directamente a nuestra línea oficial de activaciones por WhatsApp (<strong>301 576 8935</strong>). La renovación quedará aplicada en minutos.
+                            Una vez realizada la transferencia para el <strong>{planName} ({selectedDuration === 'yearly' ? 'Anual' : 'Mensual'})</strong>, presiona el botón inferior para enviar el comprobante directamente a nuestra línea oficial de activaciones por WhatsApp (<strong>301 576 8935</strong>). La renovación quedará aplicada en minutos.
                         </p>
-
-                        <div className="pt-1">
-                            <button
-                                type="button"
-                                onClick={handleNotifyInSystem}
-                                disabled={submitting}
-                                className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white text-xs font-black shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer border-0"
-                            >
-                                <FaWhatsapp size={18} />
-                                <span>{submitting ? "Registrando solicitud..." : "Enviar Comprobante por WhatsApp"}</span>
-                            </button>
-                        </div>
                     </div>
                 </div>
 
@@ -467,23 +455,15 @@ export default function SubscriptionRenewalModal({ isOpen, onClose, userProfile 
                         Soporte oficial OdontoCloud Colombia · WhatsApp <strong>301 576 8935</strong>
                     </p>
 
-                    <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            className="px-4 py-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-700 hover:bg-white transition-colors cursor-pointer bg-white"
-                        >
-                            Cerrar
-                        </button>
-
+                    <div className="w-full sm:w-auto flex justify-end">
                         <button
                             type="button"
                             onClick={handleNotifyInSystem}
                             disabled={submitting}
-                            className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white text-xs font-black shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer border-0 whitespace-nowrap"
+                            className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white text-xs font-black shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer border-0 whitespace-nowrap"
                         >
                             <FaWhatsapp size={16} />
-                            <span>{submitting ? "Registrando..." : "Enviar Comprobante por WhatsApp"}</span>
+                            <span>{submitting ? "Registrando solicitud..." : "Enviar Comprobante por WhatsApp"}</span>
                         </button>
                     </div>
                 </div>
