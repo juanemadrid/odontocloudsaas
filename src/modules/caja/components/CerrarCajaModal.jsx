@@ -6,7 +6,7 @@ import { FiX, FiLock, FiAlertTriangle, FiCheckCircle, FiTrendingUp, FiTrendingDo
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
-    style: "currency", currency: "COP", maximumFractionDigits: 0,
+    style: "currency", currency: "COP", minimumFractionDigits: 0, maximumFractionDigits: 2,
   });
 
 const fmtPure = (n) => new Intl.NumberFormat("es-CO").format(n);
@@ -76,9 +76,9 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
   }, [inquilino]);
 
   // Calculated values
-  const totalIngresos = movimientos.filter(m => m.tipo === "ingreso" && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado).reduce((s, m) => s + (m.monto || 0), 0);
-  const totalEgresos = movimientos.filter(m => m.tipo === "egreso" && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado).reduce((s, m) => s + (m.monto || 0), 0);
-  const saldoTeorico = (caja.baseInicial || 0) + totalIngresos - totalEgresos;
+  const totalIngresos = movimientos.filter(m => m.tipo === "ingreso" && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado).reduce((s, m) => s + (Number(m.monto) || 0), 0);
+  const totalEgresos = movimientos.filter(m => m.tipo === "egreso" && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado).reduce((s, m) => s + (Number(m.monto) || 0), 0);
+  const saldoTeorico = (Number(caja.baseInicial) || 0) + totalIngresos - totalEgresos;
 
   // Split cash vs banks expected balances (calculo exacto)
   const getMetodo = (m) => String(m.metodo_pago || m.metodoPago || "").trim();
