@@ -10,6 +10,38 @@ const fmt = (n) =>
   });
 
 const fmtPure = (n) => new Intl.NumberFormat("es-CO").format(n);
+const parseAmount = (value) => {
+  const text = String(value ?? "").trim().replace(/[^0-9,.-]/g, "");
+  if (!text) return 0;
+  const comma = text.lastIndexOf(",");
+  const dot = text.lastIndexOf(".");
+  let normalized = text;
+  if (comma >= 0 && dot >= 0) {
+    const decimalSeparator = comma > dot ? "," : ".";
+    normalized = text.replace(/[,.]/g, (separator, index) => index === Math.max(comma, dot) && separator === decimalSeparator ? "." : "");
+  } else if (comma >= 0 || dot >= 0) {
+    const separator = comma >= 0 ? "," : ".";
+    const parts = text.split(separator);
+    const looksLikeThousands = parts.length === 2 && parts[1].length === 3 && parts[0].replace(/\D/g, "").length <= 3;
+    normalized = looksLikeThousands ? parts.join("") : `${parts.slice(0, -1).join("")}.${parts.at(-1)}`;
+  }
+  const amount = Number(normalized);
+  return Number.isFinite(amount) ? amount : 0;
+};
+const formatCountInput = (value) => {
+  const raw = String(value ?? "").replace(/[^0-9,.]/g, "");
+  const lastSeparator = Math.max(raw.lastIndexOf(","), raw.lastIndexOf("."));
+  const lastChar = raw[lastSeparator];
+  const trailingDigits = raw.slice(lastSeparator + 1).replace(/\D/g, "");
+  const separatorIsThousands = lastChar === "." && trailingDigits.length === 3 && !raw.includes(",");
+  const separatorIndex = separatorIsThousands ? -1 : lastSeparator;
+  const integerPart = (separatorIndex >= 0 ? raw.slice(0, separatorIndex) : raw).replace(/\D/g, "");
+  const decimalPart = separatorIndex >= 0 ? raw.slice(separatorIndex + 1).replace(/\D/g, "").slice(0, 2) : null;
+  const integerDisplay = integerPart ? fmtPure(Number(integerPart)) : "";
+  const display = decimalPart !== null ? `${integerDisplay || "0"},${decimalPart}` : integerDisplay;
+  const normalized = decimalPart !== null ? `${integerPart || "0"}.${decimalPart}` : integerPart;
+  return { normalized, display };
+};
 
 const fmtDate = (ts) => {
   if (!ts) return "—";
@@ -103,8 +135,8 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
     .reduce((s, m) => s + (Number(m.monto) || 0), 0);
   const otrosEsperado = totalIngresosOtros - totalEgresosOtros;
 
-  const conteoEfNum = parseFloat(String(conteoEfectivo).replace(/[^0-9]/g, "")) || 0;
-  const conteoOtrosNum = parseFloat(String(conteoOtros).replace(/[^0-9]/g, "")) || 0;
+  const conteoEfNum = parseAmount(conteoEfectivo);
+  const conteoOtrosNum = parseAmount(conteoOtros);
   const conteoTotal = conteoEfNum + conteoOtrosNum;
   const diferencia = conteoTotal - saldoTeorico;
 
@@ -268,7 +300,7 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
             ].map(k => (
               <div key={k.label} className={`${k.bg} rounded-lg p-2.5 border`}>
                 <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">{k.label}</div>
-                <div className={`text-[13px] font-bold truncate ${k.color}`}>{k.val}</div>
+                <div className={`text-[12px] font-bold leading-tight break-words ${k.color}`}>{k.val}</div>
               </div>
             ))}
           </div>
@@ -298,9 +330,9 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
                         placeholder="0"
                         value={conteoEfectivoDisplay}
                         onChange={(e) => {
-                          const raw = e.target.value.replace(/[^0-9]/g, "");
-                          setConteoEfectivo(raw);
-                          setConteoEfectivoDisplay(raw ? fmtPure(raw) : "");
+                          const parsed = formatCountInput(e.target.value);
+                          setConteoEfectivo(parsed.normalized);
+                          setConteoEfectivoDisplay(parsed.display);
                         }}
                         className="w-full h-9 pl-7 pr-3 bg-slate-50 border border-slate-200 rounded-lg text-[12px] font-bold text-slate-800 outline-none focus:bg-white focus:border-blue-500 transition-colors font-mono"
                         required
@@ -317,9 +349,9 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
                         placeholder="0"
                         value={conteoOtrosDisplay}
                         onChange={(e) => {
-                          const raw = e.target.value.replace(/[^0-9]/g, "");
-                          setConteoOtros(raw);
-                          setConteoOtrosDisplay(raw ? fmtPure(raw) : "");
+                          const parsed = formatCountInput(e.target.value);
+                          setConteoOtros(parsed.normalized);
+                          setConteoOtrosDisplay(parsed.display);
                         }}
                         className="w-full h-9 pl-7 pr-3 bg-slate-50 border border-slate-200 rounded-lg text-[12px] font-bold text-slate-800 outline-none focus:bg-white focus:border-blue-500 transition-colors font-mono"
                         required
