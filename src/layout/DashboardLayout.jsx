@@ -1,3 +1,4 @@
+import { isTenantModuleEnabled } from '../utils/modulesConfig';
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import {
@@ -284,6 +285,7 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
     const filteredNavItems = useMemo(() => {
         return navItems.filter(item => {
             if (item.id === 'Inicio') return true;
+            if (!isTenantModuleEnabled(userProfile?.tenant, item.id)) return false;
             if (item.id === 'agenda') return can("Agenda", "Agenda", "consultar");
             if (item.id === 'pacientes') return can("Pacientes", "Paciente", "consultar");
             if (item.id === 'caja') return can("Caja", "Caja", "consultar");

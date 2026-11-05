@@ -1,3 +1,5 @@
+import { useAuth } from '../../context/AuthContext';
+import { isTenantModuleEnabled } from '../../utils/modulesConfig';
 import React, { useState, useEffect, useMemo } from "react";
 import { 
   FiFileText, FiUsers, FiCalendar, FiBriefcase, 
@@ -21,12 +23,14 @@ import { useSearchParams } from "react-router-dom";
 
 export default function AdministracionRouter() {
   const { can } = usePermissions();
+  const { userProfile } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const urlTab = searchParams.get("tab");
 
   const filteredModules = useMemo(() => {
     return ADMIN_MODULES.filter(item => {
       if (item.id === "facturacion") {
+        if (!isTenantModuleEnabled(userProfile?.tenant, "facturacion_electronica")) return false;
         return can("Administración", "Menú Facturación", "consultar") ||
                can("Administración", "Factura de venta", "consultar") ||
                can("Administración", "Recibo de caja", "consultar") ||
@@ -35,15 +39,15 @@ export default function AdministracionRouter() {
                can("Administración", "Pagos a proveedores", "consultar") ||
                can("Administración", "Facturas de compra", "consultar");
       }
-      if (item.id === "convenios") return can("Administración", "Convenios", "consultar");
-      if (item.id === "agenda") return can("Administración", "Gestion Agenda", "consultar");
-      if (item.id === "terceros") return can("Administración", "Terceros", "consultar");
-      if (item.id === "residuos") return can("Administración", "Residuos", "consultar");
-      if (item.id === "rips") return can("Administración", "Rips", "consultar");
-      if (item.id === "esterilizacion") return can("Administración", "Esterilizacion", "consultar");
+      if (item.id === "convenios") return isTenantModuleEnabled(userProfile?.tenant, "convenios") && can("Administración", "Convenios", "consultar");
+      if (item.id === "agenda") return isTenantModuleEnabled(userProfile?.tenant, "agenda") && can("Administración", "Gestion Agenda", "consultar");
+      if (item.id === "terceros") return isTenantModuleEnabled(userProfile?.tenant, "terceros") && can("Administración", "Terceros", "consultar");
+      if (item.id === "residuos") return isTenantModuleEnabled(userProfile?.tenant, "residuos") && can("Administración", "Residuos", "consultar");
+      if (item.id === "rips") return isTenantModuleEnabled(userProfile?.tenant, "rips") && can("Administración", "Rips", "consultar");
+      if (item.id === "esterilizacion") return isTenantModuleEnabled(userProfile?.tenant, "esterilizacion") && can("Administración", "Esterilizacion", "consultar");
       return true;
     });
-  }, [can]);
+  }, [userProfile, can]);
 
   const [selectedModule, setSelectedModuleState] = useState(urlTab || null);
 

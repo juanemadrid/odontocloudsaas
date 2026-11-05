@@ -106,6 +106,7 @@ export const getTenants = async () => {
                 facturacionCuota: 0,
                 facturacionUsadas: 0,
                 extraUsers: Number(t.parametros?.extra_users || t.extra_users || 0),
+                disabled_modules: t.parametros?.disabled_modules || t.disabled_modules || [],
                 lastSignInAt: loginInfo?.lastSignInAt || null,
                 lastSignInUser: loginInfo?.lastSignInUser || null,
                 createdAt: createdDate.toISOString(),
@@ -154,6 +155,7 @@ export const getTenants = async () => {
                 facturacionCuota: t.facturacionCuota ?? existing.facturacionCuota ?? 0,
                 facturacionUsadas: t.facturacionUsadas ?? existing.facturacionUsadas ?? 0,
                 extraUsers: Number(t.extraUsers ?? t.extra_users ?? existing.extraUsers ?? 0),
+                disabled_modules: t.disabled_modules || t.parametros?.disabled_modules || existing.disabled_modules || [],
                 lastSignInAt: loginInfo?.lastSignInAt || existing.lastSignInAt || null,
                 lastSignInUser: loginInfo?.lastSignInUser || existing.lastSignInUser || null,
                 createdAt: createdDate.toISOString(),
@@ -303,7 +305,7 @@ export const updateTenantDetails = async (tenantId, updates) => {
         if (updates.activo !== undefined) dbUpdates.activo = updates.activo;
 
         // Actualizar columna parametros JSONB de la tabla tenants si viene extraUsers
-        if (updates.extraUsers !== undefined || updates.extra_users !== undefined) {
+        if (updates.disabled_modules !== undefined || updates.extraUsers !== undefined || updates.extra_users !== undefined) {
             let { data: currentDbTenant } = await supabase.from("tenants").select("parametros").eq("id", tenantId).maybeSingle();
             const currParams = (currentDbTenant?.parametros && typeof currentDbTenant.parametros === "object") ? currentDbTenant.parametros : {};
             const resolvedExtra = updates.extraUsers !== undefined ? Number(updates.extraUsers) : Number(updates.extra_users);
@@ -330,6 +332,14 @@ export const updateTenantDetails = async (tenantId, updates) => {
 /**
  * Actualizar cupos de usuarios extra asignados a una clínica
  */
+
+/**
+ * Actualizar lista de módulos desactivados para una clínica (Tenant)
+ */
+export const updateTenantModules = async (tenantId, disabledModules = []) => {
+    return await updateTenantDetails(tenantId, { disabled_modules: disabledModules });
+};
+
 export const updateTenantExtraUsers = async (tenantId, extraUsersCount) => {
     const count = Math.max(0, parseInt(extraUsersCount, 10) || 0);
     return await updateTenantDetails(tenantId, { extraUsers: count, extra_users: count });

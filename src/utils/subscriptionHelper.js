@@ -57,11 +57,18 @@ export const hasElectronicInvoicingAccess = (userProfileOrTenant) => {
     // Check if userProfile is passed or tenant directly
     const role = (userProfileOrTenant.role || userProfileOrTenant.rol || "").toString().toLowerCase();
     const email = (userProfileOrTenant.email || "").toString().toLowerCase();
-    if (email === "madridsystem@outlook.es" || role === "superadmin" || role === "admin" || role === "administrador") {
+    if (email === "madridsystem@outlook.es" || role === "superadmin" || role === "super_admin") {
         return true;
     }
 
     const tenant = userProfileOrTenant.tenant || userProfileOrTenant;
+    if (tenant) {
+        const disabled = tenant.disabled_modules || tenant.parametros?.disabled_modules || [];
+        if (Array.isArray(disabled) && disabled.includes("facturacion_electronica")) {
+            return false;
+        }
+    }
+
     const plan = tenant.plan || {};
     const planId = (tenant.planId || plan.id || tenant.plan || "").toString().toLowerCase().trim();
 

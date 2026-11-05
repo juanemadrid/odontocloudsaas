@@ -1,3 +1,4 @@
+import { isTenantModuleEnabled, mapFeatureToModuleId } from '../utils/modulesConfig';
 import { useAuth } from "../context/AuthContext";
 import { isSubscriptionExpired } from "../utils/subscriptionHelper";
 
@@ -20,6 +21,12 @@ export function usePermissions() {
 
         // 2. Suscripción vencida
         if (isSubscriptionExpired(userProfile?.tenant)) return false;
+
+        // 2b. Módulos desactivados a nivel de Clínica (Tenant) por el SuperAdmin
+        const mappedModuleId = mapFeatureToModuleId(moduleName, featureName);
+        if (mappedModuleId && !isTenantModuleEnabled(userProfile?.tenant, mappedModuleId)) {
+            return false;
+        }
 
         // 3. Verificación de Plan especial para "Editor Web"
         if (featureName === "Editor Web") {
