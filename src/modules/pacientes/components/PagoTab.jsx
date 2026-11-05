@@ -1,3 +1,6 @@
+import { printReciboCaja } from '../../../utils/electronicInvoiceTemplate';
+import { getReceiptPlanFinancials } from '../../../services/billingService';
+import { isDoctorUser } from '../../../utils/doctorHelpers';
 import React, { useState, useEffect } from 'react';
 import supabase from '../../../lib/supabaseClient';
 import { useAuth } from '../../../context/AuthContext';
@@ -13,7 +16,10 @@ import {
     FiFileText, 
     FiUser, 
     FiArrowLeft, 
-    FiSearch 
+    FiSearch,
+    FiPrinter,
+    FiCheckCircle,
+    FiX
 } from "react-icons/fi";
 import { formatCurrency } from '../../../utils/formatters';
 import { getPlansByPatient } from '../../../services/planService';
@@ -45,6 +51,123 @@ export default function PagoTab({ patient }) {
     const [profesionales, setProfesionales] = useState([]);
     const [notes, setNotes] = useState("");
     const [loading, setLoading] = useState(false);
+    const [companyInfo, setCompanyInfo] = useState(null);
+    const [printModal, setPrintModal] = useState({
+        open: false,
+        pago: null,
+        metadata: null,
+        planTitle: "",
+        planId: null,
+        nroConsecutivo: "",
+        monto: 0,
+        metodo: "",
+        itemPayments: []
+    });
+
+    useEffect(() => {
+        const loadCompany = async () => {
+            const inq = userProfile?.inquilino || userProfile?.tenant_id || userProfile?.tenantId || "";
+            if (!inq) return;
+            try {
+                const empConfig = await getConfigSection(inq, "empresa_datos", {});
+                setCompanyInfo(empConfig);
+            } catch (_) {}
+        };
+        loadCompany();
+    }, [userProfile]);
+
+    const handlePrintReceipt = async (modalData) => {
+        try {
+            const pago = modalData?.pago || {};
+            const meta = modalData?.metadata || {};
+            const inq = userProfile?.inquilino || userProfile?.tenant_id || userProfile?.tenantId || "";
+
+            const targetPatient = {
+                nombreCompleto: patient?.nombreCompleto || `${patient?.nombres || patient?.nombre || ""} ${patient?.apellidos || patient?.apellido || ""}`.trim() || "Paciente",
+                documento: patient?.documento || patient?.cedula || patient?.nroDocumento || "",
+                tipoDocumento: patient?.tipo_documento || patient?.tipoDocumento || "CC",
+                celular: patient?.telefono || patient?.celular || "",
+                telefono: patient?.telefono || patient?.celular || "",
+                direccion: patient?.direccion || patient?.direccionDomicilio || "",
+                ciudad: patient?.ciudadDomicilio || patient?.ciudad || "Sincelejo"
+            };
+
+            const targetPlanId = modalData.planId || pago.planId || meta.planId;
+            const planFinancials = await getReceiptPlanFinancials({
+                planId: targetPlanId,
+                patientId: patient?.id,
+                tenantId: inq,
+                receiptAmount: Number(modalData.monto || pago.monto || 0),
+                planTitle: modalData.planTitle || meta.planTitle || pago.planTitle || ""
+            });
+
+            let conceptosList = [];
+            const rawItems = modalData.itemPayments || meta.itemPayments || pago.itemPayments;
+            if (Array.isArray(rawItems) && rawItems.length > 0) {
+                conceptosList = rawItems.map(it => {
+                    const itemName = it.desc || it.nombre || it.prestacion || it.concepto || meta.concepto || "Procedimiento Odontológico";
+                    const itemPrice = Number(it.monto || it.precio || it.valor || it.total || pago.monto || 0);
+                    const itemQty = Number(it.cantidad || 1);
+                    return {
+                        concepto: itemName,
+                        precioUnitario: itemPrice,
+                        cantidad: itemQty,
+                        total: Number(it.monto || it.total || (itemPrice * itemQty))
+                    };
+                });
+            } else {
+                conceptosList = [{
+                    concepto: meta.concepto || pago.concepto || "Abono a tratamiento",
+                    precioUnitario: Number(modalData.monto || pago.monto || 0),
+                    cantidad: 1,
+                    total: Number(modalData.monto || pago.monto || 0)
+                }];
+            }
+
+            const tenantData = companyInfo || {
+                nombreComercial: userProfile?.tenantNombre || "Clínica Dental",
+                nit: userProfile?.tenant?.nit || "",
+                direccion: userProfile?.tenant?.direccion || "",
+                ciudad: userProfile?.tenant?.ciudad || "Sincelejo",
+                telefono: userProfile?.tenant?.telefono || "",
+                email: userProfile?.tenant?.email || "",
+                logoUrl: userProfile?.tenant?.logoUrl || ""
+            };
+
+            const profName = meta.profesional || pago.profesional || (isDoctorUser(userProfile) ? userProfile?.nombreCompleto : '') || targetPatient?.doctorTratante || "Sin asignar";
+            const numConsecutivo = modalData.nroConsecutivo || pago.nroConsecutivo || meta.nroConsecutivo || pago.nro_consecutivo || "1";
+
+            await printReciboCaja({
+                recibo: {
+                    ...pago,
+                    nroConsecutivo: numConsecutivo,
+                    fecha: pago.fecha || pago.created_at || new Date(),
+                    pacienteNombre: targetPatient.nombreCompleto,
+                    pacienteDocumento: targetPatient.documento,
+                    pacienteTipoDocumento: targetPatient.tipoDocumento || "CC",
+                    pacienteDireccion: targetPatient.direccion,
+                    pacienteCiudad: targetPatient.ciudad,
+                    pacienteTelefono: targetPatient.telefono,
+                    profesionalNombre: profName,
+                    registradoPor: pago.registrado_por || pago.registradoPor || meta.registradoPor || meta.registrado_por || userProfile?.nombreCompleto || "",
+                    medioPago: pago.metodo || modalData.metodo || meta.medio || "Efectivo",
+                    conceptos: conceptosList,
+                    total: Number(modalData.monto || pago.monto || 0),
+                    observaciones: meta.observaciones || pago.observaciones || pago.notas || "",
+                    estado: pago.estado || "Aprobado",
+                    anulado: false
+                },
+                patient: targetPatient,
+                userProfile: userProfile,
+                tenant: tenantData,
+                planInfo: planFinancials
+            });
+        } catch (e) {
+            console.error("Error launching print from PagoTab:", e);
+            toast?.error?.("Error al preparar el comprobante de impresión");
+        }
+    };
+
 
     useEffect(() => {
         const loadProfesionales = async () => {
@@ -541,6 +664,23 @@ export default function PagoTab({ patient }) {
                     }
                 } catch (e) {}
             }
+
+            const registeredPago = newPago || {
+                ...pagoPayload,
+                id: (newPago && newPago.id) || ("RC-" + Date.now())
+            };
+
+            setPrintModal({
+                open: true,
+                pago: registeredPago,
+                metadata: metadataNotas,
+                planTitle: selectedPlan?.title || selectedPlan?.nombre || "",
+                planId: selectedPlan?.id || null,
+                nroConsecutivo: nroConsecutivo,
+                monto: paymentAmount,
+                metodo: method,
+                itemPayments: itemPayments
+            });
 
             toast.success("Pago registrado exitosamente");
             setAbonoInput("");
@@ -1043,6 +1183,94 @@ export default function PagoTab({ patient }) {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal Emergente de Confirmación de Impresión de Recibo */}
+            {printModal.open && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fadeIn">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-100 animate-in zoom-in-95 duration-200">
+                        {/* Modal Header */}
+                        <div className="p-6 bg-gradient-to-br from-emerald-500 to-[#7bb335] text-white flex flex-col items-center text-center relative">
+                            <button
+                                type="button"
+                                onClick={() => setPrintModal({ open: false, pago: null })}
+                                className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center transition-all cursor-pointer"
+                            >
+                                <FiX size={16} />
+                            </button>
+                            <div className="w-14 h-14 rounded-full bg-white text-emerald-600 flex items-center justify-center shadow-lg mb-3">
+                                <FiCheckCircle size={32} />
+                            </div>
+                            <h3 className="text-xl font-black tracking-tight">¡Pago Registrado Exitosamente!</h3>
+                            <p className="text-xs text-emerald-100 font-medium mt-1">
+                                El comprobante ha sido asentado en caja y en la cuenta del paciente.
+                            </p>
+                        </div>
+
+                        {/* Modal Body / Summary */}
+                        <div className="p-6 space-y-4">
+                            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 space-y-2.5">
+                                <div className="flex justify-between items-center text-xs">
+                                    <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Recibo N.º</span>
+                                    <span className="font-mono font-black text-slate-800 text-sm">
+                                        {printModal.nroConsecutivo ? ("RC-" + String(printModal.nroConsecutivo).padStart(4, "0")) : "RC-AUTO"}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between items-center text-xs">
+                                    <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Monto Cobrado</span>
+                                    <span className="font-mono font-black text-emerald-600 text-base">
+                                        {formatCurrency(printModal.monto)}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between items-center text-xs">
+                                    <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Medio de Pago</span>
+                                    <span className="font-bold text-slate-700 uppercase">
+                                        {printModal.metodo || "Efectivo"}
+                                    </span>
+                                </div>
+                                {printModal.planTitle && (
+                                    <div className="flex justify-between items-center text-xs">
+                                        <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Plan Tratamiento</span>
+                                        <span className="font-bold text-slate-700 truncate max-w-[200px]">
+                                            {printModal.planTitle}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="text-center py-1">
+                                <p className="text-xs font-bold text-slate-700">
+                                    ¿Deseas imprimir el recibo de pago en este momento?
+                                </p>
+                                <p className="text-[11px] text-slate-400 mt-0.5">
+                                    El formato es idéntico al del Histórico de Pagos y podrás reimprimirlo cuando lo desees.
+                                </p>
+                            </div>
+
+                            {/* Modal Action Buttons */}
+                            <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setPrintModal({ open: false, pago: null })}
+                                    className="w-full sm:flex-1 py-3 px-4 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-bold text-xs uppercase tracking-wider transition-all cursor-pointer text-center"
+                                >
+                                    Cerrar
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        const dataToPrint = { ...printModal };
+                                        setPrintModal({ open: false, pago: null });
+                                        await handlePrintReceipt(dataToPrint);
+                                    }}
+                                    className="w-full sm:flex-1 py-3 px-4 rounded-xl bg-[#8CC63F] hover:bg-[#7bb335] text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-[#8CC63F]/25 hover:shadow-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
+                                >
+                                    <FiPrinter size={16} /> Imprimir Recibo
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}
