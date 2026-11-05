@@ -1,3 +1,4 @@
+import { formatColombianMoneyInput, parseColombianMoney } from "../../../utils/formatters";
 // src/modules/caja/components/MovimientoModal.jsx
 // ─── Modal para registrar ingresos y egresos ───
 // Conectado en tiempo real con: Cajas + Pacientes + Facturas
@@ -183,7 +184,7 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
     );
   }).slice(0, 10);
 
-  const montoNum = parseFloat(String(form.monto).replace(/[^0-9]/g, "")) || 0;
+  const montoNum = parseColombianMoney(form.monto);
   const nuevoSaldo = (caja.saldoActual || 0) + (tipo === "ingreso" ? montoNum : -montoNum);
 
   const handleSubmit = async (e) => {
@@ -499,12 +500,11 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
                 placeholder="0"
                 value={form.montoDisplay}
                 onChange={(e) => {
-                  const raw = e.target.value.replace(/[^0-9]/g, "");
-                  const formatted = new Intl.NumberFormat("es-CO").format(raw);
+                  const parsed = formatColombianMoneyInput(e.target.value);
                   setForm({ 
                     ...form, 
-                    monto: raw, 
-                    montoDisplay: raw ? formatted : "" 
+                    monto: parsed.normalized, 
+                    montoDisplay: parsed.display 
                   });
                 }}
                 style={{ ...INP, fontFamily: "monospace", fontWeight: "bold" }}

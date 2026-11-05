@@ -1,3 +1,4 @@
+import { formatColombianMoneyInput, parseColombianMoney } from "../../../utils/formatters";
 import React, { useState } from "react";
 import supabase from "../../../lib/supabaseClient";
 import { getConfigSection, saveConfigSection } from "../../../services/configPersistenceService";
@@ -60,7 +61,7 @@ export default function AbrirCajaModal({ inquilino, userProfile, onClose, onSucc
         return;
       }
 
-      const base = parseFloat(String(form.ajustarBase).replace(/[^0-9]/g, "")) || 0;
+      const base = parseColombianMoney(form.ajustarBase);
       const cajaId = crypto.randomUUID ? crypto.randomUUID() : `caja_${Date.now()}`;
       const fechaIso = new Date().toISOString();
 
@@ -207,11 +208,11 @@ export default function AbrirCajaModal({ inquilino, userProfile, onClose, onSucc
                   placeholder="0"
                   value={form.ajustarBaseDisplay}
                   onChange={(e) => {
-                    const raw = e.target.value.replace(/[^0-9]/g, "");
+                    const parsed = formatColombianMoneyInput(e.target.value);
                     setForm({ 
                       ...form, 
-                      ajustarBase: raw, 
-                      ajustarBaseDisplay: raw ? fmtPure(raw) : "" 
+                      ajustarBase: parsed.normalized, 
+                      ajustarBaseDisplay: parsed.display 
                     });
                   }}
                   className="w-full h-9 pl-7 pr-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 outline-none focus:bg-white focus:border-blue-500 transition-colors font-mono"

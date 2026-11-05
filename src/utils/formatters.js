@@ -137,6 +137,87 @@ export const formatNumberWithDots = (val) => {
     return formattedInt;
 };
 
+
+/**
+ * Formatea y normaliza entradas de dinero en Pesos Colombianos (COP) para inputs interactivos.
+ * - Soporta montos enteros: 826.000, 826.050, 3, 1.500.000, etc.
+ * - Soporta decimales (centavos): 865.000,32 o 3,50 (con coma oficial o punto).
+ * - Distingue puntos de miles de comas decimales sin confundir 826.000 con 8,26.
+ * 
+ * @param {string|number} val - Entrada a formatear
+ * @returns {{ display: string, normalized: string, amount: number }}
+ */
+export const formatColombianMoneyInput = (val) => {
+    if (val === null || val === undefined || val === '') {
+        return { display: '', normalized: '0', amount: 0 };
+    }
+
+    const str = String(val).trim().replace(/[^0-9,.-]/g, '');
+    if (!str) return { display: '', normalized: '0', amount: 0 };
+
+    const hasComma = str.includes(',');
+    const hasDot = str.includes('.');
+
+    let integerDigits = '';
+    let decimalDigits = null; // null = sin decimales activos
+
+    if (hasComma && hasDot) {
+        const lastComma = str.lastIndexOf(',');
+        const lastDot = str.lastIndexOf('.');
+        if (lastComma > lastDot) {
+            // Estándar colombiano: 865.000,32 -> puntos son miles y coma es decimal
+            integerDigits = str.slice(0, lastComma).replace(/\D/g, '');
+            decimalDigits = str.slice(lastComma + 1).replace(/\D/g, '').slice(0, 2);
+        } else {
+            // Estándar alternativo: 865,000.32 -> comas miles, punto decimal
+            integerDigits = str.slice(0, lastDot).replace(/\D/g, '');
+            decimalDigits = str.slice(lastDot + 1).replace(/\D/g, '').slice(0, 2);
+        }
+    } else if (hasComma) {
+        // En Colombia la coma es el separador oficial de centavos/decimales
+        const parts = str.split(',');
+        integerDigits = parts[0].replace(/\D/g, '');
+        if (parts.length > 1) {
+            decimalDigits = parts.slice(1).join('').replace(/\D/g, '').slice(0, 2);
+        }
+    } else if (hasDot) {
+        // Solo puntos en el texto
+        const parts = str.split('.');
+        const lastPart = parts[parts.length - 1];
+
+        // Si tiene exactamente 1 o 2 dígitos después del único punto (ej. '865000.32' o '3.5'):
+        // Se interpreta como decimal (centavos ingresados por teclado numérico).
+        if (parts.length === 2 && lastPart.length > 0 && lastPart.length <= 2) {
+            integerDigits = parts[0].replace(/\D/g, '');
+            decimalDigits = lastPart.replace(/\D/g, '');
+        } else {
+            // Miles colombianos: ej. 826.000, 826.050, 1.500.000 o tipeo progresivo '826.'
+            integerDigits = str.replace(/\D/g, '');
+        }
+    } else {
+        // Dígitos puros
+        integerDigits = str.replace(/\D/g, '');
+    }
+
+    const numInt = Number(integerDigits || '0');
+    const fmtInt = integerDigits ? numInt.toLocaleString('es-CO') : '';
+
+    let display = fmtInt;
+    let normalized = integerDigits || '0';
+
+    if (decimalDigits !== null) {
+        display = (fmtInt || '0') + ',' + decimalDigits;
+        normalized = (integerDigits || '0') + (decimalDigits ? '.' + decimalDigits : '');
+    } else if (str.endsWith(',') || (str.endsWith('.') && str.replace(/\D/g, '').length >= 4)) {
+        display = (fmtInt || '0') + ',';
+    }
+
+    const amount = Number(normalized) || 0;
+    return { display, normalized, amount };
+};
+
+export const parseColombianMoney = (val) => formatColombianMoneyInput(val).amount;
+
 /**
  * Formateador de fecha corto (DD/MM/YYYY)
  */
