@@ -161,7 +161,7 @@ export const getPlanDefaultDisabledModules = (planId = "consultorio") => {
   }
   
   if (p.includes("clinica") || p.includes("pro")) {
-    // Clínica tiene casi todo, solo puede no tener addons especiales
+    // Clínica tiene todo activo por defecto
     return [];
   }
 
@@ -175,6 +175,33 @@ export const getPlanDefaultDisabledModules = (planId = "consultorio") => {
     "convenios",
     "liquidaciones"
   ];
+};
+
+/**
+ * Resuelve los módulos desactivados para un plan (ya sea por objeto plan configurado o por ID de plan)
+ */
+export const getDisabledModulesForPlan = (planOrId) => {
+  if (!planOrId) return getPlanDefaultDisabledModules("consultorio");
+
+  if (typeof planOrId === "object") {
+    if (Array.isArray(planOrId.disabled_modules)) {
+      return planOrId.disabled_modules;
+    }
+    if (Array.isArray(planOrId.included_modules)) {
+      return SYSTEM_MODULES.map(m => m.id).filter(id => !planOrId.included_modules.includes(id));
+    }
+    return getPlanDefaultDisabledModules(planOrId.id || planOrId.name);
+  }
+
+  return getPlanDefaultDisabledModules(String(planOrId));
+};
+
+/**
+ * Resuelve los módulos incluidos (activos) para un plan
+ */
+export const getIncludedModulesForPlan = (planOrId) => {
+  const disabled = getDisabledModulesForPlan(planOrId);
+  return SYSTEM_MODULES.map(m => m.id).filter(id => !disabled.includes(id));
 };
 
 /**

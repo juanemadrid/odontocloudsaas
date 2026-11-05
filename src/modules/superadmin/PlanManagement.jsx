@@ -1,3 +1,9 @@
+import { SYSTEM_MODULES, getIncludedModulesForPlan, getDisabledModulesForPlan, getPlanDefaultDisabledModules } from "../../utils/modulesConfig";
+import {
+    FiCalendar, FiUsers, FiDollarSign, FiFileText, FiActivity,
+    FiBriefcase, FiCheckSquare, FiTrash2, FiShield, FiLayout,
+    FiMapPin, FiPercent, FiPieChart, FiLayers, FiRefreshCw, FiCheck, FiX
+} from "react-icons/fi";
 import React, { useState, useEffect } from "react";
 import { createPlan, getPlans, updatePlan, deletePlan, saveAllPlans, OFFICIAL_DEFAULT_PLANS } from "../../services/adminService";
 
@@ -24,6 +30,25 @@ export default function PlanManagement({ hideTitle }) {
     const [syncing, setSyncing] = useState(false);
     const [showModal, setShowModal] = useState(false);
     const [editingId, setEditingId] = useState(null); // ID if editing
+
+    
+    const MODULE_ICON_MAP = {
+        agenda: FiCalendar,
+        pacientes: FiUsers,
+        odontograma: FiActivity,
+        caja: FiDollarSign,
+        reportes: FiPieChart,
+        liquidaciones: FiPercent,
+        facturacion_electronica: FiFileText,
+        rips: FiActivity,
+        administracion: FiBriefcase,
+        convenios: FiCheckSquare,
+        terceros: FiUsers,
+        residuos: FiTrash2,
+        esterilizacion: FiShield,
+        cms: FiLayout,
+        sucursales: FiMapPin
+    };
 
     const STANDARD_MODULES = [
         { id: "Agenda", label: "Agenda Inteligente" },
@@ -506,7 +531,19 @@ export default function PlanManagement({ hideTitle }) {
 
                                         {/* Toggle Sitio Web */}
                                         <div className={`p-3 rounded-xl border transition-all cursor-pointer ${newPlan.includeCms ? 'bg-indigo-50 border-indigo-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}
-                                            onClick={() => setNewPlan(prev => ({ ...prev, includeCms: !prev.includeCms }))}>
+                                            onClick={() => {
+                                                const next = !newPlan.includeCms;
+                                                const current = new Set(newPlan.included_modules || []);
+                                                if (next) current.add("cms");
+                                                else current.delete("cms");
+                                                const incArr = Array.from(current);
+                                                setNewPlan(prev => ({
+                                                    ...prev,
+                                                    includeCms: next,
+                                                    included_modules: incArr,
+                                                    disabled_modules: SYSTEM_MODULES.map(m => m.id).filter(id => !incArr.includes(id))
+                                                }));
+                                            }}>
                                             <div className="flex flex-col gap-2">
                                                 <div className={`w-8 h-5 flex items-center bg-gray-300 rounded-full p-0.5 duration-300 ease-in-out ${newPlan.includeCms ? 'bg-indigo-600' : ''}`}>
                                                     <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-300 ease-in-out ${newPlan.includeCms ? 'translate-x-3' : ''}`}></div>

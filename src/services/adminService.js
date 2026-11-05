@@ -1,3 +1,4 @@
+import { getPlanDefaultDisabledModules } from "../utils/modulesConfig";
 // src/services/adminService.js
 import supabase from "../lib/supabaseClient";
 import { uploadOptimizedPublicFile } from "./storageUploadService";
@@ -628,6 +629,8 @@ export const createPlan = async (planData) => {
             yearlyPrice: Number(planData.yearlyPrice || 0),
             includeFacturacion: Boolean(planData.includeFacturacion),
             facturasIncluidas: Number(planData.facturasIncluidas || 0),
+            included_modules: planData.included_modules || [],
+            disabled_modules: planData.disabled_modules || [],
             recommended: Boolean(planData.recommended),
             features: planData.features || [],
             status: "active"
@@ -1036,7 +1039,8 @@ export const updateTenantPlan = async (tenantId, planId, planDuration = "monthly
             ...currentParams,
             plan: planId,
             plan_duration: planDuration,
-            subscription_end_date: newEndDate.toISOString()
+            subscription_end_date: newEndDate.toISOString(),
+            disabled_modules: newDisabled
         };
 
         await supabase
