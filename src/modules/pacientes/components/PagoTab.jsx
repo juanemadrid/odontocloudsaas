@@ -203,9 +203,9 @@ export default function PagoTab({ patient }) {
         method?.toLowerCase().includes(m.toLowerCase())
     );
 
-    const loadData = async () => {
+    const loadData = async (silent = false) => {
         if (!patient?.id) return;
-        setLoadingData(true);
+        if (!silent) setLoadingData(true);
         try {
             // Load plans
             const plansData = await getPlansByPatient(patient.id);
@@ -262,7 +262,7 @@ export default function PagoTab({ patient }) {
             console.error("Error loading payment data:", error);
             toast.error("Error al cargar datos de pago");
         } finally {
-            setLoadingData(false);
+            if (!silent) setLoadingData(false);
         }
     };
 
@@ -687,9 +687,9 @@ export default function PagoTab({ patient }) {
             setNotes("");
             setReference("");
             setSelectedPlan(null);
-
-            await loadData();
             setView("list");
+
+            await loadData(true);
         } catch (error) {
             console.error("Error saving payment:", error);
             toast.error("Error al registrar pago");
@@ -1190,71 +1190,53 @@ export default function PagoTab({ patient }) {
             {/* Modal Emergente de Confirmación de Impresión de Recibo */}
             {printModal.open && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-fadeIn">
-                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-100 animate-in zoom-in-95 duration-200">
-                        {/* Modal Header */}
-                        <div className="p-6 bg-gradient-to-br from-emerald-500 to-[#7bb335] text-white flex flex-col items-center text-center relative">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-200">
+                        {/* Header */}
+                        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-white">
+                            <h3 className="text-base font-bold text-slate-800">Pago realizado</h3>
                             <button
                                 type="button"
                                 onClick={() => setPrintModal({ open: false, pago: null })}
-                                className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center transition-all cursor-pointer"
+                                className="text-slate-400 hover:text-slate-600 text-2xl leading-none cursor-pointer"
                             >
-                                <FiX size={16} />
+                                &times;
                             </button>
-                            <div className="w-14 h-14 rounded-full bg-white text-emerald-600 flex items-center justify-center shadow-lg mb-3">
-                                <FiCheckCircle size={32} />
-                            </div>
-                            <h3 className="text-xl font-black tracking-tight">¡Pago Registrado Exitosamente!</h3>
-                            <p className="text-xs text-emerald-100 font-medium mt-1">
-                                El comprobante ha sido asentado en caja y en la cuenta del paciente.
-                            </p>
                         </div>
 
-                        {/* Modal Body / Summary */}
+                        {/* Body */}
                         <div className="p-6 space-y-4">
-                            <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 space-y-2.5">
+                            <p className="text-sm font-semibold text-slate-700 text-center">
+                                ¿Deseas imprimir el recibo?
+                            </p>
+
+                            {/* Resumen simple */}
+                            <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3.5 space-y-2">
                                 <div className="flex justify-between items-center text-xs">
-                                    <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Recibo N.º</span>
-                                    <span className="font-mono font-black text-slate-800 text-sm">
+                                    <span className="text-slate-400 font-bold uppercase text-[10px] tracking-wider">Recibo N.º</span>
+                                    <span className="font-mono font-bold text-slate-800">
                                         {printModal.nroConsecutivo ? ("RC-" + String(printModal.nroConsecutivo).padStart(4, "0")) : "RC-AUTO"}
                                     </span>
                                 </div>
                                 <div className="flex justify-between items-center text-xs">
-                                    <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Monto Cobrado</span>
-                                    <span className="font-mono font-black text-emerald-600 text-base">
+                                    <span className="text-slate-400 font-bold uppercase text-[10px] tracking-wider">Monto</span>
+                                    <span className="font-mono font-bold text-slate-900">
                                         {formatCurrency(printModal.monto)}
                                     </span>
                                 </div>
                                 <div className="flex justify-between items-center text-xs">
-                                    <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Medio de Pago</span>
-                                    <span className="font-bold text-slate-700 uppercase">
+                                    <span className="text-slate-400 font-bold uppercase text-[10px] tracking-wider">Medio de pago</span>
+                                    <span className="font-semibold text-slate-700 uppercase">
                                         {printModal.metodo || "Efectivo"}
                                     </span>
                                 </div>
-                                {printModal.planTitle && (
-                                    <div className="flex justify-between items-center text-xs">
-                                        <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Plan Tratamiento</span>
-                                        <span className="font-bold text-slate-700 truncate max-w-[200px]">
-                                            {printModal.planTitle}
-                                        </span>
-                                    </div>
-                                )}
                             </div>
 
-                            <div className="text-center py-1">
-                                <p className="text-xs font-bold text-slate-700">
-                                    ¿Deseas imprimir el recibo de pago en este momento?
-                                </p>
-                                <p className="text-[11px] text-slate-400 mt-0.5">
-                                    El formato es idéntico al del Histórico de Pagos y podrás reimprimirlo cuando lo desees.
-                                </p>
-                            </div>
-
-                            {/* Modal Action Buttons */}
-                            <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+                            {/* Botones de acción */}
+                            <div className="grid grid-cols-2 gap-3 pt-1">
                                 <button
                                     type="button"
                                     onClick={() => setPrintModal({ open: false, pago: null })}
-                                    className="w-full sm:flex-1 py-3 px-4 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-bold text-xs uppercase tracking-wider transition-all cursor-pointer text-center"
+                                    className="w-full py-2.5 px-4 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 font-bold text-xs uppercase tracking-wider transition-all cursor-pointer text-center"
                                 >
                                     Cerrar
                                 </button>
@@ -1265,9 +1247,9 @@ export default function PagoTab({ patient }) {
                                         setPrintModal({ open: false, pago: null });
                                         await handlePrintReceipt(dataToPrint);
                                     }}
-                                    className="w-full sm:flex-1 py-3 px-4 rounded-xl bg-[#8CC63F] hover:bg-[#7bb335] text-white font-black text-xs uppercase tracking-wider shadow-lg shadow-[#8CC63F]/25 hover:shadow-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
+                                    className="w-full py-2.5 px-4 rounded-xl bg-[#8CC63F] hover:bg-[#7bb335] text-white font-bold text-xs uppercase tracking-wider shadow-md shadow-[#8CC63F]/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
                                 >
-                                    <FiPrinter size={16} /> Imprimir Recibo
+                                    <FiPrinter size={15} /> Imprimir recibo
                                 </button>
                             </div>
                         </div>
