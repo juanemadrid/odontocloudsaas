@@ -727,6 +727,25 @@ export default function TenantsPanelV2() {
                                 type="button"
                                 onClick={() => {
                                     setOpenActionMenuId(null);
+                                    openModulesModal(t);
+                                }}
+                                className="w-full px-3.5 py-2 text-left flex items-center gap-2.5 hover:bg-slate-50 transition-colors group/item"
+                            >
+                                <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 group-hover/item:bg-blue-600 group-hover/item:text-white transition-colors">
+                                    <FiLayers size={13} />
+                                </div>
+                                <div className="flex flex-col min-w-0">
+                                    <span className="text-xs font-bold text-slate-800 leading-tight">Módulos del Sistema</span>
+                                    <span className="text-[10px] text-slate-400 truncate">
+                                        {SYSTEM_MODULES.length - (t.disabled_modules?.length || 0)}/{SYSTEM_MODULES.length} activos · Configurar
+                                    </span>
+                                </div>
+                            </button>
+
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setOpenActionMenuId(null);
                                     setSelectedTenant(t);
                                     setNewPlanId(t.planId);
                                     setNewDuration(t.planDuration || "monthly");
@@ -1214,7 +1233,21 @@ export default function TenantsPanelV2() {
                                                     )}
                                                 </td>
                                                 <td className="px-5 py-4 text-center">
-                                                    {renderActionDropdown(t, t.id, openUp)}
+                                                    <div className="flex items-center justify-center gap-1.5">
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => { e.stopPropagation(); openModulesModal(t); }}
+                                                            className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                                                            title="Ver y configurar módulos de esta clínica"
+                                                        >
+                                                            <FiLayers size={13} />
+                                                            <span className="hidden xl:inline">Módulos</span>
+                                                            <span className="text-[10px] font-black opacity-80 bg-white px-1.5 py-0.2 rounded border border-blue-200">
+                                                                {SYSTEM_MODULES.length - (t.disabled_modules?.length || 0)}/{SYSTEM_MODULES.length}
+                                                            </span>
+                                                        </button>
+                                                        {renderActionDropdown(t, t.id, openUp)}
+                                                    </div>
                                                 </td>
                                             </tr>
                                         );
@@ -1409,6 +1442,10 @@ export default function TenantsPanelV2() {
                                 <button onClick={()=>{setSelectedTenant(showDetail);setNewPlanId(showDetail.planId);setNewDuration(showDetail.planDuration||"monthly");setShowPlan(true);}}
                                     className="flex items-center gap-2 px-4 py-3 rounded-xl text-xs font-semibold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-all">
                                     <FiSliders size={14}/> Cambiar plan
+                                </button>
+                                <button onClick={()=>{openModulesModal(showDetail);}}
+                                    className="flex items-center gap-2 px-4 py-3 rounded-xl text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 transition-all cursor-pointer">
+                                    <FiLayers size={14}/> Módulos ({SYSTEM_MODULES.length - (showDetail.disabled_modules?.length || 0)}/{SYSTEM_MODULES.length})
                                 </button>
                                 <button onClick={()=>handleGrantFree(showDetail.id)}
                                     className="flex items-center gap-2 px-4 py-3 rounded-xl text-xs font-semibold bg-slate-50 text-slate-600 hover:bg-slate-100 transition-all">
