@@ -96,7 +96,7 @@ export default function PagosList({ onNew }) {
           const map = new Map();
           list.forEach(p => map.set(p.id, p));
           cfgList.forEach(p => {
-            if (!map.has(p.id)) map.set(p.id, p);
+            map.set(p.id, { ...(map.get(p.id) || {}), ...p });
           });
           list = Array.from(map.values());
         }
@@ -106,7 +106,7 @@ export default function PagosList({ onNew }) {
           const fcMap = new Map();
           fcList.forEach(f => fcMap.set(f.id, f));
           cfgFc.forEach(f => {
-            if (!fcMap.has(f.id)) fcMap.set(f.id, f);
+            fcMap.set(f.id, { ...(fcMap.get(f.id) || {}), ...f });
           });
           fcList = Array.from(fcMap.values());
         }

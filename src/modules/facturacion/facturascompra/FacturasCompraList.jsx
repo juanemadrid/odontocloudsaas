@@ -100,16 +100,16 @@ export default function FacturasCompraList({ onNew }) {
 
   // Selección de facturas con checkbox
   const [selectedFacturaId, setSelectedFacturaId] = useState(null);
+  const [allFacturasRef, setAllFacturasRef] = useState([]);
 
-  // Modal Asociar Egreso
+  // Modal Asociar Egreso (soporta asociar uno o varios egresos a una misma factura)
   const [showAsociarModal, setShowAsociarModal] = useState(false);
   const [facturaToAsociar, setFacturaToAsociar] = useState(null);
-  const [valorAPagar, setValorAPagar] = useState("");
-  const [selectedEgresoId, setSelectedEgresoId] = useState("");
-  const [disponibleEgreso, setDisponibleEgreso] = useState(0);
+  const [egresosRows, setEgresosRows] = useState([
+    { rowId: "row-initial", requestId: "", egresoId: "", valorAPagar: "", disponible: 0 }
+  ]);
   const [egresosList, setEgresosList] = useState([]);
   const [savingEgreso, setSavingEgreso] = useState(false);
-  const associationRequestId = useRef(null);
 
   // Modal Ver Detalle Factura
   const [viewingFactura, setViewingFactura] = useState(null);
@@ -146,54 +146,64 @@ export default function FacturasCompraList({ onNew }) {
     if (!inquilino) return;
     setLoading(true);
     try {
-      let list = [];
+      let dbList = [];
       try {
         const { data } = await supabase
           .from("facturas_compra")
           .select("*")
           .eq("tenant_id", inquilino);
-        if (data && data.length > 0) list = data;
+        if (data && data.length > 0) dbList = data;
       } catch (e) {}
 
-      if (list.length === 0) {
-        try {
-          const cfgList = await getConfigSection(inquilino, "facturas_compra", []);
-          if (Array.isArray(cfgList) && cfgList.length > 0) {
-            list = cfgList;
-          }
-        } catch (e) {
-          const { data: cfgRow } = await supabase
-            .from("website_config")
-            .select("config")
-            .eq("tenant_id", inquilino)
-            .maybeSingle();
-          list = cfgRow?.config?.facturas_compra || [];
-        }
-      }
-
-      // Cargar egresos/pagos para el modal de asociación y documentos asociados
+      let cfgRowData = null;
       try {
-        let pList = [];
-        const { data: pDb } = await supabase
-          .from("pagos_proveedor")
-          .select("*")
-          .eq("tenant_id", inquilino);
-        if (pDb && pDb.length > 0) {
-          pList = pDb;
-        }
-
         const { data: cfgRow } = await supabase
           .from("website_config")
           .select("config")
           .eq("tenant_id", inquilino)
           .maybeSingle();
+        cfgRowData = cfgRow?.config || null;
+      } catch (e) {}
 
-        const cfgPp = cfgRow?.config?.pagos_proveedor || [];
+      let cfgFacturas = cfgRowData?.facturas_compra || [];
+      if (!Array.isArray(cfgFacturas) || cfgFacturas.length === 0) {
+        try {
+          const sectionFc = await getConfigSection(inquilino, "facturas_compra", []);
+          if (Array.isArray(sectionFc) && sectionFc.length > 0) cfgFacturas = sectionFc;
+        } catch (e) {}
+      }
+
+      const fcMap = new Map();
+      (dbList || []).forEach(f => {
+        if (f?.id) fcMap.set(f.id, f);
+      });
+      (cfgFacturas || []).forEach(f => {
+        if (f?.id) fcMap.set(f.id, { ...(fcMap.get(f.id) || {}), ...f });
+      });
+      const list = Array.from(fcMap.values());
+      setAllFacturasRef(list);
+
+      // Cargar egresos/pagos para el modal de asociación y documentos asociados
+      try {
+        let pList = [];
+        try {
+          const { data: pDb } = await supabase
+            .from("pagos_proveedor")
+            .select("*")
+            .eq("tenant_id", inquilino);
+          if (pDb && pDb.length > 0) {
+            pList = pDb;
+          }
+        } catch (e) {}
+
+        const cfgPp = cfgRowData?.pagos_proveedor || [];
         if (Array.isArray(cfgPp) && cfgPp.length > 0) {
           const map = new Map();
-          pList.forEach(p => map.set(p.id, p));
+          pList.forEach(p => {
+            if (p?.id) map.set(p.id, p);
+          });
           cfgPp.forEach(p => {
-            if (!map.has(p.id)) map.set(p.id, p);
+            if (p?.id) map.set(p.id, { ...(map.get(p.id) || {}), ...p });
           });
           pList = Array.from(map.values());
         }
@@ -247,18 +257,144 @@ export default function FacturasCompraList({ onNew }) {
     return filteredFacturas.slice(startIdx, startIdx + itemsPerPage);
   }, [filteredFacturas, currentPage]);
 
-  // Helper para resolver egresos asociados a una factura de compra / documento soporte
-  const getAssociatedEgresos = useCallback((factura, eList = egresosList) => eList.filter(p => expenseMatchesInvoice(p, factura)), [egresosList]);
-
-  // Determinar si una factura está pagada / cancelada o asociada a egreso
-  const isFacturaPaid = useCallback((factura) => {
-    if (!factura) return false;
-    const state = String(factura.estado || '').toLowerCase();
-    if (['anulada', 'anulado', 'cancelada', 'cancelado'].includes(state)) return true;
-    const balance = factura.saldoPendiente ?? factura.saldo_pendiente;
-    if (balance != null) return Number(balance) <= 0;
-    return ['pagada', 'pagado'].includes(state);
+  const isEgresoAnulado = useCallback((eg) => {
+    if (!eg) return true;
+    return Boolean(eg.anulado || ["anulado", "anulada"].includes(String(eg.estado || "").toLowerCase()));
   }, []);
+
+  // Helper para resolver egresos asociados a una factura de compra / documento soporte
+  const getAssociatedEgresos = useCallback(
+    (factura, eList = egresosList) => (eList || []).filter(p => !isEgresoAnulado(p) && expenseMatchesInvoice(p, factura)),
+    [egresosList, isEgresoAnulado]
+  );
+
+  // Calcula el monto específico que un egreso aportó a una factura dada
+  const getAppliedAmountForExpense = useCallback((factura, egreso) => {
+    if (!factura || !egreso) return 0;
+    const egId = String(egreso.id || "");
+    const egNum = getExpenseNumber(egreso);
+
+    if (Array.isArray(factura.egresosAplicados) && factura.egresosAplicados.length > 0) {
+      const matchingEntries = factura.egresosAplicados.filter(entry => {
+        if (!entry) return false;
+        if (egId && String(entry.egresoId || "") === egId) return true;
+        if (!entry.egresoId && egNum && String(entry.numero || "") === egNum) return true;
+        return false;
+      });
+      if (matchingEntries.length > 0) {
+        return matchingEntries.reduce((sum, entry) => sum + Number(entry.valor || 0), 0);
+      }
+    }
+
+    const invId = String(factura.id || "");
+    const invNum = String(factura.nroFactura || factura.documentoNumero || factura.numero || "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+    if (Array.isArray(egreso.items) && egreso.items.length > 0) {
+      const matchingItems = egreso.items.filter(it => {
+        if (!it?.isFactura) return false;
+        if (invId && String(it.facturaId || "") === invId) return true;
+        const itNum = String(it.numeroFactura || it.concepto || "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+        return Boolean(invNum && itNum && invNum === itNum);
+      });
+      if (matchingItems.length > 0) {
+        return matchingItems.reduce((sum, it) => sum + Number(it.total ?? it.monto ?? it.valor ?? it.precioUnitario ?? 0), 0);
+      }
+    }
+
+    return Number(egreso.monto || egreso.total || egreso.valor || 0);
+  }, []);
+
+  // Calcula el saldo disponible de un egreso teniendo en cuenta todas las facturas donde se ha aplicado
+  const getEgresoDisponible = useCallback((egreso, allInvoices = allFacturasRef) => {
+    if (!egreso || isEgresoAnulado(egreso)) return 0;
+    const amountTotal = Number(egreso.monto || egreso.total || 0);
+    const egId = String(egreso.id || "");
+    const invoicesToCheck = Array.isArray(allInvoices) && allInvoices.length > 0 ? allInvoices : facturas;
+
+    let usedFromInvoices = 0;
+    for (const inv of invoicesToCheck) {
+      if (!inv) continue;
+      const invState = String(inv.estado || "").toLowerCase();
+      if (["anulada", "anulado"].includes(invState)) continue;
+
+      let linked = 0;
+      if (Array.isArray(inv.egresosAplicados)) {
+        linked = inv.egresosAplicados
+          .filter(entry => String(entry?.egresoId || "") === egId)
+          .reduce((sum, entry) => sum + Number(entry?.valor || 0), 0);
+      }
+      if (linked === 0 && String(inv.egresoAsociadoId || "") === egId) {
+        const invTotal = Number(inv.totalNeto ?? inv.total ?? 0);
+        const invPending = Number(inv.saldoPendiente ?? inv.saldo_pendiente ?? 0);
+        linked = Number(inv.valorPagado ?? Math.max(0, invTotal - invPending));
+      }
+      if (Array.isArray(egreso.items)) {
+        const itemAmount = egreso.items
+          .filter(it => it?.isFactura && String(it?.facturaId || "") === String(inv.id || ""))
+          .reduce((sum, it) => sum + Number(it?.total || 0), 0);
+        linked = Math.max(linked, itemAmount);
+      }
+      usedFromInvoices += linked;
+    }
+
+    const used = Math.max(usedFromInvoices, Number(egreso.valorAplicado || 0));
+    return Math.max(0, amountTotal - used);
+  }, [allFacturasRef, facturas, isEgresoAnulado]);
+
+  // Resumen financiero unificado de una factura (soporta múltiples egresos y pagos parciales)
+  const getFacturaPaymentSummary = useCallback((factura, eList = egresosList) => {
+    if (!factura) {
+      return { totalDoc: 0, pagadoFinal: 0, porPagarFinal: 0, isPaid: false, isAnulada: false, asocs: [], canAssociate: false };
+    }
+    const totalDoc = Number(factura.totalNeto !== undefined ? factura.totalNeto : (factura.total || factura.subtotal || 0));
+    const state = String(factura.estado || "").toLowerCase();
+    const isAnulada = ["anulada", "anulado", "cancelada", "cancelado"].includes(state);
+    const asocs = getAssociatedEgresos(factura, eList);
+
+    const sumAplicados = Array.isArray(factura.egresosAplicados)
+      ? factura.egresosAplicados.reduce((s, a) => s + Number(a?.valor || 0), 0)
+      : 0;
+    const sumAsocs = asocs.reduce((s, eg) => s + getAppliedAmountForExpense(factura, eg), 0);
+    const recordedPagado = factura.valorPagado !== undefined && factura.valorPagado !== null ? Number(factura.valorPagado) : 0;
+    const rawBalance = factura.saldoPendiente ?? factura.saldo_pendiente;
+    const hasExplicitBalance = rawBalance !== undefined && rawBalance !== null;
+    const explicitBalance = hasExplicitBalance ? Math.max(0, Number(rawBalance)) : null;
+
+    let pagadoFinal = 0;
+    let porPagarFinal = totalDoc;
+
+    if (isAnulada) {
+      pagadoFinal = Math.min(totalDoc, Math.max(recordedPagado, sumAplicados));
+      porPagarFinal = 0;
+    } else if (sumAplicados > 0 || recordedPagado > 0) {
+      pagadoFinal = Math.min(totalDoc, Math.max(recordedPagado, sumAplicados));
+      porPagarFinal = hasExplicitBalance
+        ? Math.min(explicitBalance, Math.max(0, totalDoc - pagadoFinal))
+        : Math.max(0, totalDoc - pagadoFinal);
+      pagadoFinal = Math.max(pagadoFinal, totalDoc - porPagarFinal);
+    } else if (asocs.length > 0) {
+      pagadoFinal = Math.min(totalDoc, sumAsocs);
+      porPagarFinal = hasExplicitBalance && explicitBalance < totalDoc
+        ? explicitBalance
+        : Math.max(0, totalDoc - pagadoFinal);
+      pagadoFinal = Math.max(pagadoFinal, totalDoc - porPagarFinal);
+    } else if (["pagada", "pagado"].includes(state) && (!hasExplicitBalance || explicitBalance <= 0)) {
+      pagadoFinal = totalDoc;
+      porPagarFinal = 0;
+    } else {
+      porPagarFinal = hasExplicitBalance ? explicitBalance : totalDoc;
+      pagadoFinal = Math.max(0, totalDoc - porPagarFinal);
+    }
+
+    const isPaid = isAnulada || porPagarFinal <= 0;
+    const canAssociate = !isAnulada && porPagarFinal > 0;
+
+    return { totalDoc, pagadoFinal, porPagarFinal, isPaid, isAnulada, asocs, canAssociate };
+  }, [egresosList, getAssociatedEgresos, getAppliedAmountForExpense]);
+
+  // Determinar si una factura está pagada / cancelada
+  const isFacturaPaid = useCallback((factura) => {
+    return getFacturaPaymentSummary(factura).isPaid;
+  }, [getFacturaPaymentSummary]);
 
   // Cálculo de días restantes para vencimiento (Si ya está paga, retorna 0)
   const calcularVencimiento = (factura) => {
@@ -286,63 +422,186 @@ export default function FacturasCompraList({ onNew }) {
   };
 
   // Manejar apertura de Modal Asociar Egreso
-  const handleOpenAsociarModal = () => {
-    if (!selectedFacturaId) {
-      toast.error("Solo debe seleccionar una factura para asociar el egreso");
-      return;
-    }
-    const targetFactura = facturas.find(f => f.id === selectedFacturaId);
+  const handleOpenAsociarModal = (explicitFactura = null) => {
+    const targetFactura = explicitFactura && explicitFactura.id
+      ? explicitFactura
+      : facturas.find(f => f.id === selectedFacturaId);
+
     if (!targetFactura) {
-      toast.error("Seleccione una factura válida");
+      toast.error("Seleccione una factura o documento soporte con saldo pendiente para asociar egresos");
       return;
     }
 
-    const pendiente = targetFactura.saldoPendiente !== undefined 
-      ? targetFactura.saldoPendiente 
-      : (targetFactura.totalNeto || targetFactura.total || 0);
+    const { porPagarFinal, isAnulada } = getFacturaPaymentSummary(targetFactura);
+    if (isAnulada) {
+      toast.error("No se pueden asociar egresos a un documento anulado");
+      return;
+    }
+    if (porPagarFinal <= 0) {
+      toast.info("Este documento ya se encuentra pagado en su totalidad");
+      return;
+    }
 
-    associationRequestId.current = crypto.randomUUID();
     setFacturaToAsociar(targetFactura);
-    setValorAPagar(String(pendiente));
-    setSelectedEgresoId("");
-    setDisponibleEgreso(0);
+    setEgresosRows([
+      {
+        rowId: crypto.randomUUID(),
+        requestId: crypto.randomUUID(),
+        egresoId: "",
+        valorAPagar: String(porPagarFinal),
+        disponible: 0
+      }
+    ]);
     setShowAsociarModal(true);
   };
 
-  // Manejar cambio en el selector de egresos
-  const handleEgresoSelectChange = (egresoId) => {
-    setSelectedEgresoId(egresoId);
-    const egresoObj = egresosList.find(e => String(e.id) === String(egresoId));
-    if (egresoObj) {
-      const disp = Math.max(0, Number(egresoObj.monto || egresoObj.total || 0) - Number(egresoObj.valorAplicado || 0));
-      setDisponibleEgreso(disp);
-    } else {
-      setDisponibleEgreso(0);
-    }
+  // Manejar cambio en el selector de egresos para una fila específica
+  const handleEgresoRowSelectChange = (idx, egresoId) => {
+    setEgresosRows(prev => {
+      const next = [...prev];
+      const egresoObj = egresosList.find(e => String(e.id) === String(egresoId));
+      const baseDisp = egresoObj ? getEgresoDisponible(egresoObj) : 0;
+      const usadoEnOtrasFilas = prev.reduce((sum, r, i) => (
+        i !== idx && String(r.egresoId) === String(egresoId) ? sum + (parseFloat(r.valorAPagar) || 0) : sum
+      ), 0);
+      const disp = Math.max(0, baseDisp - usadoEnOtrasFilas);
+
+      const { porPagarFinal: pendienteTotal } = getFacturaPaymentSummary(facturaToAsociar);
+      const sumaOtrasFilas = prev.reduce((sum, r, i) => (
+        i !== idx ? sum + (parseFloat(r.valorAPagar) || 0) : sum
+      ), 0);
+      const pendienteRestante = Math.max(0, pendienteTotal - sumaOtrasFilas);
+
+      let nuevoValor = next[idx].valorAPagar;
+      const valorActualNum = parseFloat(nuevoValor) || 0;
+      if (egresoId && disp > 0) {
+        if (valorActualNum <= 0 || valorActualNum > disp || valorActualNum > pendienteRestante) {
+          nuevoValor = String(Math.min(pendienteRestante, disp));
+        }
+      }
+
+      next[idx] = {
+        ...next[idx],
+        egresoId,
+        disponible: disp,
+        valorAPagar: nuevoValor
+      };
+      return next;
+    });
   };
 
-  // Guardar Asociación de Egreso
+  // Manejar cambio de valor a pagar en una fila
+  const handleValorRowChange = (idx, val) => {
+    setEgresosRows(prev => prev.map((r, i) => i === idx ? { ...r, valorAPagar: val } : r));
+  };
+
+  // Agregar otra fila para asociar otro egreso en el mismo modal
+  const handleAddEgresoRow = () => {
+    setEgresosRows(prev => {
+      const { porPagarFinal: pendienteTotal } = getFacturaPaymentSummary(facturaToAsociar);
+      const sumaActual = prev.reduce((sum, r) => sum + (parseFloat(r.valorAPagar) || 0), 0);
+      const restante = Math.max(0, pendienteTotal - sumaActual);
+      return [
+        ...prev,
+        {
+          rowId: crypto.randomUUID(),
+          requestId: crypto.randomUUID(),
+          egresoId: "",
+          valorAPagar: restante > 0 ? String(restante) : "",
+          disponible: 0
+        }
+      ];
+    });
+  };
+
+  // Eliminar una fila de egreso del modal
+  const handleRemoveEgresoRow = (idx) => {
+    setEgresosRows(prev => (prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev));
+  };
+
+  // Guardar Asociación de uno o varios Egresos
   const handleSaveAsociacion = async () => {
-    if (!selectedEgresoId) {
-      toast.error("Seleccione un egreso para asociar");
-      return;
+    if (!facturaToAsociar) return;
+    const { porPagarFinal: pendienteActual } = getFacturaPaymentSummary(facturaToAsociar);
+
+    for (let i = 0; i < egresosRows.length; i++) {
+      const row = egresosRows[i];
+      const labelFila = egresosRows.length > 1 ? ` (Egreso #${i + 1})` : "";
+      if (!row.egresoId) {
+        toast.error(`Seleccione un egreso para asociar${labelFila}`);
+        return;
+      }
+      const pagoNum = parseFloat(row.valorAPagar) || 0;
+      if (pagoNum <= 0) {
+        toast.error(`El valor a pagar debe ser mayor a 0${labelFila}`);
+        return;
+      }
     }
-    const pagoNum = parseFloat(valorAPagar) || 0;
-    if (pagoNum <= 0) {
-      toast.error("El valor a pagar debe ser mayor a 0");
+
+    // Validar que el uso por cada egreso no supere su disponible real
+    const usoPorEgreso = new Map();
+    for (const row of egresosRows) {
+      const key = String(row.egresoId);
+      const monto = parseFloat(row.valorAPagar) || 0;
+      usoPorEgreso.set(key, (usoPorEgreso.get(key) || 0) + monto);
+    }
+    for (const [egId, montoSolicitado] of usoPorEgreso.entries()) {
+      const egObj = egresosList.find(e => String(e.id) === egId);
+      const disp = getEgresoDisponible(egObj);
+      if (montoSolicitado > disp + 0.001) {
+        const num = getExpenseNumber(egObj) || egId;
+        toast.error(`El valor a aplicar del egreso #${num} (${fmt(montoSolicitado)}) supera su disponible (${fmt(disp)})`);
+        return;
+      }
+    }
+
+    const totalAAplicar = egresosRows.reduce((sum, r) => sum + (parseFloat(r.valorAPagar) || 0), 0);
+    if (totalAAplicar > pendienteActual + 0.001) {
+      toast.error(`La suma de los valores a pagar (${fmt(totalAAplicar)}) supera el saldo pendiente del documento (${fmt(pendienteActual)})`);
       return;
     }
 
     setSavingEgreso(true);
+    let latestFactura = facturaToAsociar;
+    const updatedPagos = new Map();
+    const completedRowIds = new Set();
+
     try {
-      const { factura, pago } = await associateSupplierExpense(inquilino, facturaToAsociar.id, selectedEgresoId, pagoNum, associationRequestId.current);
-      setFacturas(prev => prev.map(f => f.id === factura.id ? factura : f));
-      setEgresosList(prev => prev.map(p => p.id === pago.id ? pago : p));
-      toast.success('Egreso asociado correctamente');
+      for (const row of egresosRows) {
+        const pagoNum = parseFloat(row.valorAPagar) || 0;
+        const reqId = row.requestId || crypto.randomUUID();
+        const { factura, pago } = await associateSupplierExpense(
+          inquilino,
+          facturaToAsociar.id,
+          row.egresoId,
+          pagoNum,
+          reqId
+        );
+        latestFactura = factura;
+        updatedPagos.set(pago.id, pago);
+        completedRowIds.add(row.rowId);
+      }
+
+      setFacturas(prev => prev.map(f => f.id === latestFactura.id ? latestFactura : f));
+      setAllFacturasRef(prev => prev.map(f => f.id === latestFactura.id ? latestFactura : f));
+      setEgresosList(prev => prev.map(p => updatedPagos.has(p.id) ? updatedPagos.get(p.id) : p));
+
+      toast.success(
+        egresosRows.length > 1
+          ? `${egresosRows.length} egresos asociados correctamente`
+          : "Egreso asociado correctamente"
+      );
       setShowAsociarModal(false);
       setSelectedFacturaId(null);
     } catch (err) {
-      console.error("Error asociando egreso:", err);
+      console.error("Error asociando egreso(s):", err);
+      if (completedRowIds.size > 0) {
+        setFacturas(prev => prev.map(f => f.id === latestFactura.id ? latestFactura : f));
+        setAllFacturasRef(prev => prev.map(f => f.id === latestFactura.id ? latestFactura : f));
+        setEgresosList(prev => prev.map(p => updatedPagos.has(p.id) ? updatedPagos.get(p.id) : p));
+        setFacturaToAsociar(latestFactura);
+        setEgresosRows(prev => prev.filter(r => !completedRowIds.has(r.rowId)));
+      }
       toast.error(err.message || "Error al asociar el egreso");
     } finally {
       setSavingEgreso(false);
@@ -1205,7 +1464,7 @@ export default function FacturasCompraList({ onNew }) {
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 pt-2">
         <div className="flex items-center gap-3">
           <button
-            onClick={handleOpenAsociarModal}
+            onClick={() => handleOpenAsociarModal()}
             className={`px-5 py-2 rounded-full text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer ${
               selectedFacturaId 
                 ? "bg-[#8dc63f] hover:bg-[#7cb035] text-white active:scale-95" 
@@ -1276,32 +1535,30 @@ export default function FacturasCompraList({ onNew }) {
                 paginatedFacturas.map(f => {
                   const diasVence = calcularVencimiento(f);
                   const isSelected = selectedFacturaId === f.id;
-                  const totalDoc = Number(f.totalNeto !== undefined ? f.totalNeto : (f.total || f.subtotal || 0));
-                  const isPaid = isFacturaPaid(f);
-                  const asocs = getAssociatedEgresos(f);
-                  const isAlreadyAssociated = isPaid || (asocs && asocs.length > 0);
-
-                  const pagadoCalculado = asocs && asocs.length > 0
-                    ? asocs.reduce((sum, eg) => sum + Number(eg.monto || eg.valor || 0), 0)
-                    : (f.valorPagado !== undefined ? Number(f.valorPagado) : (isPaid ? totalDoc : 0));
-                  const pagadoFinal = isPaid ? totalDoc : Math.min(totalDoc, pagadoCalculado);
-                  const porPagarFinal = isPaid ? 0 : (f.saldoPendiente !== undefined ? Number(f.saldoPendiente) : Math.max(0, totalDoc - pagadoFinal));
+                  const {
+                    totalDoc,
+                    pagadoFinal,
+                    porPagarFinal,
+                    isPaid,
+                    asocs,
+                    canAssociate
+                  } = getFacturaPaymentSummary(f);
 
                   return (
                     <tr 
                       key={f.id} 
                       onClick={() => {
-                        if (!isAlreadyAssociated && f.estado !== "Anulada") {
+                        if (canAssociate) {
                           setSelectedFacturaId(isSelected ? null : f.id);
                         }
                       }}
                       className={`transition-colors ${
-                        !isAlreadyAssociated && f.estado !== "Anulada" ? "hover:bg-slate-50/70 cursor-pointer" : "hover:bg-slate-50/40"
+                        canAssociate ? "hover:bg-slate-50/70 cursor-pointer" : "hover:bg-slate-50/40"
                       } ${isSelected ? "bg-emerald-50/40" : ""}`}
                     >
-                      {/* Checkbox de Selección */}
+                      {/* Checkbox de Selección: habilitado siempre que tenga saldo pendiente por pagar */}
                       <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
-                        {!isAlreadyAssociated && f.estado !== "Anulada" ? (
+                        {canAssociate ? (
                           <button
                             type="button"
                             onClick={() => setSelectedFacturaId(isSelected ? null : f.id)}
@@ -1370,11 +1627,12 @@ export default function FacturasCompraList({ onNew }) {
                               e.stopPropagation();
                               setAssociatedDocsModal({ open: true, factura: f, egresos: asocs });
                             }}
-                            className="text-blue-600 font-bold hover:underline cursor-pointer bg-transparent border-0 p-0 text-[11px] inline-flex items-center gap-1"
-                            title="Ver comprobante de egreso asociado"
+                            className="text-blue-600 font-bold hover:underline cursor-pointer bg-transparent border-0 p-0 text-[11px] inline-flex items-center gap-1 text-left"
+                            title="Ver comprobantes de egreso asociados"
                           >
-                            <span>{getExpenseNumber(asocs[0]) || "Sin consecutivo"}</span>
-                            {asocs.length > 1 && <span className="text-slate-400 font-semibold">(+{asocs.length - 1})</span>}
+                            <span>
+                              {asocs.map(a => getExpenseNumber(a) || "Sin consecutivo").join(", ")}
+                            </span>
                           </button>
                         ) : (
                           <span className="text-slate-400 italic text-[11px]">Sin egreso</span>
@@ -1456,126 +1714,218 @@ export default function FacturasCompraList({ onNew }) {
       </div>
 
       {/* ========================================================= */}
-      {/* MODAL: ASOCIAR EGRESO                                     */}
+      {/* MODAL: ASOCIAR EGRESO (Soporta uno o varios egresos)      */}
       {/* ========================================================= */}
-      {showAsociarModal && facturaToAsociar && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden animate-scaleIn">
-            
-            <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-800">Egreso a asociar</h3>
-              <button
-                onClick={() => setShowAsociarModal(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
-              >
-                <FiX size={16} />
-              </button>
-            </div>
+      {showAsociarModal && facturaToAsociar && (() => {
+        const { porPagarFinal: pendienteFactura, asocs: egresosPrevios } = getFacturaPaymentSummary(facturaToAsociar);
+        const totalAAsociar = egresosRows.reduce((sum, r) => sum + (parseFloat(r.valorAPagar) || 0), 0);
+        const restanteTrasAsociar = Math.max(0, pendienteFactura - totalAAsociar);
+        const activeEgresos = egresosList.filter(eg => !isEgresoAnulado(eg));
 
-            <div className="p-4 sm:p-6 space-y-4 text-xs">
-              {/* Pendiente factura */}
-              <div className="grid grid-cols-12 gap-3 items-center">
-                <label className="col-span-4 text-right font-medium text-slate-600">
-                  Pendiente factura
-                </label>
-                <div className="col-span-8">
-                  <input
-                    type="text"
-                    readOnly
-                    value={fmt(facturaToAsociar.saldoPendiente !== undefined ? facturaToAsociar.saldoPendiente : (facturaToAsociar.totalNeto || facturaToAsociar.total || 0))}
-                    className="w-full h-9 px-3 bg-slate-100 border border-slate-200 rounded text-xs text-slate-700 font-bold select-none cursor-not-allowed outline-none"
-                  />
+        return (
+          <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden animate-scaleIn">
+              
+              <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-800">Egreso a asociar</h3>
+                  <p className="text-[11px] text-slate-500">
+                    {facturaToAsociar.nroFactura || facturaToAsociar.documentoNumero || facturaToAsociar.id} — {facturaToAsociar.proveedor || facturaToAsociar.tercero || "Proveedor"}
+                  </p>
                 </div>
+                <button
+                  onClick={() => setShowAsociarModal(false)}
+                  className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                >
+                  <FiX size={16} />
+                </button>
               </div>
 
-              {/* Valor a pagar * */}
-              <div className="grid grid-cols-12 gap-3 items-center">
-                <label className="col-span-4 text-right font-medium text-slate-600">
-                  Valor a pagar <span className="text-rose-500">*</span>
-                </label>
-                <div className="col-span-8">
-                  <input
-                    type="number"
-                    min="0"
-                    value={valorAPagar}
-                    onChange={(e) => setValorAPagar(e.target.value)}
-                    placeholder="Valor a pagar..."
-                    className="w-full h-9 px-3 bg-white border border-slate-200 rounded text-xs text-slate-800 font-bold focus:border-blue-500 outline-none"
-                    required
-                  />
-                </div>
-              </div>
+              <div className="p-4 sm:p-6 space-y-4 text-xs max-h-[80vh] overflow-y-auto">
+                {/* Egresos previamente asociados a esta factura (si ya tiene abonos parciales) */}
+                {egresosPrevios.length > 0 && (
+                  <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-1.5">
+                    <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">
+                      Egresos ya asociados a este documento ({egresosPrevios.length})
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {egresosPrevios.map((eg) => (
+                        <span
+                          key={eg.id}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-emerald-200 text-emerald-700 font-bold text-[11px]"
+                        >
+                          #{getExpenseNumber(eg) || "S/N"}: {fmt(getAppliedAmountForExpense(facturaToAsociar, eg))}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-              {/* Egreso * */}
-              <div className="grid grid-cols-12 gap-3 items-center">
-                <label className="col-span-4 text-right font-medium text-slate-600">
-                  Egreso <span className="text-rose-500">*</span>
-                </label>
-                <div className="col-span-8 flex items-center gap-2">
-                  <select
-                    value={selectedEgresoId}
-                    onChange={(e) => handleEgresoSelectChange(e.target.value)}
-                    className="w-full h-9 px-3 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:border-blue-500 outline-none"
-                    required
-                  >
-                    <option value="">Seleccione...</option>
-                    {egresosList.map(eg => (
-                      <option key={eg.id} value={eg.id}>
-                        {getExpenseNumber(eg) || "Sin consecutivo"} - {eg.proveedor || eg.tercero || "Egreso"} ({fmt(eg.monto || eg.total)})
-                      </option>
-                    ))}
-                  </select>
+                {/* Pendiente factura */}
+                <div className="grid grid-cols-12 gap-3 items-center">
+                  <label className="col-span-4 text-right font-medium text-slate-600">
+                    Pendiente factura
+                  </label>
+                  <div className="col-span-8">
+                    <input
+                      type="text"
+                      readOnly
+                      value={fmt(pendienteFactura)}
+                      className="w-full h-9 px-3 bg-slate-100 border border-slate-200 rounded text-xs text-slate-700 font-bold select-none cursor-not-allowed outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Lista dinámica de egresos a asociar */}
+                <div className="space-y-4">
+                  {egresosRows.map((row, idx) => {
+                    const selectedInOtherRows = new Set(
+                      egresosRows
+                        .filter((_, i) => i !== idx)
+                        .map(r => String(r.egresoId))
+                        .filter(Boolean)
+                    );
+
+                    return (
+                      <div
+                        key={row.rowId || idx}
+                        className={
+                          egresosRows.length > 1
+                            ? "p-3.5 rounded-xl bg-slate-50/70 border border-slate-200 space-y-3 relative"
+                            : "space-y-4"
+                        }
+                      >
+                        {egresosRows.length > 1 && (
+                          <div className="flex items-center justify-between pb-1 border-b border-slate-200/80">
+                            <span className="text-[11px] font-bold text-slate-700">
+                              Egreso #{idx + 1}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveEgresoRow(idx)}
+                              className="text-rose-500 hover:text-rose-700 text-[11px] font-semibold inline-flex items-center gap-1 cursor-pointer"
+                              title="Quitar este egreso"
+                            >
+                              <FiTrash2 size={13} /> Quitar
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Valor a pagar * */}
+                        <div className="grid grid-cols-12 gap-3 items-center">
+                          <label className="col-span-4 text-right font-medium text-slate-600">
+                            Valor a pagar <span className="text-rose-500">*</span>
+                          </label>
+                          <div className="col-span-8">
+                            <input
+                              type="number"
+                              min="0"
+                              value={row.valorAPagar}
+                              onChange={(e) => handleValorRowChange(idx, e.target.value)}
+                              placeholder="Valor a pagar..."
+                              className="w-full h-9 px-3 bg-white border border-slate-200 rounded text-xs text-slate-800 font-bold focus:border-blue-500 outline-none"
+                              required
+                            />
+                          </div>
+                        </div>
+
+                        {/* Egreso * */}
+                        <div className="grid grid-cols-12 gap-3 items-center">
+                          <label className="col-span-4 text-right font-medium text-slate-600">
+                            Egreso <span className="text-rose-500">*</span>
+                          </label>
+                          <div className="col-span-8 flex items-center gap-2">
+                            <select
+                              value={row.egresoId}
+                              onChange={(e) => handleEgresoRowSelectChange(idx, e.target.value)}
+                              className="w-full h-9 px-3 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:border-blue-500 outline-none"
+                              required
+                            >
+                              <option value="">Seleccione...</option>
+                              {activeEgresos.map(eg => {
+                                const egDisp = getEgresoDisponible(eg);
+                                const isSelectedElsewhere = selectedInOtherRows.has(String(eg.id));
+                                const isCurrent = String(row.egresoId) === String(eg.id);
+                                const disabled = !isCurrent && (egDisp <= 0 || isSelectedElsewhere);
+                                return (
+                                  <option key={eg.id} value={eg.id} disabled={disabled}>
+                                    {getExpenseNumber(eg) || "Sin consecutivo"} - {eg.proveedor || eg.tercero || "Egreso"} (Disp: {fmt(egDisp)})
+                                    {egDisp <= 0 ? " [Sin saldo]" : isSelectedElsewhere ? " [Seleccionado]" : ""}
+                                  </option>
+                                );
+                              })}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={handleAddEgresoRow}
+                              className="w-8 h-8 rounded bg-[#8dc63f] hover:bg-[#7cb035] text-white flex items-center justify-center transition-all shadow-xs shrink-0 cursor-pointer"
+                              title="Agregar otro egreso para asociar a esta factura"
+                            >
+                              <FiPlus size={16} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Disponible egreso */}
+                        <div className="grid grid-cols-12 gap-3 items-center">
+                          <label className="col-span-4 text-right font-medium text-slate-600">
+                            Disponible egreso
+                          </label>
+                          <div className="col-span-8">
+                            <input
+                              type="text"
+                              readOnly
+                              value={fmt(row.disponible)}
+                              className="w-full h-9 px-3 bg-slate-100 border border-slate-200 rounded text-xs text-slate-700 select-none cursor-not-allowed outline-none font-semibold"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Botón explícito para añadir más egresos y resumen de saldos */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
                   <button
                     type="button"
-                    onClick={() => {
-                      toast.info("Para crear un nuevo egreso ve al módulo de Pagos");
-                    }}
-                    className="w-8 h-8 rounded bg-[#8dc63f] hover:bg-[#7cb035] text-white flex items-center justify-center transition-all shadow-xs shrink-0"
-                    title="Nuevo Egreso"
+                    onClick={handleAddEgresoRow}
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-[#6fa32b] hover:text-[#5b8722] cursor-pointer bg-transparent border-0 p-0"
                   >
-                    <FiPlus size={16} />
+                    <FiPlus size={14} /> Agregar otro egreso
+                  </button>
+
+                  <div className="text-[11px] text-slate-500 text-right">
+                    <span>Total a asociar: <strong className="text-slate-800">{fmt(totalAAsociar)}</strong></span>
+                    {" • "}
+                    <span>Restante: <strong className={restanteTrasAsociar > 0 ? "text-amber-600" : "text-emerald-600"}>{fmt(restanteTrasAsociar)}</strong></span>
+                  </div>
+                </div>
+
+                {/* Botones de acción */}
+                <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={handleSaveAsociacion}
+                    disabled={savingEgreso}
+                    className="px-6 py-2 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95 disabled:opacity-50"
+                  >
+                    {savingEgreso ? "Guardando..." : "Guardar"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowAsociarModal(false)}
+                    className="px-5 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    Cerrar
                   </button>
                 </div>
-              </div>
 
-              {/* Disponible egreso */}
-              <div className="grid grid-cols-12 gap-3 items-center">
-                <label className="col-span-4 text-right font-medium text-slate-600">
-                  Disponible egreso
-                </label>
-                <div className="col-span-8">
-                  <input
-                    type="text"
-                    readOnly
-                    value={fmt(disponibleEgreso)}
-                    className="w-full h-9 px-3 bg-slate-100 border border-slate-200 rounded text-xs text-slate-700 select-none cursor-not-allowed outline-none font-semibold"
-                  />
-                </div>
               </div>
-
-              {/* Botones de acción */}
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={handleSaveAsociacion}
-                  disabled={savingEgreso}
-                  className="px-6 py-2 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95 disabled:opacity-50"
-                >
-                  {savingEgreso ? "Guardando..." : "Guardar"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowAsociarModal(false)}
-                  className="px-5 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
-                >
-                  Cerrar
-                </button>
-              </div>
-
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ========================================================= */}
       {/* MODAL: DOCUMENTOS ASOCIADOS (Comprobantes de Egreso)       */}
@@ -1610,35 +1960,44 @@ export default function FacturasCompraList({ onNew }) {
                     <tr>
                       <th className="py-2.5 px-4 font-semibold">Número documento</th>
                       <th className="py-2.5 px-4 font-semibold">Tipo documento</th>
-                      <th className="py-2.5 px-4 font-semibold">Valor</th>
+                      <th className="py-2.5 px-4 font-semibold">Valor aplicado</th>
                       <th className="py-2.5 px-4 text-center font-semibold">Acciones</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-slate-700">
                     {associatedDocsModal.egresos && associatedDocsModal.egresos.length > 0 ? (
-                      associatedDocsModal.egresos.map((egr, idx) => (
-                        <tr key={egr.id || idx} className="hover:bg-slate-50/60">
-                          <td className="py-3 px-4 font-bold font-mono text-slate-800">
-                            {getExpenseNumber(egr) || "Sin consecutivo"}
-                          </td>
-                          <td className="py-3 px-4 text-slate-600 font-medium">
-                            Comprobante de egreso
-                          </td>
-                          <td className="py-3 px-4 font-bold font-mono text-slate-800">
-                            {fmt(egr.monto || egr.total || associatedDocsModal.factura.totalNeto || associatedDocsModal.factura.total)}
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            <button 
-                              type="button"
-                              onClick={() => handlePrintEgreso(egr, associatedDocsModal.factura)}
-                              className="w-7 h-7 bg-sky-500 hover:bg-sky-600 text-white rounded flex items-center justify-center mx-auto transition-colors shadow-xs cursor-pointer border-0"
-                              title="Imprimir comprobante de egreso"
-                            >
-                              <FiPrinter size={13} />
-                            </button>
-                          </td>
-                        </tr>
-                      ))
+                      associatedDocsModal.egresos.map((egr, idx) => {
+                        const valorAplicadoDoc = getAppliedAmountForExpense(associatedDocsModal.factura, egr);
+                        const montoTotalEgreso = Number(egr.monto || egr.total || 0);
+                        return (
+                          <tr key={egr.id || idx} className="hover:bg-slate-50/60">
+                            <td className="py-3 px-4 font-bold font-mono text-slate-800">
+                              {getExpenseNumber(egr) || "Sin consecutivo"}
+                            </td>
+                            <td className="py-3 px-4 text-slate-600 font-medium">
+                              Comprobante de egreso
+                            </td>
+                            <td className="py-3 px-4 font-bold font-mono text-slate-800">
+                              <div>{fmt(valorAplicadoDoc || montoTotalEgreso)}</div>
+                              {montoTotalEgreso > 0 && valorAplicadoDoc > 0 && Math.abs(montoTotalEgreso - valorAplicadoDoc) > 0.01 && (
+                                <div className="text-[10px] font-normal text-slate-400">
+                                  Total egreso: {fmt(montoTotalEgreso)}
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              <button 
+                                type="button"
+                                onClick={() => handlePrintEgreso(egr, associatedDocsModal.factura)}
+                                className="w-7 h-7 bg-sky-500 hover:bg-sky-600 text-white rounded flex items-center justify-center mx-auto transition-colors shadow-xs cursor-pointer border-0"
+                                title="Imprimir comprobante de egreso"
+                              >
+                                <FiPrinter size={13} />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
                     ) : (
                       <tr>
                         <td colSpan="4" className="py-12 text-center text-slate-400 text-xs font-normal">
@@ -1718,14 +2077,7 @@ export default function FacturasCompraList({ onNew }) {
 
               {/* Resumen Financiero */}
               {(() => {
-                const totalDoc = Number(detailModalFactura.totalNeto !== undefined ? detailModalFactura.totalNeto : (detailModalFactura.total || detailModalFactura.subtotal || 0));
-                const isPaid = isFacturaPaid(detailModalFactura);
-                const asocs = getAssociatedEgresos(detailModalFactura);
-                const pagadoCalculado = asocs && asocs.length > 0
-                  ? asocs.reduce((sum, eg) => sum + Number(eg.monto || eg.valor || 0), 0)
-                  : (detailModalFactura.valorPagado !== undefined ? Number(detailModalFactura.valorPagado) : (isPaid ? totalDoc : 0));
-                const pagadoFinal = isPaid ? totalDoc : Math.min(totalDoc, pagadoCalculado);
-                const porPagarFinal = isPaid ? 0 : (detailModalFactura.saldoPendiente !== undefined ? Number(detailModalFactura.saldoPendiente) : Math.max(0, totalDoc - pagadoFinal));
+                const { totalDoc, pagadoFinal, porPagarFinal } = getFacturaPaymentSummary(detailModalFactura);
 
                 return (
                   <div className="grid grid-cols-3 gap-2 bg-slate-50/80 p-3 rounded-xl border border-slate-100 text-center">
@@ -1752,6 +2104,27 @@ export default function FacturasCompraList({ onNew }) {
                 </span>
                 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {/* Asociar egreso si aún tiene saldo por pagar */}
+                  {getFacturaPaymentSummary(detailModalFactura).canAssociate && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const f = detailModalFactura;
+                        setDetailModalFactura(null);
+                        handleOpenAsociarModal(f);
+                      }}
+                      className="p-2.5 rounded-xl border border-lime-200 hover:border-lime-400 hover:bg-lime-50/50 text-slate-700 text-xs font-semibold flex items-center gap-2.5 transition-all cursor-pointer bg-white"
+                    >
+                      <div className="w-7 h-7 rounded-lg bg-[#8dc63f]/20 text-[#5b8722] flex items-center justify-center shrink-0">
+                        <FiDollarSign size={14} />
+                      </div>
+                      <div className="text-left">
+                        <div className="font-bold text-slate-800">Asociar egreso</div>
+                        <div className="text-[10px] text-slate-400">Vincular uno o varios egresos</div>
+                      </div>
+                    </button>
+                  )}
+
                   {/* Imprimir */}
                   <button
                     type="button"

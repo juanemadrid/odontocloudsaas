@@ -16,7 +16,7 @@ export function expenseMatchesInvoice(payment, invoice) {
   const paymentRefs = [text(payment.id), getExpenseNumber(payment)].filter(Boolean);
   const inverse = [invoice.egresoAsociadoId, !invoice.egresoAsociadoId ? invoice.egresoAsociadoDoc : null, invoice.egreso_asociado,
     invoice.pago_asociado, invoice.egresos_asociados,
-    (invoice.egresosAplicados || []).map(entry => entry.egresoId)].flatMap(refs);
+    (invoice.egresosAplicados || []).map(entry => entry?.egresoId || entry?.numero || entry)].flatMap(refs);
   if (inverse.some(ref => paymentRefs.includes(ref))) return true;
   const invoiceId = text(invoice.id);
   const invoiceNumber = text(invoice.nroFactura || invoice.documentoNumero || invoice.numero || invoice.consecutivo);
