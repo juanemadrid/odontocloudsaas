@@ -11,22 +11,40 @@ const fmt = (n) =>
   });
 
 export default function LiquidacionPagarModal({ liquidacion, tenantId, onClose, onConfirm, loading }) {
-  const [bancosList, setBancosList] = useState(["CAJA PRINCIPAL", "Bancolombia", "Davivienda", "BBVA"]);
-  const [bancoCaja, setBancoCaja] = useState("CAJA PRINCIPAL");
+  const [origenes, setOrigenes] = useState([]);
+  const [origenId, setOrigenId] = useState("");
   const [medioPago, setMedioPago] = useState("Transferencia");
 
   useEffect(() => {
     const loadBanks = async () => {
       if (!tenantId) return;
       try {
-        const cfgBancos = await getConfigSection(tenantId, "bancos", []);
-        if (Array.isArray(cfgBancos) && cfgBancos.length > 0) {
-          const names = cfgBancos.map(b => typeof b === "string" ? b : (b.nombre || b.nombreBanco)).filter(Boolean);
-          if (names.length > 0) {
-            setBancosList(["CAJA PRINCIPAL", ...names]);
-            return;
-          }
-        }
+        const [cfgBancos, cfgCajas, cajaRows] = await Promise.all([
+          getConfigSection(tenantId, "bancos", []).catch(() => []),
+          getConfigSection(tenantId, "cajas", []).catch(() => []),
+          supabase.from("cajas").select("*").eq("tenant_id", tenantId).eq("estado", "abierta")
+            .then(({ data, error }) => error ? [] : (data || [])).catch(() => []),
+        ]);
+        const mergedCajas = new Map();
+        [...(Array.isArray(cfgCajas) ? cfgCajas : []), ...cajaRows].forEach((c) => {
+          if (c?.id) mergedCajas.set(String(c.id), { ...(mergedCajas.get(String(c.id)) || {}), ...c });
+        });
+        const cajasAbiertas = [...mergedCajas.values()].filter((c) =>
+          String(c.estado || "").toLowerCase() === "abierta" && !c.fecha_cierre && !c.fechaCierre
+        );
+        const cajas = cajasAbiertas.map((c) => {
+          const nombre = c.nombre || c.usuario_nombre || c.usuarioNombre || "Caja abierta";
+          return { id: `caja:${c.id}`, tipo: "caja", cajaId: c.id, bancoCaja: nombre, label: `Caja - ${nombre}` };
+        });
+        const bancos = (Array.isArray(cfgBancos) ? cfgBancos : [])
+          .map((b) => typeof b === "string" ? b : (b.nombre || b.nombreBanco || b.banco))
+          .filter(Boolean)
+          .map((nombre) => ({ id: `banco:${nombre}`, tipo: "banco", cajaId: null, bancoCaja: nombre, label: nombre }));
+        const fallbackBancos = bancos.length ? bancos : ["Bancolombia", "Davivienda", "BBVA"]
+          .map((nombre) => ({ id: `banco:${nombre}`, tipo: "banco", cajaId: null, bancoCaja: nombre, label: nombre }));
+        const options = [...cajas, ...fallbackBancos];
+        setOrigenes(options);
+        setOrigenId(options[0]?.id || "");
       } catch (_) {}
     };
     loadBanks();
@@ -80,12 +98,12 @@ export default function LiquidacionPagarModal({ liquidacion, tenantId, onClose, 
               Caja o Banco de Origen *
             </label>
             <select
-              value={bancoCaja}
-              onChange={(e) => setBancoCaja(e.target.value)}
+              value={origenId}
+              onChange={(e) => setOrigenId(e.target.value)}
               className="w-full h-11 px-4 bg-slate-50 hover:bg-slate-100/60 border border-slate-200 focus:bg-white rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all cursor-pointer"
             >
-              {bancosList.map((b, i) => (
-                <option key={i} value={b}>{b}</option>
+              {origenes.map((origen) => (
+                <option key={origen.id} value={origen.id}>{origen.label}</option>
               ))}
             </select>
           </div>
@@ -121,8 +139,11 @@ export default function LiquidacionPagarModal({ liquidacion, tenantId, onClose, 
             Cancelar
           </button>
           <button
-            onClick={() => onConfirm({ bancoCaja, medioPago })}
-            disabled={loading}
+            onClick={() => {
+              const origen = origenes.find((item) => item.id === origenId);
+              if (origen) onConfirm({ bancoCaja: origen.bancoCaja, cajaId: origen.cajaId, medioPago });
+            }}
+            disabled={loading || !origenId}
             className="h-10 px-6 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-emerald-600/20 active:scale-95 transition-all disabled:opacity-50"
           >
             {loading ? "Procesando..." : "Confirmar y Pagar"}

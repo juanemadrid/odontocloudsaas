@@ -22,7 +22,7 @@ const formatDate = (dateStr) => {
   }
 };
 
-export default function LiquidacionViewerModal({ liquidacion, onClose, onPagar, onAnular }) {
+export default function LiquidacionViewerModal({ liquidacion, onClose, onPagar, onAnular, onCorregir }) {
   if (!liquidacion) return null;
 
   const handlePrint = () => {
@@ -235,6 +235,20 @@ export default function LiquidacionViewerModal({ liquidacion, onClose, onPagar, 
             </div>
           )}
 
+          {(liquidacion.correcciones || []).length > 0 && (
+            <div className="p-4 bg-amber-50/70 rounded-2xl border border-amber-200 space-y-2">
+              <h4 className="text-[10px] font-black text-amber-800 uppercase tracking-wider">Historial de correcciones</h4>
+              {liquidacion.correcciones.map((correction, index) => (
+                <div key={`${correction.fecha || "correccion"}-${index}`} className="text-[11px] text-amber-900">
+                  <strong>{correction.corregidoPor || "Administración"}</strong> · {formatDate(correction.fecha)} · {correction.motivo}
+                  {correction.valorAnterior != null && correction.valorCorregido != null && (
+                    <span className="block">Valor ajustado de {fmt(correction.valorAnterior)} a {fmt(correction.valorCorregido)}.</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
         </div>
 
         {/* Footer Actions */}
@@ -262,6 +276,15 @@ export default function LiquidacionViewerModal({ liquidacion, onClose, onPagar, 
                 className="h-10 px-6 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-emerald-600/20 active:scale-95 transition-all"
               >
                 Pagar Liquidación
+              </button>
+            )}
+
+            {isPagada && onCorregir && (
+              <button
+                onClick={() => onCorregir(liquidacion)}
+                className="h-10 px-5 rounded-full bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 text-xs font-black uppercase tracking-wider transition-all"
+              >
+                Corregir procedimiento
               </button>
             )}
           </div>

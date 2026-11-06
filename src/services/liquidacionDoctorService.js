@@ -2,9 +2,10 @@ import { createSupplierExpense } from './supplierExpenseService';
 // src/services/liquidacionDoctorService.js
 import supabase from "../lib/supabaseClient";
 import { isDoctorUser } from "../utils/doctorHelpers";
-import { getConfigSection, saveConfigSection } from "./configPersistenceService";
+import { getConfigSection, saveConfigSection, saveConfigPatch } from "./configPersistenceService";
 import { getDoctorsList } from "./supabaseServices";
 import { todayBogota } from "../utils/bogotaDate";
+import { cajaTransferMovements, loadCajaTransferContext } from "./bankTransferService";
 
 const parseLocalDate = (dateStr) => {
     if (!dateStr) return new Date();
@@ -1003,6 +1004,290 @@ export const anularLiquidacionGenerada = async (tenantId, liquidacionId) => {
     return true;
 };
 
+const registrarEgresoLiquidacionEnCaja = async (tenantId, liquidacion, pago, cajaId, userProfile) => {
+    if (!cajaId) return null;
+    const marker = `LIQUIDACION:${liquidacion.id} PAGO:${pago.id}`;
+    const { data: existingMovements, error: lookupError } = await supabase
+        .from("movimientos_caja")
+        .select("id, caja_id, monto, concepto, descripcion")
+        .eq("tenant_id", tenantId)
+        .eq("tipo", "egreso");
+    if (lookupError) throw lookupError;
+    const existing = (existingMovements || []).find((m) =>
+        String(m.descripcion || "").includes(marker) || String(m.concepto || "").includes(marker)
+    );
+    if (existing) {
+        const delta = Number(pago.monto || pago.total || 0) - Number(existing.monto || 0);
+        const previousCajaId = existing.caja_id;
+        if (Math.abs(delta) > 0.009 || String(previousCajaId) !== String(cajaId)) {
+            const { error: movementUpdateError } = await supabase.from("movimientos_caja").update({
+                caja_id: cajaId,
+                monto: Number(pago.monto || pago.total || 0),
+                metodo_pago: pago.medioPago || "Efectivo",
+                updated_at: new Date().toISOString(),
+            }).eq("tenant_id", tenantId).eq("id", existing.id);
+            if (movementUpdateError) throw movementUpdateError;
+        }
+        if (previousCajaId && String(previousCajaId) !== String(cajaId)) await recalcularSaldoCajaDesdeMovimientos(tenantId, previousCajaId);
+        await recalcularSaldoCajaDesdeMovimientos(tenantId, cajaId);
+        return { ...existing, monto: Number(pago.monto || pago.total || 0) };
+    }
+
+    const fechaPago = pago.created_at || new Date().toISOString();
+    const { error: insertError } = await supabase.from("movimientos_caja").insert([{
+        tenant_id: tenantId,
+        caja_id: cajaId,
+        usuario_id: userProfile?.id || userProfile?.uid || null,
+        usuario_nombre: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.displayName || "Administración",
+        tipo: "egreso",
+        concepto: `Liquidación de comisiones - ${liquidacion.profesionalNombre || "Profesional"}`,
+        monto: Number(pago.monto || pago.total || 0),
+        metodo_pago: pago.medioPago || "Efectivo",
+        descripcion: `${marker} | Egreso #${pago.consecutivo || pago.numero || pago.id}`,
+        fecha: fechaPago,
+        created_at: fechaPago,
+    }]);
+    if (insertError) throw insertError;
+    await recalcularSaldoCajaDesdeMovimientos(tenantId, cajaId);
+    return { cajaId, monto: Number(pago.monto || pago.total || 0), marker };
+};
+
+const recalcularSaldoCajaDesdeMovimientos = async (tenantId, cajaId) => {
+    const [cajaResult, movementResult, cfgCajas] = await Promise.all([
+        supabase.from("cajas").select("*").eq("tenant_id", tenantId).eq("id", cajaId).maybeSingle(),
+        supabase.from("movimientos_caja").select("*").eq("tenant_id", tenantId).eq("caja_id", cajaId),
+        getConfigSection(tenantId, "cajas", []).catch(() => []),
+    ]);
+    if (cajaResult.error) throw cajaResult.error;
+    if (movementResult.error) throw movementResult.error;
+    const caja = cajaResult.data;
+    if (!caja) throw new Error("No se encontró la caja asociada al egreso.");
+
+    let transferMovements = [];
+    try {
+        const ctx = await loadCajaTransferContext(tenantId);
+        const allCajas = [...(Array.isArray(cfgCajas) ? cfgCajas : []), ...(ctx.cajas || [])];
+        transferMovements = cajaTransferMovements(ctx.transfers, caja, { allCajas, banks: ctx.banks });
+    } catch (_) {}
+    const activeMovements = [...(movementResult.data || []), ...transferMovements]
+        .filter((m) => (m.estado || "").toLowerCase() !== "anulado" && !m.anulado);
+    const baseInicial = Number(caja.saldo_inicial ?? caja.base_inicial ?? caja.baseInicial ?? 0);
+    const totalIngresos = activeMovements.length
+        ? activeMovements.filter((m) => m.tipo === "ingreso").reduce((sum, m) => sum + (Number(m.monto) || 0), 0)
+        : Number(caja.total_ingresos ?? caja.totalIngresos ?? 0);
+    const totalEgresos = activeMovements.length
+        ? activeMovements.filter((m) => m.tipo === "egreso").reduce((sum, m) => sum + (Number(m.monto) || 0), 0)
+        : Number(caja.total_egresos ?? caja.totalEgresos ?? 0);
+    const saldoActual = baseInicial + totalIngresos - totalEgresos;
+    const updatedAt = new Date().toISOString();
+    const { error: updateError } = await supabase.from("cajas").update({
+        saldo_actual: saldoActual, saldoActual,
+        total_ingresos: totalIngresos, totalIngresos,
+        total_egresos: totalEgresos, totalEgresos,
+        updated_at: updatedAt,
+    }).eq("tenant_id", tenantId).eq("id", cajaId);
+    if (updateError) throw updateError;
+    try {
+        const cajas = await getConfigSection(tenantId, "cajas", []);
+        if (Array.isArray(cajas)) await saveConfigSection(tenantId, "cajas", cajas.map((c) => String(c.id) === String(cajaId)
+            ? { ...c, saldo_actual: saldoActual, saldoActual, total_ingresos: totalIngresos, totalIngresos, total_egresos: totalEgresos, totalEgresos, updated_at: updatedAt }
+            : c));
+    } catch (error) {
+        console.warn("No se pudo actualizar el saldo cacheado de la caja tras registrar la liquidación:", error);
+    }
+    return { saldoActual, totalIngresos, totalEgresos };
+};
+
+const fechaMovimiento = (value) => {
+    if (!value) return null;
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+};
+
+export const revisarConciliacionLiquidacionesCaja = async (tenantId) => {
+    const [liquidaciones, pagos, cfgCajas, cajaRows, movementResult] = await Promise.all([
+        getConfigSection(tenantId, "liquidaciones", []).catch(() => []),
+        getConfigSection(tenantId, "pagos_proveedor", []).catch(() => []),
+        getConfigSection(tenantId, "cajas", []).catch(() => []),
+        supabase.from("cajas").select("*").eq("tenant_id", tenantId).then(({ data, error }) => error ? [] : (data || [])).catch(() => []),
+        supabase.from("movimientos_caja").select("caja_id, tipo, monto, concepto, descripcion, created_at, fecha")
+            .eq("tenant_id", tenantId).eq("tipo", "egreso")
+            .then(({ data, error }) => ({ data: data || [], error })).catch((error) => ({ data: [], error })),
+    ]);
+    if (movementResult.error) throw movementResult.error;
+
+    const cajasById = new Map();
+    [...(Array.isArray(cfgCajas) ? cfgCajas : []), ...cajaRows].forEach((c) => {
+        if (c?.id) cajasById.set(String(c.id), { ...(cajasById.get(String(c.id)) || {}), ...c });
+    });
+    const cajas = [...cajasById.values()];
+    const movimientos = movementResult.data;
+    const pagosList = Array.isArray(pagos) ? pagos : [];
+    const ready = [];
+    const skipped = [];
+
+    for (const liq of Array.isArray(liquidaciones) ? liquidaciones : []) {
+        if (!/^(pagada|pagado)$/i.test(String(liq.estado || ""))) continue;
+        const pago = pagosList.find((p) => String(p.id) === String(liq.pagoProveedorId) || String(p.liquidacionId) === String(liq.id));
+        if (!pago) continue;
+        const cajaId = pago.cajaId || pago.caja_id || liq.cajaId || liq.caja_id;
+        if (!cajaId && !/caja/i.test(String(pago.bancoCaja || ""))) continue;
+
+        const marker = `LIQUIDACION:${liq.id} PAGO:${pago.id}`;
+        const hasMovement = movimientos.some((m) =>
+            (cajaId ? String(m.caja_id) === String(cajaId) : true) &&
+            (`${m.descripcion || ""} ${m.concepto || ""}`).includes(marker)
+        );
+        if (hasMovement) continue;
+
+        let caja = cajaId ? cajasById.get(String(cajaId)) : null;
+        const when = fechaMovimiento(pago.created_at || pago.fecha || liq.fechaPago || liq.created_at);
+        if (!caja && when) {
+            const matches = cajas.filter((candidate) => {
+                const opened = fechaMovimiento(candidate.fecha_apertura || candidate.fechaApertura || candidate.created_at);
+                const closed = fechaMovimiento(candidate.fecha_cierre || candidate.fechaCierre);
+                return opened && opened <= when && (!closed || closed >= when);
+            });
+            if (matches.length === 1) caja = matches[0];
+            else {
+                skipped.push({ liquidacionId: liq.id, pagoId: pago.id, monto: Number(pago.monto || pago.total || 0), reason: matches.length ? "Varias cajas estaban abiertas en la fecha del pago" : "No se encontró una caja abierta en la fecha del pago" });
+                continue;
+            }
+        }
+        if (!caja?.id) {
+            skipped.push({ liquidacionId: liq.id, pagoId: pago.id, monto: Number(pago.monto || pago.total || 0), reason: "No se pudo identificar la caja asociada" });
+            continue;
+        }
+        ready.push({ liquidacion: liq, pago, caja, when, monto: Number(pago.monto || pago.total || 0) });
+    }
+
+    return { ready, skipped, total: ready.reduce((sum, item) => sum + item.monto, 0) };
+};
+
+export const conciliarLiquidacionesCajaPendientes = async (tenantId, userProfile) => {
+    const preview = await revisarConciliacionLiquidacionesCaja(tenantId);
+    const processed = [];
+    const errors = [];
+    for (const item of preview.ready) {
+        try {
+            await registrarEgresoLiquidacionEnCaja(tenantId, item.liquidacion, item.pago, item.caja.id, {
+                ...userProfile,
+                id: userProfile?.id || userProfile?.uid || item.pago.created_by || null,
+                nombreCompleto: userProfile?.nombreCompleto || userProfile?.nombre || item.pago.created_by || "Administración",
+            });
+            processed.push({ liquidacionId: item.liquidacion.id, pagoId: item.pago.id, cajaId: item.caja.id, monto: item.monto });
+        } catch (error) {
+            errors.push({ liquidacionId: item.liquidacion.id, pagoId: item.pago.id, error: error.message });
+        }
+    }
+    return { processed, skipped: preview.skipped, errors, total: processed.reduce((sum, item) => sum + item.monto, 0) };
+};
+
+export const corregirItemLiquidacionPagada = async ({ tenantId, liquidacionId, itemKey, cajaId, userProfile, motivo }) => {
+    if (!tenantId || !liquidacionId || !itemKey || !cajaId) throw new Error("Faltan datos para corregir la liquidación y su caja.");
+    const [liquidaciones, pagos] = await Promise.all([
+        getConfigSection(tenantId, "liquidaciones", []),
+        getConfigSection(tenantId, "pagos_proveedor", []),
+    ]);
+    const liqList = Array.isArray(liquidaciones) ? liquidaciones : [];
+    const pagosList = Array.isArray(pagos) ? pagos : [];
+    const liq = liqList.find((item) => String(item.id) === String(liquidacionId));
+    if (!liq || !/^(pagada|pagado)$/i.test(String(liq.estado || ""))) {
+        throw new Error("Solo se pueden corregir liquidaciones que ya aparecen como pagadas.");
+    }
+    const pago = pagosList.find((item) => String(item.id) === String(liq.pagoProveedorId) || String(item.liquidacionId) === String(liq.id));
+    if (!pago) throw new Error("No se encontró el egreso asociado a esta liquidación.");
+    const items = Array.isArray(liq.items) ? liq.items : [];
+    const index = items.findIndex((item, idx) => String(item.key || item.id || idx) === String(itemKey));
+    if (index < 0) throw new Error("No se encontró el procedimiento seleccionado en la liquidación.");
+    const [removedItem] = items.slice(index, index + 1);
+    const removedCommission = Number(removedItem.valorAPagar ?? Math.round(Number(removedItem.valorPrestacion || removedItem.valorRecaudado || 0) * Number(removedItem.porcentaje || liq.comisionPorcentaje || 0) / 100));
+    const removedValue = Number(removedItem.valorPrestacion ?? removedItem.valorRecaudado ?? 0);
+    const newTotalPagar = Number(pago.monto || pago.total || liq.totalPagar || 0) - removedCommission;
+    if (!(removedValue > 0) || !(removedCommission >= 0) || !(newTotalPagar > 0)) {
+        throw new Error("No se pudieron recalcular los valores del procedimiento seleccionado.");
+    }
+
+    const updatedAt = new Date().toISOString();
+    const remainingItems = items.filter((_, idx) => idx !== index);
+    const correction = {
+        fecha: updatedAt,
+        motivo: String(motivo || "Procedimiento marcado como realizado por error; no fue ejecutado.").trim(),
+        procedimientoRetirado: {
+            pacienteNombre: removedItem.pacienteNombre || "",
+            prestacion: removedItem.prestacion || "",
+            valorPrestacion: removedValue,
+            valorAPagar: removedCommission,
+        },
+        valorAnterior: Number(pago.monto || pago.total || liq.totalPagar || 0),
+        valorCorregido: newTotalPagar,
+        corregidoPor: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email || "Administración",
+    };
+    const updatedLiq = {
+        ...liq,
+        cajaId,
+        caja_id: cajaId,
+        items: remainingItems,
+        totalRecaudado: Number(liq.totalRecaudado ?? liq.totalItemsValor ?? 0) - removedValue,
+        totalItemsValor: Number(liq.totalItemsValor ?? liq.totalRecaudado ?? 0) - removedValue,
+        comisionesTotal: Number(liq.comisionesTotal || 0) - removedCommission,
+        totalPagar: newTotalPagar,
+        updated_at: updatedAt,
+        correcciones: [...(Array.isArray(liq.correcciones) ? liq.correcciones : []), correction],
+    };
+    const note = `Corrección interna de liquidación: se retiró ${removedItem.prestacion || "un procedimiento"} de ${removedItem.pacienteNombre || "un paciente"}.`;
+    const updatedPago = {
+        ...pago,
+        cajaId,
+        caja_id: cajaId,
+        monto: newTotalPagar,
+        total: newTotalPagar,
+        items: (Array.isArray(pago.items) ? pago.items : []).map((item, idx) => idx === 0
+            ? { ...item, precio: newTotalPagar, total: newTotalPagar }
+            : item),
+        observaciones: [pago.observaciones, note].filter(Boolean).join(" "),
+        updated_at: updatedAt,
+        correcciones: [...(Array.isArray(pago.correcciones) ? pago.correcciones : []), correction],
+    };
+
+    await saveConfigPatch(tenantId, {
+        liquidaciones: liqList.map((item) => String(item.id) === String(liq.id) ? updatedLiq : item),
+        pagos_proveedor: pagosList.map((item) => String(item.id) === String(pago.id) ? updatedPago : item),
+    });
+    const { error: tableError } = await supabase.from("liquidaciones").update({ monto: newTotalPagar, updated_at: updatedAt })
+        .eq("tenant_id", tenantId).eq("id", liq.id);
+    if (tableError) console.warn("La liquidación corregida está en website_config; no se pudo reflejar en la tabla opcional:", tableError);
+
+    if (removedItem.planId && removedItem.id) {
+        try {
+            const { data: planRow } = await supabase.from("treatment_plans").select("*").eq("id", removedItem.planId).maybeSingle();
+            if (planRow) {
+                const details = planRow.detalles || {};
+                const planItems = Array.isArray(planRow.items) ? planRow.items : (Array.isArray(details.items) ? details.items : []);
+                const unmarkedItems = planItems.map((item, index) => {
+                    const itemId = item.id || `item_${index}`;
+                    return String(itemId) === String(removedItem.id)
+                        ? { ...item, liquidado: false, liquidacionId: null }
+                        : item;
+                });
+                await supabase.from("treatment_plans").update({
+                    detalles: { ...details, items: unmarkedItems },
+                    updated_at: updatedAt,
+                }).eq("id", removedItem.planId);
+            }
+        } catch (error) {
+            console.warn("No se pudo liberar el marcador de liquidación del procedimiento corregido:", error);
+        }
+    }
+
+    try {
+        await registrarEgresoLiquidacionEnCaja(tenantId, updatedLiq, updatedPago, cajaId, userProfile);
+    } catch (error) {
+        throw new Error(`La liquidación y el egreso se corrigieron a ${newTotalPagar}, pero falló el movimiento de caja: ${error.message}. Use “Conciliar movimientos de caja” para completar el registro.`);
+    }
+    return { liquidacion: updatedLiq, pago: updatedPago, movimientoCaja: { cajaId, monto: newTotalPagar }, correction };
+};
+
 /**
  * Paga una liquidación generada:
  * - Cambia estado a "Pagada"
@@ -1026,6 +1311,8 @@ export const pagarLiquidacion = async (tenantId, liquidacion, pagoOptions = {}, 
         proveedor: doctorName,
         bancoCaja: pagoOptions.bancoCaja || "CAJA PRINCIPAL",
         medioPago: pagoOptions.medioPago || "Transferencia",
+        cajaId: pagoOptions.cajaId || null,
+        caja_id: pagoOptions.cajaId || null,
         condicionPago: "Contado",
         concepto: "Liquidación comisiones",
         monto: safeNumber(liquidacion.totalPagar),
@@ -1042,5 +1329,13 @@ export const pagarLiquidacion = async (tenantId, liquidacion, pagoOptions = {}, 
         created_by: userProfile?.nombre || userProfile?.email || "Administración"
     };
 
-    return createSupplierExpense(tenantId, pagoRecord, liquidacion.id);
+    const pagoGuardado = await createSupplierExpense(tenantId, pagoRecord, liquidacion.id);
+    if (pagoOptions.cajaId) {
+        try {
+            await registrarEgresoLiquidacionEnCaja(tenantId, liquidacion, pagoGuardado, pagoOptions.cajaId, userProfile);
+        } catch (error) {
+            throw new Error(`El egreso quedó registrado, pero no se pudo asociar a la caja: ${error.message}. Use “Conciliar movimientos de caja” para reintentar sin duplicarlo.`);
+        }
+    }
+    return pagoGuardado;
 };
