@@ -1284,7 +1284,7 @@ export const corregirItemLiquidacionPagada = async ({ tenantId, liquidacionId, i
     try {
         await registrarEgresoLiquidacionEnCaja(tenantId, updatedLiq, updatedPago, cajaId, userProfile);
     } catch (error) {
-        throw new Error(`La liquidación y el egreso se corrigieron a ${newTotalPagar}, pero falló el movimiento de caja: ${error.message}. Use “Conciliar movimientos de caja” para completar el registro.`);
+        throw new Error(`La liquidación y el egreso se corrigieron a ${newTotalPagar}, pero no se pudo confirmar el movimiento de caja: ${error.message}. Verifique el detalle de caja antes de repetir la corrección.`);
     }
     return { liquidacion: updatedLiq, pago: updatedPago, movimientoCaja: { cajaId, monto: newTotalPagar }, correction };
 };
@@ -1335,7 +1335,7 @@ export const pagarLiquidacion = async (tenantId, liquidacion, pagoOptions = {}, 
         try {
             await registrarEgresoLiquidacionEnCaja(tenantId, liquidacion, pagoGuardado, pagoOptions.cajaId, userProfile);
         } catch (error) {
-            throw new Error(`El egreso quedó registrado, pero no se pudo asociar a la caja: ${error.message}. Use “Conciliar movimientos de caja” para reintentar sin duplicarlo.`);
+            throw new Error(`El egreso quedó registrado, pero no se pudo confirmar el movimiento de caja: ${error.message}. Verifique el detalle de caja antes de repetir el pago.`);
         }
     }
     return pagoGuardado;

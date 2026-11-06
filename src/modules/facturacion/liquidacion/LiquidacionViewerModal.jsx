@@ -22,7 +22,7 @@ const formatDate = (dateStr) => {
   }
 };
 
-export default function LiquidacionViewerModal({ liquidacion, onClose, onPagar, onAnular, onCorregir }) {
+export default function LiquidacionViewerModal({ liquidacion, onClose, onPagar, onAnular }) {
   if (!liquidacion) return null;
 
   const handlePrint = () => {
@@ -279,14 +279,6 @@ export default function LiquidacionViewerModal({ liquidacion, onClose, onPagar, 
               </button>
             )}
 
-            {isPagada && onCorregir && (
-              <button
-                onClick={() => onCorregir(liquidacion)}
-                className="h-10 px-5 rounded-full bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 text-xs font-black uppercase tracking-wider transition-all"
-              >
-                Corregir procedimiento
-              </button>
-            )}
           </div>
         </div>
 

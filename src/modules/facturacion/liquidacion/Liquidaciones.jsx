@@ -3,14 +3,12 @@ import LiquidacionPendientes from "./LiquidacionPendientes";
 import LiquidacionDetalle from "./LiquidacionDetalle";
 import LiquidacionViewerModal from "./LiquidacionViewerModal";
 import LiquidacionPagarModal from "./LiquidacionPagarModal";
-import LiquidacionCorreccionModal from "./LiquidacionCorreccionModal";
 import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { getConfigSection } from "../../../services/configPersistenceService";
-import { anularLiquidacionGenerada, pagarLiquidacion, getDoctoresParaLiquidacion, corregirItemLiquidacionPagada, revisarConciliacionLiquidacionesCaja, conciliarLiquidacionesCajaPendientes } from "../../../services/liquidacionDoctorService";
+import { anularLiquidacionGenerada, pagarLiquidacion, getDoctoresParaLiquidacion } from "../../../services/liquidacionDoctorService";
 import { 
-    FiFileText, FiDollarSign, FiClock, FiCheckCircle, FiLayers, 
-    FiEye, FiTrash2, FiCreditCard, FiPrinter, FiCalendar, FiFilter, FiRefreshCw
+    FiClock, FiCheckCircle, FiLayers, FiEye, FiTrash2, FiCreditCard
 } from "react-icons/fi";
 import { toast } from "sonner";
 
@@ -57,9 +55,6 @@ export default function Liquidaciones() {
     const [viewingLiq, setViewingLiq] = useState(null);
     const [payingLiq, setPayingLiq] = useState(null);
     const [payingLoading, setPayingLoading] = useState(false);
-    const [correctingLiq, setCorrectingLiq] = useState(null);
-    const [correctionLoading, setCorrectionLoading] = useState(false);
-    const [reconcilingCaja, setReconcilingCaja] = useState(false);
 
     // Filters for "pagadas" tab
     const [filtroDocPagadas, setFiltroDocPagadas] = useState("");
@@ -159,66 +154,6 @@ export default function Liquidaciones() {
             setPayingLoading(false);
         }
     };
-
-    const handleConfirmCorrection = async ({ itemKey, cajaId, motivo }) => {
-        if (!correctingLiq) return;
-        setCorrectionLoading(true);
-        try {
-            const result = await corregirItemLiquidacionPagada({
-                tenantId: inquilino,
-                liquidacionId: correctingLiq.id,
-                itemKey,
-                cajaId,
-                userProfile,
-                motivo,
-            });
-            setViewingLiq(result.liquidacion);
-            setCorrectingLiq(null);
-            await loadLiquidaciones();
-            toast.success(`Liquidación y egreso corregidos a ${fmt(result.pago.monto)}; movimiento asociado a caja.`);
-        } catch (e) {
-            console.error("Error corrigiendo liquidación pagada:", e);
-            toast.error(e?.message || "No se pudo completar la corrección de la liquidación.");
-        } finally {
-            setCorrectionLoading(false);
-        }
-    };
-
-    const handleReconcileCaja = async () => {
-        if (reconcilingCaja || !inquilino) return;
-        setReconcilingCaja(true);
-        try {
-            const preview = await revisarConciliacionLiquidacionesCaja(inquilino);
-            if (!preview.ready.length) {
-                toast.info(preview.skipped.length
-                    ? `No hay movimientos conciliables automáticamente; ${preview.skipped.length} pago(s) requieren identificar la caja.`
-                    : "No se encontraron pagos de liquidaciones en efectivo sin movimiento de caja.");
-                return;
-            }
-            const summary = preview.ready.slice(0, 8).map((item) =>
-                `• ${item.liquidacion.profesionalNombre || "Profesional"} — ${fmt(item.monto)} — ${item.caja.nombre || item.caja.usuario_nombre || "Caja"}`
-            ).join("\n");
-            const suffix = preview.ready.length > 8 ? `\n… y ${preview.ready.length - 8} pago(s) más` : "";
-            const skipped = preview.skipped.length ? `\n\n${preview.skipped.length} pago(s) se omitirán por no poder identificar una sola caja.` : "";
-            if (!window.confirm(`Se agregarán ${preview.ready.length} movimiento(s) histórico(s) por ${fmt(preview.total)} a las cajas indicadas. No se cambiarán liquidaciones ni egresos.\n\n${summary}${suffix}${skipped}\n\n¿Deseas continuar?`)) return;
-
-            const result = await conciliarLiquidacionesCajaPendientes(inquilino, userProfile);
-            if (result.errors.length) {
-                toast.error(`Se conciliaron ${result.processed.length} de ${preview.ready.length}; ${result.errors.length} movimiento(s) tuvieron error.`);
-            } else {
-                toast.success(`Se asociaron ${result.processed.length} egresos por ${fmt(result.total)} a movimientos de caja.`);
-            }
-            if (result.skipped.length) toast.info(`${result.skipped.length} pago(s) quedaron pendientes de identificar la caja correcta.`);
-        } catch (e) {
-            console.error("Error conciliando movimientos de liquidaciones:", e);
-            toast.error(e?.message || "No se pudo revisar la conciliación de caja.");
-        } finally {
-            setReconcilingCaja(false);
-        }
-    };
-
-    const userRole = String(userProfile?.rol || userProfile?.role || "").toLowerCase();
-    const canCorrectFinancialRecords = userRole.includes("admin") || userRole.includes("superadmin");
 
     // Filtered lists
     const liquidacionesGeneradas = liquidacionesList.filter(l => 
@@ -433,17 +368,6 @@ export default function Liquidaciones() {
                                     Histórico de comisiones pagadas a los profesionales médicos. Estos pagos también son visibles en Administración - Facturación - Pagos.
                                 </p>
                             </div>
-                            {canCorrectFinancialRecords && (
-                                <button
-                                    onClick={handleReconcileCaja}
-                                    disabled={reconcilingCaja}
-                                    className="h-9 px-3 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-bold flex items-center gap-2 disabled:opacity-50"
-                                    title="Busca egresos de liquidaciones pagadas sin movimiento de caja y propone asociarlos"
-                                >
-                                    <FiRefreshCw className={reconcilingCaja ? "animate-spin" : ""} />
-                                    {reconcilingCaja ? "Revisando caja…" : "Conciliar movimientos de caja"}
-                                </button>
-                            )}
                         </div>
 
                         {/* Filters Bar */}
@@ -564,7 +488,6 @@ export default function Liquidaciones() {
                 <LiquidacionViewerModal
                     liquidacion={viewingLiq}
                     onClose={() => setViewingLiq(null)}
-                    onCorregir={canCorrectFinancialRecords ? (liq) => setCorrectingLiq(liq) : undefined}
                     onPagar={(liq) => {
                         setViewingLiq(null);
                         setPayingLiq(liq);
@@ -581,16 +504,6 @@ export default function Liquidaciones() {
                     onClose={() => setPayingLiq(null)}
                     onConfirm={handleConfirmPagar}
                     loading={payingLoading}
-                />
-            )}
-
-            {correctingLiq && (
-                <LiquidacionCorreccionModal
-                    liquidacion={correctingLiq}
-                    tenantId={inquilino}
-                    onClose={() => setCorrectingLiq(null)}
-                    onConfirm={handleConfirmCorrection}
-                    loading={correctionLoading}
                 />
             )}
 

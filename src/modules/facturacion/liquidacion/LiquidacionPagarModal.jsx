@@ -126,7 +126,7 @@ export default function LiquidacionPagarModal({ liquidacion, tenantId, onClose, 
           </div>
 
           <p className="text-[11px] text-slate-400 font-medium">
-            💡 Al confirmar, se creará automáticamente el documento de pago en <strong className="text-slate-600">Administración - Facturación - Pagos</strong> y el estado pasará a <strong className="text-emerald-600">Pagada</strong>.
+            💡 Al confirmar, el sistema generará el egreso y lo registrará automáticamente en la caja seleccionada; si eliges un banco, quedará asociado al banco. El estado pasará a <strong className="text-emerald-600">Pagada</strong>.
           </p>
         </div>
 

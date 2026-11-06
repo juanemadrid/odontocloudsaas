@@ -9,6 +9,19 @@ import supabase from "../../../lib/supabaseClient";
 import { FiSearch, FiEye, FiArrowLeft, FiFileText, FiPrinter, FiX } from "react-icons/fi";
 import { ReceiptPrintService } from "../../../services/ReceiptPrintService";
 import { loadAllTransfers, loadCajaTransferContext, cajaTransferMovements } from "../../../services/bankTransferService";
+import { getConfigSection } from "../../../services/configPersistenceService";
+
+const getReferenceValue = (reference, labels) => {
+  const labelPattern = labels.join("|");
+  const match = String(reference || "").match(new RegExp(`(?:^|[|\\s])(?:${labelPattern})\\s*:\\s*([^|]+)`, "i"));
+  return match?.[1]?.trim() || "";
+};
+
+const getExpenseNumber = (movement) => {
+  const referenceMatch = String(movement.referencia || "").match(/\bEgreso\s*#\s*(\d+)\b/i);
+  const conceptMatch = String(movement.concepto || "").match(/\[EGR-(\d+)\]/i);
+  return referenceMatch?.[1] || conceptMatch?.[1] || "";
+};
 
 const fmt = (n) => {
   const num = Number(n || 0);
@@ -111,6 +124,13 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
         allPagos = pData || [];
       } catch (e) {}
 
+      // Egresos de proveedores permiten resolver tercero y consecutivo en movimientos antiguos.
+      let allEgresos = [];
+      try {
+        const rows = await getConfigSection(inquilinoId, "pagos_proveedor", []);
+        allEgresos = Array.isArray(rows) ? rows : [];
+      } catch (e) {}
+
       // 3. Cargar movimientos_caja en orden cronológico
       const { data: rawMovs } = await supabase
         .from("movimientos_caja")
@@ -146,7 +166,10 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
 
         if (m.tipo === "egreso") {
           egrCount += 1;
-          if (!consecutiveNumber) {
+          const recordedExpenseNumber = getExpenseNumber(m);
+          if (recordedExpenseNumber) {
+            consecutiveNumber = `EGR-${String(recordedExpenseNumber).padStart(4, "0")}`;
+          } else if (!consecutiveNumber) {
             consecutiveNumber = `EGR-${String(egrCount).padStart(4, "0")}`;
           }
         } else {
@@ -193,7 +216,37 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
           matchedPatient = fullPatientMap[m.paciente_id];
         }
 
-        const pName = pacienteParsed || m.paciente_nombre || m.pacienteNombre || (m.tipo === "egreso" ? (refParsed || "Gasto / Proveedor") : "Paciente Clínica");
+        let matchedExpense = null;
+        let egresoNumero = m.tipo === "egreso" ? getExpenseNumber(m) : "";
+        let thirdParty = "";
+        if (m.tipo === "egreso") {
+          const paymentId = getReferenceValue(refParsed, ["PAGO", "PAGO_ID"]);
+          const supplierDocument = getReferenceValue(refParsed, ["DOC"]);
+          thirdParty = getReferenceValue(refParsed, ["Tercero", "Paciente", "Beneficiario", "Proveedor"]);
+          if (paymentId) matchedExpense = allEgresos.find((expense) => String(expense.id) === paymentId.split(/\s+/)[0]);
+          if (!matchedExpense && egresoNumero) {
+            matchedExpense = allEgresos.find((expense) => String(expense.numero || expense.consecutivo || expense.nroConsecutivo || "") === egresoNumero);
+          }
+          if (!thirdParty) {
+            const providerConcept = String(m.concepto || "").match(/Pago a Proveedor:\s*(.+?)(?:\s+-\s+|$)/i);
+            const liquidationConcept = String(m.concepto || "").match(/Liquidación de comisiones\s*[-–:]\s*(.+)$/i);
+            thirdParty = providerConcept?.[1]?.trim() || liquidationConcept?.[1]?.trim() || "";
+          }
+          if (!matchedExpense && supplierDocument) {
+            const possibleMatches = allEgresos.filter((expense) =>
+              String(expense.documentoTercero || expense.documento_tercero || "").trim() === supplierDocument &&
+              Number(expense.monto || expense.total || 0) === Number(m.monto || 0)
+            );
+            if (possibleMatches.length === 1) matchedExpense = possibleMatches[0];
+          }
+          if (matchedExpense) {
+            thirdParty = thirdParty || matchedExpense.tercero || matchedExpense.proveedor || matchedExpense.profesional || "";
+            egresoNumero = egresoNumero || String(matchedExpense.numero || matchedExpense.consecutivo || matchedExpense.nroConsecutivo || "");
+          }
+        }
+        const pName = m.tipo === "egreso"
+          ? (thirdParty || m.tercero || m.paciente_nombre || m.pacienteNombre || "Caja Menor / Gastos Varios")
+          : (pacienteParsed || m.paciente_nombre || m.pacienteNombre || "Paciente Clínica");
         const fechaVal = m.created_at || m.fecha || m.fechaISO || m.fecha_apertura;
         const metodoPago = m.metodo_pago || m.metodoPago || "Efectivo";
 
@@ -206,6 +259,7 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
           metodo_pago: metodoPago,
           pacienteNombre: pName,
           tercero: pName,
+          egresoNumero,
           pacienteObj: matchedPatient || (m.paciente_id ? fullPatientMap[m.paciente_id] : null),
           pacienteDocumento: matchedPatient?.nroDocumento || matchedPatient?.documento || "—",
           pacienteTipoDoc: matchedPatient?.tipoDocumento || matchedPatient?.tipo_documento || "CC",
@@ -826,7 +880,10 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
                   const esEgreso = m.tipo === "egreso";
                   const valorFormateado = esEgreso ? `-${fmt(m.monto || 0)}` : fmt(m.monto || 0);
                   const tercero = m.pacienteNombre || m.tercero || m.usuarioNombre || "—";
-                  const docText = m.concepto || (esEgreso ? "Egreso" : "Recibo de caja");
+                  const conceptoLimpio = String(m.concepto || "").replace(/^\[(?:EGR|RC)-\d+\]\s*/i, "").trim();
+                  const docText = esEgreso
+                    ? [`Egreso${m.egresoNumero ? ` #${m.egresoNumero}` : ""}`, conceptoLimpio].filter(Boolean).join(" · ")
+                    : (m.concepto || "Recibo de caja");
 
                   return (
                     <tr key={m.id} className={`transition-colors ${esAnulado ? "bg-rose-50/40 hover:bg-rose-50/70" : "hover:bg-slate-50"}`}>
