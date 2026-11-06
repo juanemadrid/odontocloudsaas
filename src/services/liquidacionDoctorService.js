@@ -1078,10 +1078,13 @@ const recalcularSaldoCajaDesdeMovimientos = async (tenantId, cajaId) => {
         : Number(caja.total_egresos ?? caja.totalEgresos ?? 0);
     const saldoActual = baseInicial + totalIngresos - totalEgresos;
     const updatedAt = new Date().toISOString();
+    // PostgREST recibe nombres de columnas, no alias camelCase. Enviar ambas
+    // variantes hace fallar el UPDATE completo aunque las columnas snake_case
+    // existan, después de que el movimiento ya quedó insertado.
     const { error: updateError } = await supabase.from("cajas").update({
-        saldo_actual: saldoActual, saldoActual,
-        total_ingresos: totalIngresos, totalIngresos,
-        total_egresos: totalEgresos, totalEgresos,
+        saldo_actual: saldoActual,
+        total_ingresos: totalIngresos,
+        total_egresos: totalEgresos,
         updated_at: updatedAt,
     }).eq("tenant_id", tenantId).eq("id", cajaId);
     if (updateError) throw updateError;
