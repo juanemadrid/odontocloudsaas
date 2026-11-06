@@ -4,6 +4,7 @@ import supabase from "../lib/supabaseClient";
 import { isDoctorUser } from "../utils/doctorHelpers";
 import { getConfigSection, saveConfigSection } from "./configPersistenceService";
 import { getDoctorsList } from "./supabaseServices";
+import { todayBogota } from "../utils/bogotaDate";
 
 const parseLocalDate = (dateStr) => {
     if (!dateStr) return new Date();
@@ -1008,8 +1009,9 @@ export const anularLiquidacionGenerada = async (tenantId, liquidacionId) => {
  * - Genera el egreso en pagos_proveedor para que se vea en Facturación - Pagos
  */
 export const pagarLiquidacion = async (tenantId, liquidacion, pagoOptions = {}, userProfile) => {
-    const nowIso = new Date().toISOString();
-    const todayStr = nowIso.split("T")[0];
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const todayStr = todayBogota(now);
     const pagoId = `pago_liq_${crypto.randomUUID()}`;
 
     // 1. Crear registro de pago a proveedor (Médico)
