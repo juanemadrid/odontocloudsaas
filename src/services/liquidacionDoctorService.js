@@ -1009,12 +1009,12 @@ const registrarEgresoLiquidacionEnCaja = async (tenantId, liquidacion, pago, caj
     const marker = `LIQUIDACION:${liquidacion.id} PAGO:${pago.id}`;
     const { data: existingMovements, error: lookupError } = await supabase
         .from("movimientos_caja")
-        .select("id, caja_id, monto, concepto, descripcion")
+        .select("id, caja_id, monto, concepto, referencia")
         .eq("tenant_id", tenantId)
         .eq("tipo", "egreso");
     if (lookupError) throw lookupError;
     const existing = (existingMovements || []).find((m) =>
-        String(m.descripcion || "").includes(marker) || String(m.concepto || "").includes(marker)
+        String(m.referencia || "").includes(marker) || String(m.concepto || "").includes(marker)
     );
     if (existing) {
         const delta = Number(pago.monto || pago.total || 0) - Number(existing.monto || 0);
@@ -1024,7 +1024,7 @@ const registrarEgresoLiquidacionEnCaja = async (tenantId, liquidacion, pago, caj
                 caja_id: cajaId,
                 monto: Number(pago.monto || pago.total || 0),
                 metodo_pago: pago.medioPago || "Efectivo",
-                updated_at: new Date().toISOString(),
+                referencia: `${marker} | Egreso #${pago.consecutivo || pago.numero || pago.id}`,
             }).eq("tenant_id", tenantId).eq("id", existing.id);
             if (movementUpdateError) throw movementUpdateError;
         }
@@ -1038,13 +1038,11 @@ const registrarEgresoLiquidacionEnCaja = async (tenantId, liquidacion, pago, caj
         tenant_id: tenantId,
         caja_id: cajaId,
         usuario_id: userProfile?.id || userProfile?.uid || null,
-        usuario_nombre: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.displayName || "Administración",
         tipo: "egreso",
         concepto: `Liquidación de comisiones - ${liquidacion.profesionalNombre || "Profesional"}`,
         monto: Number(pago.monto || pago.total || 0),
         metodo_pago: pago.medioPago || "Efectivo",
-        descripcion: `${marker} | Egreso #${pago.consecutivo || pago.numero || pago.id}`,
-        fecha: fechaPago,
+        referencia: `${marker} | Egreso #${pago.consecutivo || pago.numero || pago.id}`,
         created_at: fechaPago,
     }]);
     if (insertError) throw insertError;
@@ -1110,7 +1108,7 @@ export const revisarConciliacionLiquidacionesCaja = async (tenantId) => {
         getConfigSection(tenantId, "pagos_proveedor", []).catch(() => []),
         getConfigSection(tenantId, "cajas", []).catch(() => []),
         supabase.from("cajas").select("*").eq("tenant_id", tenantId).then(({ data, error }) => error ? [] : (data || [])).catch(() => []),
-        supabase.from("movimientos_caja").select("caja_id, tipo, monto, concepto, descripcion, created_at, fecha")
+        supabase.from("movimientos_caja").select("caja_id, tipo, monto, concepto, referencia, created_at")
             .eq("tenant_id", tenantId).eq("tipo", "egreso")
             .then(({ data, error }) => ({ data: data || [], error })).catch((error) => ({ data: [], error })),
     ]);
@@ -1136,7 +1134,7 @@ export const revisarConciliacionLiquidacionesCaja = async (tenantId) => {
         const marker = `LIQUIDACION:${liq.id} PAGO:${pago.id}`;
         const hasMovement = movimientos.some((m) =>
             (cajaId ? String(m.caja_id) === String(cajaId) : true) &&
-            (`${m.descripcion || ""} ${m.concepto || ""}`).includes(marker)
+            (`${m.referencia || ""} ${m.concepto || ""}`).includes(marker)
         );
         if (hasMovement) continue;
 
