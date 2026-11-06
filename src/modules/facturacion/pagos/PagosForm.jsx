@@ -1009,7 +1009,7 @@ export default function PagosForm({ onCancel, onSuccess }) {
                     concepto: `Pago a Proveedor: ${pagoRecord.tercero} - ${validItems[0]?.concepto || 'Gasto'}`,
                     monto: totalGeneral,
                     metodo_pago: medioPago || "Efectivo",
-                    referencia: `Tercero: ${pagoRecord.tercero || pagoRecord.proveedor || "Caja Menor / Gastos Varios"} | Egreso #${pagoRecord.numero || pagoRecord.consecutivo || pagoRecord.nroConsecutivo || ""} | PAGO_ID:${pagoRecord.id}`,
+                    referencia: `Tercero: ${pagoRecord.tercero || pagoRecord.proveedor || "Caja Menor / Gastos Varios"} | Documento: ${pagoRecord.documentoTercero || pagoRecord.documento_tercero || pagoRecord.documento || pagoRecord.nit || ""} | Celular: ${pagoRecord.telefono || pagoRecord.celular || ""} | Egreso #${pagoRecord.numero || pagoRecord.consecutivo || pagoRecord.nroConsecutivo || ""} | PAGO_ID:${pagoRecord.id}`,
                     created_at: new Date().toISOString()
                 };
 

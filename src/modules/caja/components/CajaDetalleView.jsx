@@ -18,9 +18,28 @@ const getReferenceValue = (reference, labels) => {
 };
 
 const getExpenseNumber = (movement) => {
+  const savedNumber = String(movement.numero || movement.consecutivo || movement.nroConsecutivo || movement.nro_consecutivo || "").replace(/^EGR-/i, "");
+  if (savedNumber) return savedNumber;
   const referenceMatch = String(movement.referencia || "").match(/\bEgreso\s*#\s*(\d+)\b/i);
   const conceptMatch = String(movement.concepto || "").match(/\[EGR-(\d+)\]/i);
   return referenceMatch?.[1] || conceptMatch?.[1] || "";
+};
+
+const getReceiptNumber = (movement) => {
+  const concept = String(movement.concepto || "");
+  const reference = String(movement.referencia || "");
+  return concept.match(/\[RC-(\d+)\]/i)?.[1]
+    || concept.match(/Recibo de Caja\s*#\s*(\d+)/i)?.[1]
+    || reference.match(/\bRC-?(\d+)\b/i)?.[1]
+    || "";
+};
+
+const getMovementConcept = (movement) => {
+  const concept = String(movement.concepto || "").replace(/^\[(?:EGR|RC)-\d+\]\s*/i, "").trim();
+  const supplier = concept.match(/^Pago a Proveedor:\s*.+?(?:\s+-\s+(.+))?$/i);
+  if (supplier) return supplier[1]?.trim() || "Pago a proveedor";
+  if (/^Liquidación de comisiones\s*[-–:]/i.test(concept)) return "Liquidación de comisiones";
+  return concept;
 };
 
 const fmt = (n) => {
@@ -113,22 +132,33 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
         });
       } catch (e) {}
 
-      // 2. Cargar pagos de la clínica para enlazar automáticamente abonos y consecutivos
-      let allPagos = [];
-      try {
-        const { data: pData } = await supabase
-          .from("pagos")
-          .select("*")
-          .eq("tenant_id", inquilinoId)
-          .order("fecha", { ascending: false });
-        allPagos = pData || [];
-      } catch (e) {}
-
       // Egresos de proveedores permiten resolver tercero y consecutivo en movimientos antiguos.
       let allEgresos = [];
       try {
-        const rows = await getConfigSection(inquilinoId, "pagos_proveedor", []);
-        allEgresos = Array.isArray(rows) ? rows : [];
+        const [rows, tableResult] = await Promise.all([
+          getConfigSection(inquilinoId, "pagos_proveedor", []).catch(() => []),
+          supabase.from("pagos_proveedor").select("*").eq("tenant_id", inquilinoId)
+            .then(({ data, error }) => error ? [] : (data || [])).catch(() => []),
+        ]);
+        const expenseMap = new Map();
+        [...(Array.isArray(rows) ? rows : []), ...tableResult].forEach((expense) => {
+          if (expense?.id) expenseMap.set(String(expense.id), { ...(expenseMap.get(String(expense.id)) || {}), ...expense });
+        });
+        allEgresos = [...expenseMap.values()];
+      } catch (e) {}
+
+      let allRecibos = [];
+      try {
+        const [cfgRows, tableRows] = await Promise.all([
+          getConfigSection(inquilinoId, "recibos_caja", []).catch(() => []),
+          supabase.from("recibos_caja").select("*").eq("tenant_id", inquilinoId)
+            .then(({ data, error }) => error ? [] : (data || [])).catch(() => []),
+        ]);
+        const receiptMap = new Map();
+        [...(Array.isArray(cfgRows) ? cfgRows : []), ...(Array.isArray(tableRows) ? tableRows : [])].forEach((receipt) => {
+          if (receipt?.id) receiptMap.set(String(receipt.id), { ...(receiptMap.get(String(receipt.id)) || {}), ...receipt });
+        });
+          allRecibos = [...receiptMap.values()];
       } catch (e) {}
 
       // 3. Cargar movimientos_caja en orden cronológico
@@ -142,14 +172,8 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
       let rcCount = 0;
 
       const parsedChronological = (rawMovs || []).map(m => {
-        let pacienteParsed = "";
         const refParsed = m.referencia || "";
-        if (refParsed) {
-          const match = refParsed.match(/Paciente:\s*([^|]+)/i);
-          if (match && match[1]) {
-            pacienteParsed = match[1].trim();
-          }
-        }
+        let pacienteParsed = getReferenceValue(refParsed, ["Paciente", "Tercero", "Beneficiario", "Proveedor"]);
 
         // Extraer consecutivo explícito si existe
         let consecutiveNumber = "";
@@ -162,47 +186,28 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
 
         // Datos complementarios del paciente
         let matchedPatient = null;
-        let matchedPago = null;
+        let matchedReceipt = null;
 
+        let matchedExpense = null;
         if (m.tipo === "egreso") {
           egrCount += 1;
           const recordedExpenseNumber = getExpenseNumber(m);
-          if (recordedExpenseNumber) {
-            consecutiveNumber = `EGR-${String(recordedExpenseNumber).padStart(4, "0")}`;
-          } else if (!consecutiveNumber) {
-            consecutiveNumber = `EGR-${String(egrCount).padStart(4, "0")}`;
-          }
+          if (recordedExpenseNumber) consecutiveNumber = `EGR-${String(recordedExpenseNumber).padStart(4, "0")}`;
         } else {
           rcCount += 1;
-          // Buscar pago coincidente si no tenemos paciente
-          if (!pacienteParsed && allPagos.length > 0) {
-            matchedPago = allPagos.find(p => Number(p.monto) === Number(m.monto));
-            if (matchedPago) {
-              const pId = matchedPago.paciente_id || matchedPago.pacienteId || matchedPago.patientId;
-              matchedPatient = fullPatientMap[pId];
-              if (matchedPatient) {
-                pacienteParsed = matchedPatient.nombreCompleto || `${matchedPatient.nombres || ''} ${matchedPatient.apellidos || ''}`.trim();
-              } else if (matchedPago.pacienteNombre) {
-                pacienteParsed = matchedPago.pacienteNombre;
-              }
-
-              // Intentar extraer consecutivo de pago.notas
-              if (!consecutiveNumber && matchedPago.notas) {
-                try {
-                  const meta = JSON.parse(matchedPago.notas);
-                  if (meta.nroConsecutivo) {
-                    consecutiveNumber = `RC-${String(meta.nroConsecutivo).padStart(4, "0")}`;
-                  }
-                } catch (e) {}
-              }
-            }
-          }
-
-          // Si aún no tenemos paciente y hay un solo paciente o paciente en la clínica
-          if (!pacienteParsed && Object.keys(fullPatientMap).length > 0) {
-            const firstPac = Object.values(fullPatientMap)[0];
-            matchedPatient = firstPac;
-            pacienteParsed = firstPac.nombreCompleto || `${firstPac.nombres || ''} ${firstPac.apellidos || ''}`.trim();
+          const receiptNumber = getReceiptNumber(m);
+          const receiptId = String(m.recibo_id || m.reciboId || getReferenceValue(refParsed, ["RECIBO", "RECIBO_ID"]));
+          matchedReceipt = allRecibos.find((receipt) => receiptId && String(receipt.id) === receiptId)
+            || allRecibos.find((receipt) => receiptNumber && String(receipt.numero || receipt.nro_consecutivo || receipt.nroConsecutivo || receipt.consecutivoNumero || "").replace(/^RC-/i, "").replace(/^0+/, "") === receiptNumber.replace(/^0+/, ""))
+            || null;
+          if (!matchedReceipt && m.paciente_id) matchedPatient = fullPatientMap[m.paciente_id] || null;
+          if (matchedReceipt) {
+            const patientId = matchedReceipt.paciente_id || matchedReceipt.pacienteId || matchedReceipt.patient_id;
+            matchedPatient = fullPatientMap[patientId] || matchedPatient;
+            pacienteParsed = pacienteParsed || matchedReceipt.pacienteNombre || matchedReceipt.paciente_nombre || matchedReceipt.nombrePaciente || "";
+            pacienteParsed = pacienteParsed || matchedPatient?.nombreCompleto || `${matchedPatient?.nombres || ""} ${matchedPatient?.apellidos || ""}`.trim();
+            const receiptN = receiptNumber || matchedReceipt.numero || matchedReceipt.nro_consecutivo || matchedReceipt.nroConsecutivo || matchedReceipt.consecutivoNumero;
+            if (!consecutiveNumber && receiptN) consecutiveNumber = `RC-${String(receiptN).replace(/^RC-/i, "").padStart(4, "0")}`;
           }
 
           if (!consecutiveNumber) {
@@ -216,14 +221,14 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
           matchedPatient = fullPatientMap[m.paciente_id];
         }
 
-        let matchedExpense = null;
         let egresoNumero = m.tipo === "egreso" ? getExpenseNumber(m) : "";
         let thirdParty = "";
         if (m.tipo === "egreso") {
           const paymentId = getReferenceValue(refParsed, ["PAGO", "PAGO_ID"]);
-          const supplierDocument = getReferenceValue(refParsed, ["DOC"]);
+          const supplierDocument = getReferenceValue(refParsed, ["Documento", "DOC"]);
           thirdParty = getReferenceValue(refParsed, ["Tercero", "Paciente", "Beneficiario", "Proveedor"]);
           if (paymentId) matchedExpense = allEgresos.find((expense) => String(expense.id) === paymentId.split(/\s+/)[0]);
+          if (matchedExpense && !egresoNumero) egresoNumero = String(matchedExpense.numero || matchedExpense.consecutivo || matchedExpense.nroConsecutivo || "");
           if (!matchedExpense && egresoNumero) {
             matchedExpense = allEgresos.find((expense) => String(expense.numero || expense.consecutivo || expense.nroConsecutivo || "") === egresoNumero);
           }
@@ -232,16 +237,20 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
             const liquidationConcept = String(m.concepto || "").match(/Liquidación de comisiones\s*[-–:]\s*(.+)$/i);
             thirdParty = providerConcept?.[1]?.trim() || liquidationConcept?.[1]?.trim() || "";
           }
-          if (!matchedExpense && supplierDocument) {
-            const possibleMatches = allEgresos.filter((expense) =>
-              String(expense.documentoTercero || expense.documento_tercero || "").trim() === supplierDocument &&
-              Number(expense.monto || expense.total || 0) === Number(m.monto || 0)
-            );
-            if (possibleMatches.length === 1) matchedExpense = possibleMatches[0];
+          if (!matchedExpense && egresoNumero) {
+            matchedExpense = allEgresos.find((expense) => String(expense.numero || expense.consecutivo || expense.nroConsecutivo || "") === egresoNumero) || null;
+          }
+          if (!matchedExpense && supplierDocument && !paymentId) {
+            const possibleMatches = allEgresos.filter((expense) => String(expense.documentoTercero || expense.documento_tercero || "").trim() === supplierDocument && Number(expense.monto || expense.total || 0) === Number(m.monto || 0));
+            if (possibleMatches.length === 1) {
+              matchedExpense = possibleMatches[0];
+              egresoNumero = String(matchedExpense.numero || matchedExpense.consecutivo || matchedExpense.nroConsecutivo || "");
+            }
           }
           if (matchedExpense) {
             thirdParty = thirdParty || matchedExpense.tercero || matchedExpense.proveedor || matchedExpense.profesional || "";
             egresoNumero = egresoNumero || String(matchedExpense.numero || matchedExpense.consecutivo || matchedExpense.nroConsecutivo || "");
+            if (egresoNumero) consecutiveNumber = `EGR-${String(egresoNumero).replace(/^EGR-/i, "").padStart(4, "0")}`;
           }
         }
         const pName = m.tipo === "egreso"
@@ -260,12 +269,16 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
           pacienteNombre: pName,
           tercero: pName,
           egresoNumero,
+          beneficiarioObj: matchedExpense || null,
+          terceroDocumento: getReferenceValue(refParsed, ["Documento", "DOC"]) || matchedExpense?.documentoTercero || matchedExpense?.documento_tercero || matchedExpense?.documento || matchedExpense?.nit || "",
+          terceroTipoDoc: matchedExpense?.tipoDocumento || matchedExpense?.tipo_documento || matchedExpense?.tipoDoc || "",
+          terceroCelular: getReferenceValue(refParsed, ["Celular", "Telefono", "Teléfono"]) || matchedExpense?.telefono || matchedExpense?.celular || "",
           pacienteObj: matchedPatient || (m.paciente_id ? fullPatientMap[m.paciente_id] : null),
-          pacienteDocumento: matchedPatient?.nroDocumento || matchedPatient?.documento || "—",
-          pacienteTipoDoc: matchedPatient?.tipoDocumento || matchedPatient?.tipo_documento || "CC",
+          pacienteDocumento: matchedReceipt?.pacienteDocumento || matchedReceipt?.paciente_documento || matchedPatient?.nroDocumento || matchedPatient?.numero_documento || matchedPatient?.nro_documento || matchedPatient?.identificacion || matchedPatient?.cedula || matchedPatient?.documento || "—",
+          pacienteTipoDoc: matchedReceipt?.pacienteTipoDocumento || matchedReceipt?.tipo_documento || matchedPatient?.tipoDocumento || matchedPatient?.tipo_documento || "CC",
           pacienteDireccion: matchedPatient?.lugarResidencia || matchedPatient?.direccion || "—",
           pacienteCiudad: matchedPatient?.ciudadDomicilio || matchedPatient?.ciudad || "—",
-          pacienteCelular: matchedPatient?.celular || matchedPatient?.telefono || "—"
+          pacienteCelular: matchedReceipt?.pacienteTelefono || matchedReceipt?.paciente_telefono || matchedPatient?.celular || matchedPatient?.telefono || matchedPatient?.phone || matchedPatient?.movil || "—"
         };
       });
 
@@ -630,17 +643,19 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
       : "Administración";
 
     // 2. Extraer consecutivo real
-    const consecutiveNumber = mov.nroConsecutivo || mov.consecutivo || (mov.tipo === "egreso" ? "EGR-0001" : "RC-0001");
+      const consecutiveNumber = mov.nroConsecutivo || mov.consecutivo || (mov.tipo === "egreso" ? (mov.egresoNumero ? `EGR-${String(mov.egresoNumero).padStart(4, "0")}` : "S/N") : `RC-${String(getReceiptNumber(mov) || "S/N").padStart(4, "0")}`);
 
     // 3. Resolver datos completos del paciente / beneficiario
-    const pObj = mov.pacienteObj;
+    const pObj = mov.tipo === "egreso" ? (mov.beneficiarioObj || mov.pacienteObj) : mov.pacienteObj;
     const patientData = {
       nombreCompleto: mov.pacienteNombre || pObj?.nombreCompleto || mov.tercero || "Paciente Clínica",
-      nroDocumento: mov.pacienteDocumento || pObj?.nroDocumento || pObj?.documento || "—",
-      tipoDocumento: mov.pacienteTipoDoc || pObj?.tipoDocumento || pObj?.tipo_documento || "CC",
+      nroDocumento: (mov.tipo === "egreso" ? mov.terceroDocumento : mov.pacienteDocumento) || pObj?.nroDocumento || pObj?.numero_documento || pObj?.nro_documento || pObj?.identificacion || pObj?.cedula || pObj?.documento || "—",
+      tipoDocumento: (mov.tipo === "egreso" ? mov.terceroTipoDoc : mov.pacienteTipoDoc) || pObj?.tipoDocumento || pObj?.tipo_documento || pObj?.tipoDoc || "CC",
+      documentoTercero: mov.tipo === "egreso" ? mov.terceroDocumento : undefined,
+      telefono: mov.tipo === "egreso" ? mov.terceroCelular : mov.pacienteCelular,
       lugarResidencia: mov.pacienteDireccion || pObj?.lugarResidencia || pObj?.direccion || "—",
       ciudadDomicilio: mov.pacienteCiudad || pObj?.ciudadDomicilio || pObj?.ciudad || "—",
-      celular: mov.pacienteCelular || pObj?.celular || pObj?.telefono || "—",
+      celular: (mov.tipo === "egreso" ? mov.terceroCelular : mov.pacienteCelular) || pObj?.celular || pObj?.telefono || pObj?.phone || pObj?.movil || "—",
     };
 
     const pagoData = {
@@ -648,10 +663,10 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
       tipo: mov.tipo || "ingreso",
       documentTitle: mov.tipo === "egreso" ? "Comprobante de Egreso" : "Recibo de Caja",
       medio: mov.metodoPago || "Efectivo",
-      concepto: mov.concepto || mov.descripcion || (mov.tipo === "egreso" ? "Egreso de Caja" : "Recibo de Caja"),
+      concepto: mov.tipo === "egreso" ? getMovementConcept(mov) : (mov.concepto || mov.descripcion || "Recibo de Caja"),
       notas: mov.descripcion || mov.concepto || "Sin observaciones adicionales",
       fecha: mov.fecha,
-      nroConsecutivo: consecutiveNumber,
+      nroConsecutivo: mov.tipo === "egreso" ? consecutiveNumber : (getReceiptNumber(mov) || consecutiveNumber),
       registradoPor: nombreElaborador,
       planTitle: mov.planTitle || "Tratamiento Odontológico",
     };
@@ -880,7 +895,7 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
                   const esEgreso = m.tipo === "egreso";
                   const valorFormateado = esEgreso ? `-${fmt(m.monto || 0)}` : fmt(m.monto || 0);
                   const tercero = m.pacienteNombre || m.tercero || m.usuarioNombre || "—";
-                  const conceptoLimpio = String(m.concepto || "").replace(/^\[(?:EGR|RC)-\d+\]\s*/i, "").trim();
+                  const conceptoLimpio = esEgreso ? getMovementConcept(m) : String(m.concepto || "").replace(/^\[(?:EGR|RC)-\d+\]\s*/i, "").trim();
                   const docText = esEgreso
                     ? [`Egreso${m.egresoNumero ? ` #${m.egresoNumero}` : ""}`, conceptoLimpio].filter(Boolean).join(" · ")
                     : (m.concepto || "Recibo de caja");

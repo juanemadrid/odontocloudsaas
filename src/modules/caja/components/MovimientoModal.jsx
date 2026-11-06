@@ -221,6 +221,10 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
         const tag = selectedContact.tipo === "paciente" ? "Paciente" : "Tercero";
         refText += `${tag}: ${selectedContact.nombre}`;
       }
+      const contactDocument = selectedContact?.documento || selectedContact?.nroDocumento || selectedContact?.cedula || "";
+      const contactPhone = selectedContact?.celular || selectedContact?.telefono || selectedContact?.phone || "";
+      if (contactDocument) refText += (refText ? " | " : "") + `Documento: ${contactDocument}`;
+      if (contactPhone) refText += (refText ? " | " : "") + `Celular: ${contactPhone}`;
       if (form.descripcion?.trim()) {
         refText += (refText ? " | " : "") + form.descripcion.trim();
       }
