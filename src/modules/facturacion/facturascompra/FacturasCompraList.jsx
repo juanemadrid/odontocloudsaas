@@ -1834,7 +1834,7 @@ export default function FacturasCompraList({ onNew }) {
                           <label className="col-span-4 text-right font-medium text-slate-600">
                             Egreso <span className="text-rose-500">*</span>
                           </label>
-                          <div className="col-span-8 flex items-center gap-2">
+                          <div className="col-span-8">
                             <select
                               value={row.egresoId}
                               onChange={(e) => handleEgresoRowSelectChange(idx, e.target.value)}
@@ -1855,14 +1855,6 @@ export default function FacturasCompraList({ onNew }) {
                                 );
                               })}
                             </select>
-                            <button
-                              type="button"
-                              onClick={handleAddEgresoRow}
-                              className="w-8 h-8 rounded bg-[#8dc63f] hover:bg-[#7cb035] text-white flex items-center justify-center transition-all shadow-xs shrink-0 cursor-pointer"
-                              title="Agregar otro egreso para asociar a esta factura"
-                            >
-                              <FiPlus size={16} />
-                            </button>
                           </div>
                         </div>
 
