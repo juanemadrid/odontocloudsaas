@@ -7,7 +7,7 @@ import {
 } from "react-icons/fi";
 import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
-import { CUPS_DENTAL_CODES } from "../../data/cupsCodes";
+import { CUPS_ODONTOLOGIA } from "../../data/cupsOdontologia";
 import ModalProducto from "./ModalProducto";
 
 // Helper: parse items stored as JSON string in descripcion field
@@ -73,11 +73,14 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
     // Memoized filtering for CUPS
     const filteredCUPS = useMemo(() => {
         if (!cupsQuery || cupsQuery.length < 2) return [];
-        const q = cupsQuery.toLowerCase();
-        return CUPS_DENTAL_CODES.filter(c => 
-            c.code.toLowerCase().includes(q) || 
-            c.name.toLowerCase().includes(q)
-        ).slice(0, 15);
+        // Busca en TODOS los códigos CUPS oficiales de odontología y sus especialidades (461),
+        // por código o por palabras del nombre, sin importar tildes ni el orden de las palabras.
+        const plain = (v) => String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+        const words = plain(cupsQuery).split(/\s+/).filter(Boolean);
+        return CUPS_ODONTOLOGIA.filter(c => {
+            const text = `${c.code} ${plain(c.name)} ${plain(c.category)}`;
+            return words.every(w => text.includes(w));
+        }).slice(0, 30);
     }, [cupsQuery]);
 
     const fetchListInfo = async () => {

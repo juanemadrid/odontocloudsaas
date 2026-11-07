@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { CUPS_COMPLETO } from '../src/data/cupsCompleto.js';
 import { CUPS_DENTAL_CODES } from '../src/data/cupsCodes.js';
+import { CUPS_ODONTOLOGIA } from '../src/data/cupsOdontologia.js';
 import { CUPS_RIPS_2026_ENTRIES } from '../src/modules/rips/v003/catalogs/cupsRips2026.js';
 import { DENTAL_CODES_MAP } from '../src/utils/ripsValidators.js';
 import { CLINICAL_SPECIALTIES } from '../src/services/clinicalTemplatesService.js';
@@ -27,6 +28,23 @@ for (const sp of CLINICAL_SPECIALTIES) for (const pr of sp.procedures || sp.proc
   if (pr.cups) { assert.ok(official.has(pr.cups), `plantillas: ${pr.name} usa ${pr.cups}, que no existe`); checks++; }
 }
 for (const m of DENTAL_CODES_MAP) { assert.ok(official.has(m.cups), `sugerencias: ${m.cups} no existe en CUPS`); checks++; }
+
+// Buscador de la lista de precios: todos los códigos oficiales de odontología y especialidades.
+for (const c of CUPS_ODONTOLOGIA) {
+  assert.ok(official.has(c.code), `buscador: ${c.code} no existe en CUPS`);
+  assert.equal(plain(c.name), official.get(c.code), `buscador: ${c.code} tiene otro nombre`);
+  checks++;
+}
+assert.ok(CUPS_ODONTOLOGIA.length >= 400, 'buscador: faltan códigos de odontología');
+const inSearch = new Set(CUPS_ODONTOLOGIA.map(c => c.code));
+for (const c of CUPS_DENTAL_CODES) assert.ok(inSearch.has(c.code), `buscador: falta ${c.code} del catálogo de precios`);
+for (const esp of ['890217','890218','890220','890221','890222','890224','890236','890317','890318','890320','890321','890322','890324','890336'])
+  assert.ok(inSearch.has(esp), `buscador: falta la consulta de especialista ${esp}`);
+const find = (q) => { const w = plain(q).toLowerCase().split(/\s+/).filter(Boolean);
+  return CUPS_ODONTOLOGIA.filter(c => w.every(x => `${c.code} ${plain(c.name)} ${plain(c.category)}`.toLowerCase().includes(x))).map(c => c.code); };
+assert.ok(find('primera vez endodoncia').includes('890218'), 'buscar "primera vez endodoncia" debe encontrar 890218');
+assert.ok(find('periapical').includes('870450'), 'buscar "periapical" debe encontrar 870450');
+assert.ok(find('890204').includes('890204'), 'buscar por código');
 
 // El caso que se reportó: primera vez por especialista = 890204; 890303 es control por odontología general.
 const byCode = new Map(CUPS_DENTAL_CODES.map(c => [c.code, c.name]));
