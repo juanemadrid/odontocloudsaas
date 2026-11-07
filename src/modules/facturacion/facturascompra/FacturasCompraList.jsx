@@ -1,5 +1,6 @@
 import { associateSupplierExpense } from '../../../services/supplierExpenseService';
 import { expenseMatchesInvoice, getExpenseNumber } from '../../../services/supplierExpenseLinks';
+import { mismoTercero } from '../../../utils/terceroMatch';
 // src/modules/facturacion/facturascompra/FacturasCompraList.jsx
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { 
@@ -72,7 +73,7 @@ const printHTMLInHiddenIframe = (html) => {
   }, 250);
 };
 
-export default function FacturasCompraList({ onNew }) {
+export default function FacturasCompraList({ onNew, onCrearEgreso }) {
   const { userProfile } = useAuth();
   const inquilino = userProfile?.inquilino || "";
 
@@ -1720,7 +1721,9 @@ export default function FacturasCompraList({ onNew }) {
         const { porPagarFinal: pendienteFactura, asocs: egresosPrevios } = getFacturaPaymentSummary(facturaToAsociar);
         const totalAAsociar = egresosRows.reduce((sum, r) => sum + (parseFloat(r.valorAPagar) || 0), 0);
         const restanteTrasAsociar = Math.max(0, pendienteFactura - totalAAsociar);
-        const activeEgresos = egresosList.filter(eg => !isEgresoAnulado(eg));
+        // Solo los egresos del mismo tercero (proveedor / beneficiario) de esta factura o documento soporte.
+        const activeEgresos = egresosList.filter(eg => !isEgresoAnulado(eg) && mismoTercero(eg, facturaToAsociar));
+        const sinEgresosDelTercero = activeEgresos.length === 0;
 
         return (
           <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
@@ -1842,6 +1845,9 @@ export default function FacturasCompraList({ onNew }) {
                               required
                             >
                               <option value="">Seleccione...</option>
+                              {sinEgresosDelTercero && (
+                                <option value="" disabled>No existen egresos a nombre de este tercero</option>
+                              )}
                               {activeEgresos.map(eg => {
                                 const egDisp = getEgresoDisponible(eg);
                                 const isSelectedElsewhere = selectedInOtherRows.has(String(eg.id));
@@ -1855,6 +1861,20 @@ export default function FacturasCompraList({ onNew }) {
                                 );
                               })}
                             </select>
+                            {sinEgresosDelTercero && idx === 0 && (
+                              <div className="mt-2 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-800 flex items-center justify-between gap-2">
+                                <span>No existen egresos a nombre de este tercero.</span>
+                                {onCrearEgreso && (
+                                  <button
+                                    type="button"
+                                    onClick={() => { setShowAsociarModal(false); onCrearEgreso(facturaToAsociar); }}
+                                    className="shrink-0 px-3 py-1.5 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-md text-[11px] font-bold cursor-pointer border-0"
+                                  >
+                                    Crear egreso para este documento
+                                  </button>
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
 

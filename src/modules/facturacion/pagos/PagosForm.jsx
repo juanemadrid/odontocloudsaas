@@ -21,7 +21,7 @@ const fmt = (n) =>
     maximumFractionDigits: 2,
   });
 
-export default function PagosForm({ onCancel, onSuccess }) {
+export default function PagosForm({ onCancel, onSuccess, initialFacturaId = null }) {
     const { user, userProfile } = useAuth();
     const inquilino = userProfile?.inquilino || userProfile?.tenantId || userProfile?.tenant_id || "";
 
@@ -900,6 +900,48 @@ export default function PagosForm({ onCancel, onSuccess }) {
         });
         toast.success("Factura asociada al pago");
     };
+
+    // Viene desde "Asociar egreso" de una factura de compra: deja el egreso listo con ese tercero y esa factura.
+    const facturaInicialAplicada = useRef(false);
+    useEffect(() => {
+        if (!initialFacturaId || facturaInicialAplicada.current || facturasCompraPendientes.length === 0) return;
+        const fc = facturasCompraPendientes.find(f => String(f.id) === String(initialFacturaId));
+        if (!fc) return;
+        facturaInicialAplicada.current = true;
+        const saldo = parseFloat(fc.saldo_pendiente ?? fc.saldoPendiente ?? fc.totalNeto ?? fc.total ?? fc.monto ?? 0);
+        if (!(saldo > 0)) { toast.info("Esta factura ya no tiene saldo pendiente."); return; }
+        const provName = extractProvName(fc);
+        const provDoc = extractProvDoc(fc);
+        const provId = fc.tercero_id || fc.terceroId || fc.proveedor_id || fc.proveedorId || "";
+        const registrado = (terceros || []).find(t => (provId && String(t.id) === String(provId))
+            || (provDoc && String(t.documento || "").split("-")[0].replace(/\D/g, "") === String(provDoc).split("-")[0].replace(/\D/g, "")));
+        const tercero = registrado || { id: provId || provName, nombre: provName, documento: provDoc, tipo: "tercero" };
+        setTerceroId(tercero.id);
+        setTerceroSearchQuery(tercero.nombre || provName);
+        setSelectedTerceroObj(tercero);
+        setPagoFacturasCompra(true);
+        const num = getFacturaCode(fc);
+        const conceptoRealFc = (fc?.items && Array.isArray(fc.items) && fc.items.length > 0)
+            ? fc.items.map(it => (it.concepto && it.descripcion && it.concepto !== it.descripcion) ? `${it.concepto} - ${it.descripcion}` : (it.concepto || it.descripcion)).filter(Boolean).join(", ")
+            : (fc?.concepto || fc?.descripcion || "Adquisición de bienes / servicios");
+        setItems(prev => prev.some(it => it.isFactura && String(it.facturaId) === String(fc.id)) ? prev : [
+            ...prev,
+            {
+                id: Date.now() + Math.random(),
+                concepto: conceptoRealFc,
+                numeroFactura: num,
+                descripcion: `Factura ${num}`,
+                precioUnitario: saldo,
+                cantidad: 1,
+                impuesto: "",
+                total: saldo,
+                facturaId: fc.id,
+                isFactura: true
+            }
+        ]);
+        setFacturasSeleccionadas(prev => prev.includes(fc.id) ? prev : [...prev, fc.id]);
+        toast.success(`Egreso preparado para ${num}. Revise el medio de pago y guarde para dejarlo asociado.`);
+    }, [initialFacturaId, facturasCompraPendientes, terceros]);
 
     // Guardar Pago con validación de saldo en caja
     const handleSavePago = async (forceProceed = false) => {

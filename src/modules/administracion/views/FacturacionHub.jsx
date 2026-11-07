@@ -68,6 +68,8 @@ export default function FacturacionHub() {
   const urlSub = searchParams.get("sub");
 
   const [activeSubView, setActiveSubViewState] = useState(urlSub || null);
+  // Factura de compra / documento soporte para la que se va a crear un egreso desde "Asociar egreso".
+  const [facturaParaEgreso, setFacturaParaEgreso] = useState(null);
 
   const setActiveSubView = (sub) => {
     setActiveSubViewState(sub);
@@ -161,13 +163,16 @@ export default function FacturacionHub() {
       content = <PagosList onNew={() => setActiveSubView("pagos_form")} />;
       title = "Egresos";
     } else if (activeSubView === "pagos_form") {
-      content = <PagosForm onCancel={() => setActiveSubView("pagos")} onSuccess={() => setActiveSubView("pagos")} />;
+      // Si se vino desde "Asociar egreso" de una factura de compra, se vuelve allá al terminar.
+      const volverA = facturaParaEgreso ? "fc" : "pagos";
+      const terminar = () => { setFacturaParaEgreso(null); setActiveSubView(volverA); };
+      content = <PagosForm initialFacturaId={facturaParaEgreso} onCancel={terminar} onSuccess={terminar} />;
       title = "Nuevo Egreso";
     } else if (activeSubView === "traslados") {
       content = <TrasladosList onNew={() => {}} />;
       title = "Traslados entre Cuentas";
     } else if (activeSubView === "fc") {
-      content = <FacturasCompraList onNew={() => setActiveSubView("fc_form")} />;
+      content = <FacturasCompraList onNew={() => setActiveSubView("fc_form")} onCrearEgreso={(f) => { setFacturaParaEgreso(f?.id || null); setActiveSubView("pagos_form"); }} />;
       title = "Facturas de Compra";
     } else if (activeSubView === "fc_form") {
       content = <FacturasCompraForm onCancel={() => setActiveSubView("fc")} onSuccess={() => setActiveSubView("fc")} />;
