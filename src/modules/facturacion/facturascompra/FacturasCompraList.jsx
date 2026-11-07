@@ -1730,7 +1730,7 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
 
         return (
           <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full overflow-hidden animate-scaleIn">
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-xl w-full overflow-hidden animate-scaleIn">
               
               <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
                 <div>
@@ -1865,15 +1865,18 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
                               })}
                             </select>
                             {sinEgresosDelTercero && idx === 0 && (
-                              <div className="mt-2 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-800 flex items-center justify-between gap-2">
-                                <span>No hay egresos disponibles a nombre de este tercero (sin asociar a otra factura).</span>
+                              <div className="mt-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 flex flex-col gap-2.5">
+                                <div className="text-[11px] leading-snug">
+                                  <p className="font-bold">No hay egresos disponibles a nombre de este tercero.</p>
+                                  <p className="text-amber-700">Los que tenía ya están asociados a otras facturas.</p>
+                                </div>
                                 {onCrearEgreso && (
                                   <button
                                     type="button"
                                     onClick={() => { setShowAsociarModal(false); onCrearEgreso(facturaToAsociar); }}
-                                    className="shrink-0 px-3 py-1.5 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-md text-[11px] font-bold cursor-pointer border-0"
+                                    className="self-start px-3.5 py-2 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-md text-[11px] font-bold cursor-pointer border-0 whitespace-nowrap"
                                   >
-                                    Crear egreso para este documento
+                                    + Crear egreso para este documento
                                   </button>
                                 )}
                               </div>
