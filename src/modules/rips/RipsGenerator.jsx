@@ -1224,6 +1224,9 @@ export default function RipsGenerator() {
                 // Resolver atenciones clínicas reales para cada ítem facturado/cobrado
                 const invoiceItems = normalizedDoc.items;
                 const adaptedAtencionesForInvoice = [];
+                // Ítems con "Genera RIPS" apagado: la clínica decidió que no van al RIPS. No se muestran ni dan alerta.
+                let itemsRipsActivos = 0;
+                let itemsRipsApagados = 0;
                 const effectivePacId = pacienteData?.id || pacId;
                 const patientConsultas = effectivePacId ? (docClinicosByPatient.get(effectivePacId) || []) : [];
                 const patientEvoluciones = effectivePacId ? (evolucionesByPatient.get(effectivePacId) || []) : [];
@@ -1240,6 +1243,8 @@ export default function RipsGenerator() {
                     // Buscar en catálogo
                     const catalogItem = resolveRipsTariffItem(item, sourcePlan, listasPrecios).item;
                     const ripsDisabled = item.genera_rips === false;
+                    if (ripsDisabled && !item._ripsConfigError) { itemsRipsApagados++; continue; }
+                    itemsRipsActivos++;
 
                     const explicitCups = rawCupsCandidate || catalogItem?.codigo || "";
                     const isOtroServicio = Boolean(
@@ -1253,8 +1258,7 @@ export default function RipsGenerator() {
                     const valorServ = Number(item.total || item.valor || item.precio || item.precioUnitario || 0);
                     const itemErrors = [];
                     if (item._ripsConfigError) itemErrors.push(item._ripsConfigError);
-                    if (ripsDisabled && !item._ripsConfigError) itemErrors.push(`El servicio «${descText}» tiene desactivado Genera RIPS ${item._ripsTariffSource ? `en ${item._ripsTariffSource}` : 'en la copia histórica del presupuesto; no se localizó una opción vigente del tarifario'}.`);
-                    if ((item._ripsConfigError || ripsDisabled) && sourcePlan.id && item.id != null) {
+                    if (item._ripsConfigError && sourcePlan.id && item.id != null) {
                         const key = await ripsHistoricalLinkKey(inquilino, sourcePlan.id, item.id, rawCupsCandidate);
                         if (!linkIssues.some(issue => issue.key === key)) linkIssues.push({ key, tenantId: inquilino,
                             planId: sourcePlan.id, itemId: item.id, cups: rawCupsCandidate, patient: pacNombre,
@@ -1631,6 +1635,9 @@ export default function RipsGenerator() {
                         invoiceErrors.push(...itemErrors);
                     }
                 }
+
+                // Si todos los servicios de esta atención tienen "Genera RIPS" apagado, la atención no aparece en el RIPS.
+                if (itemsRipsActivos === 0 && itemsRipsApagados > 0) continue;
 
                 if (patientErrors.length > 0) {
                     invoiceErrors.push(...patientErrors);
