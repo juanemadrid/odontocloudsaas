@@ -48,6 +48,9 @@ export const CUPS_RIPS_2026_METADATA = {
 /**
  * Tabla Maestra Oficial CUPSRips para Especialidades Odontológicas y Ambulatorias Relacionadas
  */
+// Cada código y nombre se verificó contra el catálogo oficial completo (src/data/cupsCompleto.js).
+// Se quitaron códigos que no existen (231100, 231200, 237101, 997101) y se corrigieron los nombres que eran
+// de otro procedimiento (p. ej. 237201 es apexificación, no "retratamiento"; 990112 es educación grupal, no detartraje). Prueba: scripts/test-cups-catalog.mjs
 export const CUPS_RIPS_2026_ENTRIES = [
   // =========================================================================
   // CAPÍTULO 17: CONSULTAS, INTERCONSULTAS, VISITAS Y VALORACIONES (ARCHIVO AC)
@@ -122,7 +125,7 @@ export const CUPS_RIPS_2026_ENTRIES = [
   },
   {
     codigo: "890703",
-    descripcionOficial: "CONSULTA DE ODONTOLOGÍA GENERAL DE URGENCIAS",
+    descripcionOficial: "CONSULTA DE URGENCIAS POR ODONTOLOGÍA GENERAL",
     seccion: "03",
     capitulo: "17",
     capituloNombre: "CONSULTAS, INTERCONSULTAS, VISITAS Y VALORACIONES",
@@ -263,7 +266,7 @@ export const CUPS_RIPS_2026_ENTRIES = [
   },
   {
     codigo: "232401",
-    descripcionOficial: "RECONSTRUCCION DE DIENTE CON MATERIAL ESTETICO (CARILLA)",
+    descripcionOficial: "RECONSTRUCCIÓN DE ÁNGULO INCISAL",
     seccion: "01",
     capitulo: "07",
     capituloNombre: "PROCEDIMIENTOS EN LA CAVIDAD BUCAL Y DIENTES",
@@ -349,42 +352,8 @@ export const CUPS_RIPS_2026_ENTRIES = [
     fuenteOficial: "MinSalud / SISPRO - CUPSRips 2026 (Capítulo 07, Archivo AP)",
   },
   {
-    codigo: "231100",
-    descripcionOficial: "EXODONCIA QUIRURGICA DE DIENTES MAXILARES",
-    seccion: "01",
-    capitulo: "07",
-    capituloNombre: "PROCEDIMIENTOS EN LA CAVIDAD BUCAL Y DIENTES",
-    grupo: "23",
-    archivoRips: "AP",
-    tipoRips: "procedimiento",
-    correspondeBloqueConsultas: false,
-    correspondeBloqueProcedimientos: true,
-    activo: true,
-    vigenciaDesde: "2026-01-01",
-    vigenciaHasta: null,
-    resolucionCups: "2706-2025",
-    fuenteOficial: "MinSalud / SISPRO - CUPSRips 2026 (Capítulo 07, Archivo AP)",
-  },
-  {
-    codigo: "231200",
-    descripcionOficial: "EXODONCIA QUIRURGICA DE DIENTES MANDIBULARES",
-    seccion: "01",
-    capitulo: "07",
-    capituloNombre: "PROCEDIMIENTOS EN LA CAVIDAD BUCAL Y DIENTES",
-    grupo: "23",
-    archivoRips: "AP",
-    tipoRips: "procedimiento",
-    correspondeBloqueConsultas: false,
-    correspondeBloqueProcedimientos: true,
-    activo: true,
-    vigenciaDesde: "2026-01-01",
-    vigenciaHasta: null,
-    resolucionCups: "2706-2025",
-    fuenteOficial: "MinSalud / SISPRO - CUPSRips 2026 (Capítulo 07, Archivo AP)",
-  },
-  {
     codigo: "231301",
-    descripcionOficial: "EXODONCIA DE DIENTE INCLUIDO",
+    descripcionOficial: "EXODONCIA DE INCLUIDO EN POSICIÓN ECTÓPICA CON ABORDAJE INTRAORAL",
     seccion: "01",
     capitulo: "07",
     capituloNombre: "PROCEDIMIENTOS EN LA CAVIDAD BUCAL Y DIENTES",
@@ -402,25 +371,8 @@ export const CUPS_RIPS_2026_ENTRIES = [
 
   // ENDODONCIA (ARCHIVO AP)
   {
-    codigo: "237101",
-    descripcionOficial: "TRATAMIENTO DE CONDUCTOS EN DIENTES UNIRRADICULARES",
-    seccion: "01",
-    capitulo: "07",
-    capituloNombre: "PROCEDIMIENTOS EN LA CAVIDAD BUCAL Y DIENTES",
-    grupo: "23",
-    archivoRips: "AP",
-    tipoRips: "procedimiento",
-    correspondeBloqueConsultas: false,
-    correspondeBloqueProcedimientos: true,
-    activo: true,
-    vigenciaDesde: "2026-01-01",
-    vigenciaHasta: null,
-    resolucionCups: "2706-2025",
-    fuenteOficial: "MinSalud / SISPRO - CUPSRips 2026 (Capítulo 07, Archivo AP)",
-  },
-  {
     codigo: "237102",
-    descripcionOficial: "TRATAMIENTO DE CONDUCTOS EN DIENTES BIRRADICULARES",
+    descripcionOficial: "PULPOTOMÍA",
     seccion: "01",
     capitulo: "07",
     capituloNombre: "PROCEDIMIENTOS EN LA CAVIDAD BUCAL Y DIENTES",
@@ -437,7 +389,7 @@ export const CUPS_RIPS_2026_ENTRIES = [
   },
   {
     codigo: "237103",
-    descripcionOficial: "TRATAMIENTO DE CONDUCTOS EN DIENTES MULTIRRADICULARES",
+    descripcionOficial: "PULPECTOMÍA",
     seccion: "01",
     capitulo: "07",
     capituloNombre: "PROCEDIMIENTOS EN LA CAVIDAD BUCAL Y DIENTES",
@@ -454,7 +406,7 @@ export const CUPS_RIPS_2026_ENTRIES = [
   },
   {
     codigo: "237201",
-    descripcionOficial: "RETRATAMIENTO DE CONDUCTOS EN DIENTES UNIRRADICULARES",
+    descripcionOficial: "APEXIFICACIÓN (INDUCCIÓN DE APEXOGÉNESIS)",
     seccion: "01",
     capitulo: "07",
     capituloNombre: "PROCEDIMIENTOS EN LA CAVIDAD BUCAL Y DIENTES",
@@ -471,7 +423,7 @@ export const CUPS_RIPS_2026_ENTRIES = [
   },
   {
     codigo: "237202",
-    descripcionOficial: "RETRATAMIENTO DE CONDUCTOS EN DIENTES BIRRADICULARES",
+    descripcionOficial: "REVASCULARIZACIÓN PULPAR",
     seccion: "01",
     capitulo: "07",
     capituloNombre: "PROCEDIMIENTOS EN LA CAVIDAD BUCAL Y DIENTES",
@@ -488,7 +440,7 @@ export const CUPS_RIPS_2026_ENTRIES = [
   },
   {
     codigo: "237203",
-    descripcionOficial: "RETRATAMIENTO DE CONDUCTOS EN DIENTES MULTIRRADICULARES",
+    descripcionOficial: "RECUBRIMIENTO PULPAR DIRECTO",
     seccion: "01",
     capitulo: "07",
     capituloNombre: "PROCEDIMIENTOS EN LA CAVIDAD BUCAL Y DIENTES",
@@ -507,7 +459,7 @@ export const CUPS_RIPS_2026_ENTRIES = [
   // PERIODONCIA (ARCHIVO AP)
   {
     codigo: "243101",
-    descripcionOficial: "CURETAJE Y ALISADO RADICULAR CAMPO CERRADO (POR SEXTANTE)",
+    descripcionOficial: "ESCISIÓN DE LESIÓN BENIGNA ENCAPSULADA EN ENCÍA HASTA DE TRES CENTÍMETROS",
     seccion: "01",
     capitulo: "07",
     capituloNombre: "PROCEDIMIENTOS EN LA CAVIDAD BUCAL Y DIENTES",
@@ -524,7 +476,7 @@ export const CUPS_RIPS_2026_ENTRIES = [
   },
   {
     codigo: "242201",
-    descripcionOficial: "GINGIVECTOMIA (POR CUADRANTE)",
+    descripcionOficial: "CURETAJE A CAMPO ABIERTO",
     seccion: "01",
     capitulo: "07",
     capituloNombre: "PROCEDIMIENTOS EN LA CAVIDAD BUCAL Y DIENTES",
@@ -543,7 +495,7 @@ export const CUPS_RIPS_2026_ENTRIES = [
   // IMÁGENES DIAGNÓSTICAS / RADIOLOGÍA (ARCHIVO AP)
   {
     codigo: "870001",
-    descripcionOficial: "RADIOGRAFIA INTRAORAL: PERIAPICAL MILIMETRADA",
+    descripcionOficial: "RADIOGRAFÍA DE CRÁNEO SIMPLE",
     seccion: "02",
     capitulo: "19",
     capituloNombre: "IMÁGENES DIAGNÓSTICAS",
@@ -560,7 +512,7 @@ export const CUPS_RIPS_2026_ENTRIES = [
   },
   {
     codigo: "870112",
-    descripcionOficial: "RADIOGRAFIA PANORAMICA DE MANDIBULA Y MAXILAR",
+    descripcionOficial: "RADIOGRAFÍA DE MAXILAR SUPERIOR",
     seccion: "02",
     capitulo: "19",
     capituloNombre: "IMÁGENES DIAGNÓSTICAS",
@@ -595,25 +547,8 @@ export const CUPS_RIPS_2026_ENTRIES = [
     fuenteOficial: "MinSalud / SISPRO - CUPSRips 2026 (Capítulo 21, Archivo AP)",
   },
   {
-    codigo: "997101",
-    descripcionOficial: "PROFILAXIS DENTAL",
-    seccion: "02",
-    capitulo: "21",
-    capituloNombre: "PROCEDIMIENTOS MISCELÁNEOS, DE PROTECCIÓN ESPECÍFICA Y DETECCIÓN TEMPRANA",
-    grupo: "99",
-    archivoRips: "AP",
-    tipoRips: "procedimiento",
-    correspondeBloqueConsultas: false,
-    correspondeBloqueProcedimientos: true,
-    activo: true,
-    vigenciaDesde: "2026-01-01",
-    vigenciaHasta: null,
-    resolucionCups: "2706-2025",
-    fuenteOficial: "MinSalud / SISPRO - CUPSRips 2026 (Capítulo 21, Archivo AP)",
-  },
-  {
     codigo: "990112",
-    descripcionOficial: "DETARTRAJE SUPRAGINGIVAL",
+    descripcionOficial: "EDUCACIÓN GRUPAL EN SALUD, POR HIGIENE ORAL",
     seccion: "02",
     capitulo: "21",
     capituloNombre: "PROCEDIMIENTOS MISCELÁNEOS, DE PROTECCIÓN ESPECÍFICA Y DETECCIÓN TEMPRANA",
@@ -627,7 +562,7 @@ export const CUPS_RIPS_2026_ENTRIES = [
     vigenciaHasta: null,
     resolucionCups: "2706-2025",
     fuenteOficial: "MinSalud / SISPRO - CUPSRips 2026 (Capítulo 21, Archivo AP)",
-  },
+  }
 ];
 
 // Mapa en memoria para búsqueda ultra-rápida indexada O(1)

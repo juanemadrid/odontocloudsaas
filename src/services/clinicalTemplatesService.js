@@ -18,7 +18,7 @@ export const CLINICAL_SPECIALTIES = [
             {
                 id: 'resina_simple',
                 name: 'Resina Simple (1 Superficie)',
-                cups: '890201',
+                cups: '232102',
                 anesthesiaDefault: 'Infiltrativa con Lidocaína 2% con epinefrina (1 carpule)',
                 defaultSurfaces: ['Oclusal'],
                 materials: 'Aislamiento relativo/absoluto, grabado ácido 37%, adhesivo de 5ta generación, resina nanohíbrida por capas, pulido con discos y pasta diamantada',
@@ -28,7 +28,7 @@ export const CLINICAL_SPECIALTIES = [
             {
                 id: 'resina_compuesta',
                 name: 'Resina Compuesta (2 o más Superficies)',
-                cups: '890202',
+                cups: '232102',
                 anesthesiaDefault: 'Infiltrativa con Lidocaína 2% con epinefrina (1 carpule)',
                 defaultSurfaces: ['Mesio-Oclusal', 'Ocluso-Distal'],
                 materials: 'Sistema de matriz seccional, cuña anatómica, adhesivo universal, resina nanohíbrida estratificada',
@@ -38,7 +38,7 @@ export const CLINICAL_SPECIALTIES = [
             {
                 id: 'reconstruccion_coronal',
                 name: 'Reconstrucción Coronal / Cúspide',
-                cups: '890203',
+                cups: '232102',
                 anesthesiaDefault: 'Infiltrativa con Lidocaína 2% con epinefrina (1 carpule)',
                 defaultSurfaces: ['Cúspide / Corona completa'],
                 materials: 'Resina de alta densidad / Bulk Fill, acondicionador dentinario',
@@ -48,7 +48,7 @@ export const CLINICAL_SPECIALTIES = [
             {
                 id: 'ionomero_vidrio',
                 name: 'Restauración con Ionómero de Vidrio',
-                cups: '890204',
+                cups: '232103',
                 anesthesiaDefault: 'Sin anestesia o Tópica',
                 defaultSurfaces: ['Cervical / Vestibular'],
                 materials: 'Ionómero de vidrio tipo II de restauración / protección de barniz',
@@ -58,7 +58,7 @@ export const CLINICAL_SPECIALTIES = [
             {
                 id: 'profilaxis_detartraje',
                 name: 'Detartraje Supragingival & Profilaxis',
-                cups: '997101',
+                cups: '997301',
                 anesthesiaDefault: 'Sin anestesia',
                 defaultSurfaces: ['Arcada Superior e Inferior'],
                 materials: 'Ultrasonido Cavitrón, puntas periodontales, copa de caucho, pasta profiláctica con flúor',
@@ -87,7 +87,7 @@ export const CLINICAL_SPECIALTIES = [
             {
                 id: 'exodoncia_cordal',
                 name: 'Exodoncia Quirúrgica Tercer Molar (Cordal)',
-                cups: '230102',
+                cups: '231201',
                 anesthesiaDefault: 'Troncular e Infiltrativa con Lidocaína 2% (2 carpules)',
                 defaultSurfaces: ['Tercer Molar'],
                 materials: 'Bisturí #15, periostótomo, pieza de mano quirúrgica, fresa Zekrya, sutura seda/vicryl 3-0',
@@ -97,7 +97,7 @@ export const CLINICAL_SPECIALTIES = [
             {
                 id: 'retiro_puntos',
                 name: 'Retiro de Puntos de Sutura',
-                cups: '890205',
+                cups: '890303',
                 anesthesiaDefault: 'Sin anestesia',
                 defaultSurfaces: ['Zona quirúrgica'],
                 materials: 'Tijera de sutura Goldman / Spencer, pinza algodonera, antiséptico bucal',
@@ -107,7 +107,7 @@ export const CLINICAL_SPECIALTIES = [
             {
                 id: 'drenaje_absceso',
                 name: 'Drenaje de Absceso Odontogénico',
-                cups: '240101',
+                cups: '240401',
                 anesthesiaDefault: 'Infiltrativa periférica leve / Tópica',
                 defaultSurfaces: ['Espacio submucoso'],
                 materials: 'Bisturí #11 o #15, pinza hemostática mosquito, suero estéril, gasa yodofórmica o dren de látex',
@@ -126,7 +126,7 @@ export const CLINICAL_SPECIALTIES = [
             {
                 id: 'apertura_pulpectomia',
                 name: 'Apertura Cameral & Pulpectomía de Urgencia',
-                cups: '230201',
+                cups: '237103',
                 anesthesiaDefault: 'Troncular o Infiltrativa con Lidocaína 2% (1.5 carpules)',
                 defaultSurfaces: ['Cámara Pulpar'],
                 materials: 'Aislamiento absoluto con dique de goma, fresa endo-z, limas K #10 y #15, hipoclorito de sodio al 2.5%, cemento provisional Cavit/Cavitrón',
@@ -136,7 +136,7 @@ export const CLINICAL_SPECIALTIES = [
             {
                 id: 'instrumentacion_biomecanica',
                 name: 'Instrumentación Biomecánica & Medicación Intraconducto',
-                cups: '230202',
+                cups: '237301',
                 anesthesiaDefault: 'Infiltrativa con Lidocaína 2% (1 carpule) o Sin anestesia si la pulpa está necrótica',
                 defaultSurfaces: ['Conductos radiculares'],
                 materials: 'Localizador apical electrónico, sistema rotatorio Niti, hipoclorito de sodio, EDTA 17%, pasta de hidróxido de calcio',
@@ -146,7 +146,7 @@ export const CLINICAL_SPECIALTIES = [
             {
                 id: 'obturacion_endodontica',
                 name: 'Obturación Definitiva de Conductos Radiculares',
-                cups: '230203',
+                cups: '237301',
                 anesthesiaDefault: 'Infiltrativa leve o Sin anestesia',
                 defaultSurfaces: ['Conductos radiculares'],
                 materials: 'Conos de gutapercha estandarizados, cemento sellador endodóntico (resinoso/biocerámico), condensadores térmicos',
@@ -165,7 +165,7 @@ export const CLINICAL_SPECIALTIES = [
             {
                 id: 'control_ortodoncia',
                 name: 'Control Mensual de Ortodoncia',
-                cups: '890206',
+                cups: '893106',
                 anesthesiaDefault: 'Sin anestesia',
                 defaultSurfaces: ['Arcada Superior e Inferior'],
                 materials: 'Ligaduras elásticas, cadenas elásticas de tracción, arcos de ortodoncia, pinza Mathieu',
@@ -175,7 +175,7 @@ export const CLINICAL_SPECIALTIES = [
             {
                 id: 'cambio_arcos',
                 name: 'Cambio de Arcos & Mecánica de Activación',
-                cups: '890207',
+                cups: '893106',
                 anesthesiaDefault: 'Sin anestesia',
                 defaultSurfaces: ['Arcada Superior e Inferior'],
                 materials: 'Arcos termoactivados / Acero rectangular, elásticos intermaxilares',
@@ -185,7 +185,7 @@ export const CLINICAL_SPECIALTIES = [
             {
                 id: 'recementado_bracket',
                 name: 'Recementado de Bracket Desprendido',
-                cups: '890208',
+                cups: '893106',
                 anesthesiaDefault: 'Sin anestesia',
                 defaultSurfaces: ['Pieza afectada'],
                 materials: 'Arenador / microarenado de base, grabado ácido 37%, adhesivo ortodóntico Transbond XT',
@@ -204,7 +204,7 @@ export const CLINICAL_SPECIALTIES = [
             {
                 id: 'raspaje_alisado',
                 name: 'Raspaje y Alisado Radicular (RAR)',
-                cups: '997301',
+                cups: '240301',
                 anesthesiaDefault: 'Infiltrativa con Lidocaína 2% (1.5 carpules)',
                 defaultSurfaces: ['Cuadrante tratado'],
                 materials: 'Curetas Gracey específicas (1/2, 7/8, 11/12, 13/14), ultrasonido subgingival, clorhexidina al 0.12%',
@@ -223,7 +223,7 @@ export const CLINICAL_SPECIALTIES = [
             {
                 id: 'tallado_pilar',
                 name: 'Tallado y Preparación de Pilar Protésico',
-                cups: '890209',
+                cups: '234201',
                 anesthesiaDefault: 'Infiltrativa con Lidocaína 2% (1 carpule)',
                 defaultSurfaces: ['Muñón / Diente pilar'],
                 materials: 'Fresas de diamante de grano grueso y fino, hilo retractor #000 y #00, silicona pesada y fluida, provisional acrílico',
@@ -233,7 +233,7 @@ export const CLINICAL_SPECIALTIES = [
             {
                 id: 'cementacion_definitiva',
                 name: 'Cementación Definitiva de Corona / Incrustación',
-                cups: '890210',
+                cups: '234105',
                 anesthesiaDefault: 'Sin anestesia o Infiltrativa leve',
                 defaultSurfaces: ['Corona dental'],
                 materials: 'Cemento resinoso dual / Ionómero de vidrio tipo I, ácido fluorhídrico/silano si aplica, glicerina de aislamiento',
@@ -252,7 +252,7 @@ export const CLINICAL_SPECIALTIES = [
             {
                 id: 'consulta_urgencia',
                 name: 'Consulta de Urgencia Odontológica por Dolor',
-                cups: '890101',
+                cups: '890703',
                 anesthesiaDefault: 'Según necesidad',
                 defaultSurfaces: ['Evaluación integral'],
                 materials: 'Espejo, explorador, sonda periodontal, pruebas de vitalidad pulpar (frío/calor/percusión)',

@@ -1,79 +1,93 @@
 /**
- * Catálogo Maestro de Códigos CUPS (Colombia) - Especialidad Odontología
- * Basado en la Resolución 2641 de 2024 (Vigencia 2025)
+ * Catálogo de códigos CUPS de odontología que se sugieren en la lista de precios, planes, convenios y facturas.
+ * Cada código y su nombre son los OFICIALES de la Clasificación Única de Procedimientos en Salud (sin tildes,
+ * para que la búsqueda funcione igual que antes)
+ * (los mismos de src/data/cupsCompleto.js). Los precios son solo valores de referencia: cada clínica pone los suyos.
+ *
+ * Antes este catálogo tenía 44 de 55 códigos con el nombre de otro procedimiento o inexistentes
+ * (p. ej. 890303 aparecía como "primera vez por odontología especializada" y es "control por odontología general").
+ * La prueba scripts/test-cups-catalog.mjs revisa que cada código exista y tenga su nombre oficial.
  */
 
 export const CUPS_DENTAL_CODES = [
     // CONSULTAS Y URGENCIAS
     { code: "890203", name: "CONSULTA DE PRIMERA VEZ POR ODONTOLOGIA GENERAL", precio: 80000, category: "CONSULTAS" },
-    { code: "890303", name: "CONSULTA DE PRIMERA VEZ POR ODONTOLOGIA ESPECIALIZADA", precio: 120000, category: "CONSULTAS" },
-    { code: "890603", name: "CONSULTA DE CONTROL O DE SEGUIMIENTO POR ODONTOLOGIA GENERAL", precio: 60000, category: "CONSULTAS" },
-    { code: "890604", name: "CONSULTA DE CONTROL O DE SEGUIMIENTO POR ODONTOLOGIA ESPECIALIZADA", precio: 90000, category: "CONSULTAS" },
-    { code: "890703", name: "CONSULTA DE ODONTOLOGIA GENERAL DE URGENCIAS", precio: 100000, category: "CONSULTAS" },
+    { code: "890204", name: "CONSULTA DE PRIMERA VEZ POR OTRAS ESPECIALIDADES EN ODONTOLOGIA", precio: 120000, category: "CONSULTAS" },
+    { code: "890303", name: "CONSULTA DE CONTROL O DE SEGUIMIENTO POR ODONTOLOGIA GENERAL", precio: 60000, category: "CONSULTAS" },
+    { code: "890304", name: "CONSULTA DE CONTROL O DE SEGUIMIENTO POR OTRAS ESPECIALIDADES EN ODONTOLOGIA", precio: 90000, category: "CONSULTAS" },
+    { code: "890703", name: "CONSULTA DE URGENCIAS POR ODONTOLOGIA GENERAL", precio: 100000, category: "CONSULTAS" },
 
-    // RADIOLOGIA
-    { code: "870001", name: "RADIOGRAFIA INTRAORAL: PERIAPICAL MILIMETRADA", precio: 35000, category: "RADIOLOGÍA" },
-    { code: "870112", name: "RADIOGRAFIA PANORAMICA DE MANDIBULA Y MAXILAR", precio: 85000, category: "RADIOLOGÍA" },
-    { code: "870104", name: "RADIOGRAFIA DE MAXILAR SUPERIOR O INFERIOR (OCLUSAL)", precio: 50000, category: "RADIOLOGÍA" },
-    { code: "870002", name: "RADIOGRAFIA INTRAORAL: CORONAL (ALETA DE MORDIDA)", precio: 35000, category: "RADIOLOGÍA" },
+    // RADIOLOGÍA
+    { code: "870450", name: "RADIOGRAFIAS INTRAORALES PERIAPICALES MILIMETRADAS", precio: 35000, category: "RADIOLOGÍA" },
+    { code: "870456", name: "RADIOGRAFIAS INTRAORALES PERIAPICALES JUEGO COMPLETO", precio: 180000, category: "RADIOLOGÍA" },
+    { code: "870460", name: "RADIOGRAFIAS INTRAORALES CORONALES", precio: 35000, category: "RADIOLOGÍA" },
+    { code: "870440", name: "RADIOGRAFIAS INTRAORALES OCLUSALES", precio: 50000, category: "RADIOLOGÍA" },
+    { code: "870114", name: "RADIOGRAFIA PANORAMICA DE MAXILARES, SUPERIOR E INFERIOR [ORTOPANTOMOGRAFIA]", precio: 85000, category: "RADIOLOGÍA" },
 
-    // PREVENCION Y PROMOCION
-    { code: "990101", name: "EDUCACION EN SALUD ORAL (HIGIENE ORAL)", precio: 40000, category: "PREVENCIÓN" },
-    { code: "990201", name: "TOPICACION DE FLUOR EN GEL", precio: 60000, category: "PREVENCIÓN" },
-    { code: "990202", name: "TOPICACION DE FLUOR EN BARNIZ", precio: 80000, category: "PREVENCIÓN" },
-    { code: "890205", name: "SELLANTES DE FOSAS Y FISURAS (POR DIENTE)", precio: 50000, category: "PREVENCIÓN" },
-    { code: "997101", name: "PROFILAXIS DENTAL", precio: 110000, category: "PREVENCIÓN" },
-    { code: "990112", name: "DETARTRAJE SUPRAGINGIVAL", precio: 160000, category: "PREVENCIÓN" },
+    // PREVENCIÓN Y PROMOCIÓN
+    { code: "990203", name: "EDUCACION INDIVIDUAL EN SALUD, POR ODONTOLOGIA", precio: 40000, category: "PREVENCIÓN" },
+    { code: "990212", name: "EDUCACION INDIVIDUAL EN SALUD, POR HIGIENE ORAL", precio: 40000, category: "PREVENCIÓN" },
+    { code: "997103", name: "TOPICACION DE FLUOR EN GEL", precio: 60000, category: "PREVENCIÓN" },
+    { code: "997106", name: "TOPICACION DE FLUOR EN BARNIZ", precio: 80000, category: "PREVENCIÓN" },
+    { code: "997107", name: "APLICACION DE SELLANTES", precio: 50000, category: "PREVENCIÓN" },
+    { code: "997001", name: "PROFILAXIS DENTAL O PULIDO CORONAL", precio: 110000, category: "PREVENCIÓN" },
+    { code: "997301", name: "DETARTRAJE SUPRAGINGIVAL", precio: 160000, category: "PREVENCIÓN" },
 
     // OPERATORIA (OBTURACIONES)
-    { code: "232101", name: "OBTURACION DE DIENTE CON RESINA DE FOTOCURADO (UNA SUPERFICIE)", precio: 150000, category: "OPERATORIA" },
-    { code: "232102", name: "OBTURACION DE DIENTE CON RESINA DE FOTOCURADO (DOS SUPERFICIES)", precio: 190000, category: "OPERATORIA" },
-    { code: "232103", name: "OBTURACION DE DIENTE CON RESINA DE FOTOCURADO (TRES O MAS SUPERFICIES)", precio: 240000, category: "OPERATORIA" },
-    { code: "232301", name: "OBTURACION DE DIENTE CON IONOMERO DE VIDRIO", precio: 130000, category: "OPERATORIA" },
-    { code: "232401", name: "RECONSTRUCCION DE DIENTE CON MATERIAL ESTETICO (CARILLA)", precio: 450000, category: "ESTÉTICA" },
+    { code: "232102", name: "OBTURACION DENTAL CON RESINA DE FOTOCURADO", precio: 150000, category: "OPERATORIA" },
+    { code: "232103", name: "OBTURACION DENTAL CON IONOMERO DE VIDRIO", precio: 130000, category: "OPERATORIA" },
+    { code: "232401", name: "RECONSTRUCCION DE ANGULO INCISAL", precio: 180000, category: "OPERATORIA" },
+    { code: "232402", name: "RECONSTRUCCION TERCIO INCISAL", precio: 200000, category: "OPERATORIA" },
+
+    // ESTÉTICA
+    { code: "237903", name: "BLANQUEAMIENTO DENTAL EXTRINSECO", precio: 450000, category: "ESTÉTICA" },
+    { code: "237901", name: "BLANQUEAMIENTO DE DIENTE INTRINSECO", precio: 300000, category: "ESTÉTICA" },
 
     // ENDODONCIA
-    { code: "237101", name: "TRATAMIENTO DE CONDUCTOS EN DIENTES UNIRRADICULARES", precio: 380000, category: "ENDODONCIA" },
-    { code: "237102", name: "TRATAMIENTO DE CONDUCTOS EN DIENTES BIRRADICULARES", precio: 480000, category: "ENDODONCIA" },
-    { code: "237103", name: "TRATAMIENTO DE CONDUCTOS EN DIENTES MULTIRRADICULARES", precio: 620000, category: "ENDODONCIA" },
-    { code: "237201", name: "RETRATAMIENTO DE CONDUCTOS EN DIENTES UNIRRADICULARES", precio: 450000, category: "ENDODONCIA" },
-    { code: "237202", name: "RETRATAMIENTO DE CONDUCTOS EN DIENTES BIRRADICULARES", precio: 580000, category: "ENDODONCIA" },
-    { code: "237203", name: "RETRATAMIENTO DE CONDUCTOS EN DIENTES MULTIRRADICULARES", precio: 750000, category: "ENDODONCIA" },
-    { code: "237301", name: "APEXIFICACION O APEXOGENESIS", precio: 320000, category: "ENDODONCIA" },
-    { code: "237302", name: "PULPOTOMIA", precio: 220000, category: "ENDODONCIA" },
-    { code: "237305", name: "PULPECTOMIA", precio: 250000, category: "ENDODONCIA" },
+    { code: "237301", name: "TERAPIA DE CONDUCTO RADICULAR EN DIENTE UNIRRADICULAR", precio: 380000, category: "ENDODONCIA" },
+    { code: "237302", name: "TERAPIA DE CONDUCTO RADICULAR EN DIENTE BIRRADICULAR", precio: 480000, category: "ENDODONCIA" },
+    { code: "237303", name: "TERAPIA DE CONDUCTO RADICULAR EN DIENTE MULTIRRADICULAR", precio: 620000, category: "ENDODONCIA" },
+    { code: "237304", name: "TERAPIA DE CONDUCTO RADICULAR EN DIENTE TEMPORAL UNIRRADICULAR", precio: 250000, category: "ENDODONCIA" },
+    { code: "237305", name: "TERAPIA DE CONDUCTO RADICULAR EN DIENTE TEMPORAL MULTIRRADICULAR", precio: 280000, category: "ENDODONCIA" },
+    { code: "237307", name: "DESOBTURACION DE CONDUCTO RADICULAR", precio: 200000, category: "ENDODONCIA" },
+    { code: "237102", name: "PULPOTOMIA", precio: 220000, category: "ENDODONCIA" },
+    { code: "237103", name: "PULPECTOMIA", precio: 250000, category: "ENDODONCIA" },
+    { code: "237201", name: "APEXIFICACION (INDUCCION DE APEXOGENESIS)", precio: 320000, category: "ENDODONCIA" },
 
     // PERIODONCIA
-    { code: "243101", name: "CURETAJE Y ALISADO RADICULAR CAMPO CERRADO (POR SEXTANTE)", precio: 180000, category: "PERIODONCIA" },
-    { code: "243102", name: "CURETAJE Y ALISADO RADICULAR CAMPO ABIERTO (POR SEXTANTE)", precio: 280000, category: "PERIODONCIA" },
-    { code: "242201", name: "GINGIVECTOMIA (POR CUADRANTE)", precio: 320000, category: "PERIODONCIA" },
-    { code: "242202", name: "GINGIVOPLASTIA (POR CUADRANTE)", precio: 300000, category: "PERIODONCIA" },
-    { code: "244101", name: "CIRUGIA A COLGAJO PARA TRATAMIENTO DE PERIODONTITIS (POR CUADRANTE)", precio: 450000, category: "PERIODONCIA" },
+    { code: "240201", name: "DETARTRAJE SUBGINGIVAL", precio: 180000, category: "PERIODONCIA" },
+    { code: "240301", name: "ALISADO RADICULAR, CAMPO CERRADO", precio: 180000, category: "PERIODONCIA" },
+    { code: "242201", name: "CURETAJE A CAMPO ABIERTO", precio: 280000, category: "PERIODONCIA" },
+    { code: "243401", name: "GINGIVECTOMIA", precio: 320000, category: "PERIODONCIA" },
+    { code: "242102", name: "PLASTIA MUCOGINGIVAL CON INJERTO GINGIVAL LIBRE", precio: 450000, category: "PERIODONCIA" },
+    { code: "242401", name: "REPARACION O PLASTIA PERIODONTAL REGENERATIVA (INJERTOS, MEMBRANAS)", precio: 550000, category: "PERIODONCIA" },
 
-    // CIRUGIA ORAL
+    // CIRUGÍA ORAL
     { code: "230101", name: "EXODONCIA DE DIENTE PERMANENTE UNIRRADICULAR", precio: 140000, category: "CIRUGÍA" },
     { code: "230102", name: "EXODONCIA DE DIENTE PERMANENTE MULTIRRADICULAR", precio: 220000, category: "CIRUGÍA" },
     { code: "230201", name: "EXODONCIA DE DIENTE TEMPORAL UNIRRADICULAR", precio: 90000, category: "CIRUGÍA" },
     { code: "230202", name: "EXODONCIA DE DIENTE TEMPORAL MULTIRRADICULAR", precio: 120000, category: "CIRUGÍA" },
-    { code: "231100", name: "EXODONCIA QUIRURGICA DE DIENTES MAXILARES", precio: 350000, category: "CIRUGÍA" },
-    { code: "231200", name: "EXODONCIA QUIRURGICA DE DIENTES MANDIBULARES", precio: 380000, category: "CIRUGÍA" },
-    { code: "231301", name: "EXODONCIA DE DIENTE INCLUIDO", precio: 480000, category: "CIRUGÍA" },
-    { code: "250201", name: "BIOPSIA DE ENCÍA", precio: 250000, category: "CIRUGÍA" },
+    { code: "231101", name: "EXODONCIA QUIRURGICA UNIRRADICULAR", precio: 350000, category: "CIRUGÍA" },
+    { code: "231201", name: "EXODONCIA QUIRURGICA MULTIRRADICULAR", precio: 380000, category: "CIRUGÍA" },
+    { code: "231303", name: "EXODONCIA DE DIENTE INCLUIDO", precio: 480000, category: "CIRUGÍA" },
+    { code: "241104", name: "BIOPSIA DE ENCIA", precio: 250000, category: "CIRUGÍA" },
 
-    // PROTESIS / REHABILITACION
-    { code: "234101", name: "CORONA INDIVIDUAL (PROVISIONAL)", precio: 180000, category: "REHABILITACIÓN" },
-    { code: "234102", name: "CORONA EN ACRILICO O METACRILATO", precio: 350000, category: "REHABILITACIÓN" },
-    { code: "234103", name: "CORONA COMPUESTA (CERAMICA/METAL)", precio: 850000, category: "REHABILITACIÓN" },
-    { code: "234201", name: "RETENEDORES INTRARADICULARES (NUCLEOS)", precio: 280000, category: "REHABILITACIÓN" },
-    { code: "234301", name: "PUENTE FIJO (POR UNIDAD)", precio: 750000, category: "REHABILITACIÓN" },
-    { code: "235101", name: "PROTESIS TOTAL SUPERIOR", precio: 1200000, category: "REHABILITACIÓN" },
-    { code: "235102", name: "PROTESIS TOTAL INFERIOR", precio: 1200000, category: "REHABILITACIÓN" },
-    { code: "235201", name: "PROTESIS PARCIAL REMOVIBLE (MUCO-SOPORTADA)", precio: 850000, category: "REHABILITACIÓN" },
-    { code: "235202", name: "PROTESIS PARCIAL REMOVIBLE (DENTO-MUCO-SOPORTADA)", precio: 980000, category: "REHABILITACIÓN" },
+    // PRÓTESIS / REHABILITACIÓN
+    { code: "234101", name: "COLOCACION O APLICACION DE CORONA EN ACERO INOXIDABLE (PARA DIENTES TEMPORALES)", precio: 180000, category: "REHABILITACIÓN" },
+    { code: "234103", name: "COLOCACION O APLICACION DE CORONA EN FORMA PLASTICA", precio: 350000, category: "REHABILITACIÓN" },
+    { code: "234105", name: "INSERCION O APLICACION DE CORONA", precio: 850000, category: "REHABILITACIÓN" },
+    { code: "234201", name: "COLOCACION O INSERCION DE PROTESIS FIJA CADA UNIDAD (PILAR Y PONTICOS)", precio: 750000, category: "REHABILITACIÓN" },
+    { code: "234204", name: "REPARACION DE PROTESIS FIJA", precio: 200000, category: "REHABILITACIÓN" },
+    { code: "234301", name: "INSERCION, ADAPTACION Y CONTROL DE PROTESIS REMOVIBLE PARCIAL (SUPERIOR O INFERIOR) MUCOSOPORTADA", precio: 850000, category: "REHABILITACIÓN" },
+    { code: "234302", name: "INSERCION, ADAPTACION Y CONTROL DE PROTESIS REMOVIBLE PARCIAL (SUPERIOR O INFERIOR) DENTOMUCOSOPORTADA O IMPLANTOSOPORTADA", precio: 980000, category: "REHABILITACIÓN" },
+    { code: "234401", name: "INSERCION, ADAPTACION Y CONTROL DE PROTESIS MUCOSOPORTADA TOTAL MEDIO CASO SUPERIOR O INFERIOR", precio: 1200000, category: "REHABILITACIÓN" },
+    { code: "234402", name: "INSERCION, ADAPTACION Y CONTROL DE PROTESIS MUCOSOPORTADA TOTAL SUPERIOR E INFERIOR", precio: 2200000, category: "REHABILITACIÓN" },
 
     // ORTODONCIA
-    { code: "247101", name: "COLOCACION DE APARATOLOGIA FIJA (BRACKETS)", precio: 1500000, category: "ORTODONCIA" },
-    { code: "247201", name: "COLOCACION DE APARATOLOGIA REMOVIBLE", precio: 650000, category: "ORTODONCIA" },
-    { code: "248101", name: "CONTROL DE ORTODONCIA", precio: 120000, category: "ORTODONCIA" },
-    { code: "248201", name: "CONTROL DE ORTOPEDIA", precio: 120000, category: "ORTODONCIA" }
+    { code: "890222", name: "CONSULTA DE PRIMERA VEZ POR ESPECIALISTA EN ORTODONCIA", precio: 120000, category: "ORTODONCIA" },
+    { code: "890322", name: "CONSULTA DE CONTROL O DE SEGUIMIENTO POR ESPECIALISTA EN ORTODONCIA", precio: 90000, category: "ORTODONCIA" },
+    { code: "247101", name: "COLOCACION DE APARATOLOGIA FIJA PARA ORTODONCIA (ARCADA)", precio: 1500000, category: "ORTODONCIA" },
+    { code: "247201", name: "COLOCACION DE APARATOLOGIA REMOVIBLE INTRAORAL PARA ORTODONCIA (ARCADA)", precio: 650000, category: "ORTODONCIA" },
+    { code: "893106", name: "CONTROL DE ORTODONCIA FIJA, REMOVIBLE O TRATAMIENTO ORTOPEDICO FUNCIONAL Y MECANICO", precio: 120000, category: "ORTODONCIA" },
+    { code: "248201", name: "AJUSTAMIENTO OCLUSAL", precio: 150000, category: "ORTODONCIA" }
 ];

@@ -37,18 +37,18 @@ export const CODIGO_CONCEPTOS = {
 };
 
 // ==========================================
-// 1.1 SMART MAPPINGS (Odontología Res. 2275)
+// 1.1 SMART MAPPINGS (Odontología Res. 2275) — códigos verificados contra el catálogo oficial (src/data/cupsCompleto.js)
 // ==========================================
 
 export const DENTAL_CODES_MAP = [
     { keywords: ["consulta", "valoracion", "primera vez", "diagnostico"], cups: "890203", cie10: "Z012", label: "Consulta Valoración General" },
-    { keywords: ["limpieza", "higiene", "detartraje", "profilaxis"], cups: "997300", cie10: "K051", label: "Limpieza Profunda" },
-    { keywords: ["caries", "resina", "calza", "obturacion"], cups: "230101", cie10: "K021", label: "Tratamiento Caries / Resina" },
-    { keywords: ["dolor", "pulpa", "endo", "conducto"], cups: "237101", cie10: "K040", label: "Endodoncia" },
-    { keywords: ["extraccion", "sacar", "cirugia", "exodoncia"], cups: "231101", cie10: "K081", label: "Exodoncia" },
-    { keywords: ["corona", "protesis", "puente", "incrustacion"], cups: "234101", cie10: "K081", label: "Prótesis / Corona" },
+    { keywords: ["limpieza", "higiene", "detartraje", "profilaxis"], cups: "997301", cie10: "K051", label: "Limpieza Profunda" },
+    { keywords: ["caries", "resina", "calza", "obturacion"], cups: "232102", cie10: "K021", label: "Tratamiento Caries / Resina" },
+    { keywords: ["dolor", "pulpa", "endo", "conducto"], cups: "237301", cie10: "K040", label: "Endodoncia" },
+    { keywords: ["extraccion", "sacar", "cirugia", "exodoncia"], cups: "230101", cie10: "K081", label: "Exodoncia" },
+    { keywords: ["corona", "protesis", "puente", "incrustacion"], cups: "234105", cie10: "K081", label: "Prótesis / Corona" },
     { keywords: ["ortodoncia", "brackets", "frenillos", "retenedor"], cups: "247101", cie10: "M264", label: "Ortodoncia" },
-    { keywords: ["blanqueamiento", "estetica"], cups: "997301", cie10: "Z012", label: "Blanqueamiento Dental" },
+    { keywords: ["blanqueamiento", "estetica"], cups: "237903", cie10: "Z012", label: "Blanqueamiento Dental" },
 ];
 
 /**
