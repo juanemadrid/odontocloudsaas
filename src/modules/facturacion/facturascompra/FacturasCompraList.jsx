@@ -1721,8 +1721,11 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
         const { porPagarFinal: pendienteFactura, asocs: egresosPrevios } = getFacturaPaymentSummary(facturaToAsociar);
         const totalAAsociar = egresosRows.reduce((sum, r) => sum + (parseFloat(r.valorAPagar) || 0), 0);
         const restanteTrasAsociar = Math.max(0, pendienteFactura - totalAAsociar);
-        // Solo los egresos del mismo tercero (proveedor / beneficiario) de esta factura o documento soporte.
-        const activeEgresos = egresosList.filter(eg => !isEgresoAnulado(eg) && mismoTercero(eg, facturaToAsociar));
+        // Solo los egresos del mismo tercero (proveedor / beneficiario) de esta factura o documento soporte
+        // que todavía tengan saldo para asociar (los que ya se usaron completos en otra factura no se muestran).
+        const egresosEnUso = new Set(egresosRows.map(r => String(r.egresoId)).filter(Boolean));
+        const activeEgresos = egresosList.filter(eg => !isEgresoAnulado(eg) && mismoTercero(eg, facturaToAsociar)
+          && (getEgresoDisponible(eg) > 0 || egresosEnUso.has(String(eg.id))));
         const sinEgresosDelTercero = activeEgresos.length === 0;
 
         return (
@@ -1846,7 +1849,7 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
                             >
                               <option value="">Seleccione...</option>
                               {sinEgresosDelTercero && (
-                                <option value="" disabled>No existen egresos a nombre de este tercero</option>
+                                <option value="" disabled>No hay egresos disponibles a nombre de este tercero</option>
                               )}
                               {activeEgresos.map(eg => {
                                 const egDisp = getEgresoDisponible(eg);
@@ -1863,7 +1866,7 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
                             </select>
                             {sinEgresosDelTercero && idx === 0 && (
                               <div className="mt-2 p-2.5 rounded-lg bg-amber-50 border border-amber-200 text-[11px] text-amber-800 flex items-center justify-between gap-2">
-                                <span>No existen egresos a nombre de este tercero.</span>
+                                <span>No hay egresos disponibles a nombre de este tercero (sin asociar a otra factura).</span>
                                 {onCrearEgreso && (
                                   <button
                                     type="button"
