@@ -35,19 +35,26 @@ export default function CajaDetalleModal({ caja, onClose, onNuevoMovimiento }) {
         .select("*")
         .eq("caja_id", caja.id)
         .order("created_at", { ascending: false });
-      setMovimientos(data || []);
+      const mapped = (data || []).map(m => ({
+        ...m,
+        pacienteNombre: m.pacienteNombre || m.paciente_nombre,
+        metodoPago: m.metodoPago || m.metodo_pago
+      }));
+      setMovimientos(mapped);
       setLoading(false);
     };
 
     fetchMovs();
   }, [caja.id]);
 
+  const isEffectiveMovement = (m) => !((m.estado || "").toLowerCase() === "anulado" || m.anulado)
+    || String(m.concepto || "").startsWith("[ANULACION RC]");
   const totalIngresos = movimientos
-    .filter(m => m.tipo === "ingreso" && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado)
+    .filter(m => m.tipo === "ingreso" && isEffectiveMovement(m))
     .reduce((s, m) => s + (m.monto || 0), 0);
 
   const totalEgresos = movimientos
-    .filter(m => m.tipo === "egreso" && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado)
+    .filter(m => m.tipo === "egreso" && isEffectiveMovement(m))
     .reduce((s, m) => s + (m.monto || 0), 0);
 
   const metodosUnicos = ["todos", ...new Set(movimientos.map(m => m.metodoPago).filter(Boolean))];

@@ -8,6 +8,7 @@ import { getConfigSection } from '../../../services/configPersistenceService';
 import { isDoctorUser } from '../../../utils/doctorHelpers';
 import { formatCurrency } from '../../../utils/formatters';
 import { getPatientFinancials, getReceiptPlanFinancials } from '../../../services/billingService';
+import { syncVoidReceiptInCaja } from '../../../services/cajaSyncService';
 import {
     FiDollarSign, FiCalendar, FiCreditCard, FiTrash2,
     FiPrinter, FiX, FiSearch, FiCopy, FiInbox, FiLoader,
@@ -314,6 +315,24 @@ export default function HistoricoPagosTab({ patientId }) {
                 concepto: voidModal.pago.concepto || "ABONO GENERAL",
                 motivoAnulacion: voidReason.trim()
             });
+
+            // Sincronizar egreso de anulación en caja activa
+            const inq = userProfile?.inquilino || userProfile?.tenant_id || userProfile?.tenantId || "";
+            try {
+                await syncVoidReceiptInCaja({
+                    inquilino: inq,
+                    receipt: {
+                        ...voidModal.pago,
+                        isPago: true,
+                        paciente_id: patientId
+                    },
+                    userProfile,
+                    reason: voidReason.trim(),
+                    operator: userProfile?.nombreCompleto || userProfile?.nombre || "Sistema"
+                });
+            } catch (cajaErr) {
+                console.warn("Aviso al registrar egreso de anulación en caja:", cajaErr);
+            }
 
             toast?.success?.("Pago anulado correctamente");
             setVoidModal({ open: false, pago: null });

@@ -20,6 +20,7 @@ import { createReceiptInvoiceDraft } from "../../../services/receiptInvoiceDraft
 import { receiptConceptAmounts, paymentConcepts, invoiceLineCode } from "../../../services/receiptInvoiceItems.js";
 import { queryOptionalBillingTable } from "../../../services/optionalBillingTables.js";
 import { todayBogota } from "../../../utils/bogotaDate.js";
+import { syncVoidReceiptInCaja, reconcileVoidedReceiptsInCaja } from "../../../services/cajaSyncService.js";
 
 const fmt = (n) => {
   const num = Number(n || 0);
@@ -805,51 +806,30 @@ export default function ReciboCajaList({ onNew }) {
 
             // 3. SINCRONIZACIÓN CON CAJA Y MOVIMIENTOS DE CAJA
             try {
-                const targetCajaId = recibo.caja_id || recibo.cajaId || recibo._raw?.caja_id || recibo._raw?.cajaId;
-                const pId = recibo.paciente_id || recibo.pacienteId || recibo._raw?.paciente_id;
-                const pNombre = recibo.pacienteNombre || "Paciente";
-                const montoAnulado = Number(recibo.total || recibo.monto || 0);
-
-                if (montoAnulado > 0) {
-                    await supabase
-                        .from("movimientos_caja")
-                        .insert([{
-                            tenant_id: inquilino,
-                            caja_id: targetCajaId || null,
-                            usuario_id: userProfile?.uid || userProfile?.id || null,
-                            tipo: "egreso",
-                            concepto: `[ANULACION RC] ${recibo.consecutivoNumero ? `RC-${String(recibo.consecutivoNumero).padStart(4, "0")}` : "Recibo"}`,
-                            monto: montoAnulado,
-                            metodo_pago: recibo.medioPago || "Efectivo",
-                            descripcion: `Anulación de documento: ${reason} (Operador: ${operator})`,
-                            paciente_id: pId || null,
-                            paciente_nombre: pNombre,
-                            recibo_id: recibo.isPago ? null : recibo.id,
-                            created_at: nowIso
-                        }]);
-
-                    if (targetCajaId) {
-                        const { data: curCaja } = await supabase
-                            .from("cajas")
-                            .select("id, saldo_actual, total_ingresos, total_egresos")
-                            .eq("id", targetCajaId)
-                            .single();
-
-                        if (curCaja) {
-                            const curSaldo = Number(curCaja.saldo_actual || 0);
-                            const curEgresos = Number(curCaja.total_egresos || 0);
-                            await supabase
-                                .from("cajas")
-                                .update({
-                                    saldo_actual: Math.max(0, curSaldo - montoAnulado),
-                                    total_egresos: curEgresos + montoAnulado
-                                })
-                                .eq("id", targetCajaId);
-                        }
-                    }
-                }
+                await syncVoidReceiptInCaja({
+                    inquilino,
+                    receipt: recibo,
+                    userProfile,
+                    reason,
+                    operator
+                });
             } catch (cajaErr) {
                 console.warn("Aviso al sincronizar egreso en movimientos_caja/cajas:", cajaErr);
+            }
+
+            // Mantener el respaldo local de recibos en website_config sincronizado.
+            try {
+                const cfgRecibos = await getConfigSection(inquilino, "recibos_caja", []);
+                if (Array.isArray(cfgRecibos)) {
+                    const updated = cfgRecibos.map(item => String(item.id) === String(recibo.id)
+                        ? { ...item, estado: "Anulado", anulado: true, motivoAnulacion: reason, motivo_anulacion: reason,
+                            anuladoPor: operator, anulado_por: operator, fechaAnulacion: nowIso, fecha_anulacion: nowIso }
+                        : item);
+                    const { saveConfigSection } = await import("../../../services/configPersistenceService");
+                    await saveConfigSection(inquilino, "recibos_caja", updated);
+                }
+            } catch (syncErr) {
+                console.warn("Aviso al sincronizar respaldo del recibo anulado:", syncErr);
             }
 
             // 4. Actualizar inmediatamente en memoria para feedback visual instantáneo
@@ -891,6 +871,9 @@ export default function ReciboCajaList({ onNew }) {
         if (!inquilino) return;
         setLoading(true);
         try {
+            // Reconciliar en segundo plano recibos anulados preexistentes que no cuenten con egreso en caja
+            reconcileVoidedReceiptsInCaja(inquilino, userProfile).catch(() => {});
+
             const fIni = customFilter.fechaInicio !== undefined ? customFilter.fechaInicio : fechaInicio;
             const fFin = customFilter.fechaFin !== undefined ? customFilter.fechaFin : fechaFin;
 

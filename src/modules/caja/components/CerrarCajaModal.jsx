@@ -79,8 +79,11 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
   }, [inquilino]);
 
   // Calculated values
-  const totalIngresos = movimientos.filter(m => m.tipo === "ingreso" && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado).reduce((s, m) => s + (Number(m.monto) || 0), 0);
-  const totalEgresos = movimientos.filter(m => m.tipo === "egreso" && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado).reduce((s, m) => s + (Number(m.monto) || 0), 0);
+  const isEffectiveMovement = (m) => (m.estado || "").toLowerCase() !== "anulado" && !m.anulado
+    || String(m.concepto || "").startsWith("[ANULACION RC]");
+
+  const totalIngresos = movimientos.filter(m => m.tipo === "ingreso" && isEffectiveMovement(m)).reduce((s, m) => s + (Number(m.monto) || 0), 0);
+  const totalEgresos = movimientos.filter(m => m.tipo === "egreso" && isEffectiveMovement(m)).reduce((s, m) => s + (Number(m.monto) || 0), 0);
   const saldoTeorico = (Number(caja.baseInicial) || 0) + totalIngresos - totalEgresos;
 
   // Split cash vs banks expected balances (calculo exacto)
@@ -91,18 +94,18 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
   };
 
   const totalIngresosEfectivo = movimientos
-    .filter(m => m.tipo === "ingreso" && isEfectivo(m) && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado)
+    .filter(m => m.tipo === "ingreso" && isEfectivo(m) && isEffectiveMovement(m))
     .reduce((s, m) => s + (Number(m.monto) || 0), 0);
   const totalEgresosEfectivo = movimientos
-    .filter(m => m.tipo === "egreso" && isEfectivo(m) && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado)
+    .filter(m => m.tipo === "egreso" && isEfectivo(m) && isEffectiveMovement(m))
     .reduce((s, m) => s + (Number(m.monto) || 0), 0);
   const efectivoEsperado = (Number(caja.baseInicial) || 0) + totalIngresosEfectivo - totalEgresosEfectivo;
 
   const totalIngresosOtros = movimientos
-    .filter(m => m.tipo === "ingreso" && !isEfectivo(m) && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado)
+    .filter(m => m.tipo === "ingreso" && !isEfectivo(m) && isEffectiveMovement(m))
     .reduce((s, m) => s + (Number(m.monto) || 0), 0);
   const totalEgresosOtros = movimientos
-    .filter(m => m.tipo === "egreso" && !isEfectivo(m) && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado)
+    .filter(m => m.tipo === "egreso" && !isEfectivo(m) && isEffectiveMovement(m))
     .reduce((s, m) => s + (Number(m.monto) || 0), 0);
   const otrosEsperado = totalIngresosOtros - totalEgresosOtros;
 

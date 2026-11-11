@@ -10,6 +10,7 @@ import { FiSearch, FiEye, FiArrowLeft, FiFileText, FiPrinter, FiX } from "react-
 import { ReceiptPrintService } from "../../../services/ReceiptPrintService";
 import { loadAllTransfers, loadCajaTransferContext, cajaTransferMovements } from "../../../services/bankTransferService";
 import { getConfigSection } from "../../../services/configPersistenceService";
+import { reconcileVoidedReceiptsInCaja } from "../../../services/cajaSyncService";
 
 const getReferenceValue = (reference, labels) => {
   const labelPattern = labels.join("|");
@@ -35,7 +36,11 @@ const getReceiptNumber = (movement) => {
 };
 
 const getMovementConcept = (movement) => {
-  const concept = String(movement.concepto || "").replace(/^\[(?:EGR|RC)-\d+\]\s*/i, "").trim();
+  const rawConcept = String(movement.concepto || "").trim();
+  if (/^\[ANULACION RC\]/i.test(rawConcept)) {
+    return rawConcept.replace(/^\[ANULACION RC\]\s*/i, "Devolución por anulación de recibo ");
+  }
+  const concept = rawConcept.replace(/^\[(?:EGR|RC)-\d+\]\s*/i, "").trim();
   const supplier = concept.match(/^Pago a Proveedor:\s*.+?(?:\s+-\s+(.+))?$/i);
   if (supplier) return supplier[1]?.trim() || "Pago a proveedor";
   if (/^Liquidación de comisiones\s*[-–:]/i.test(concept)) return "Liquidación de comisiones";
@@ -115,6 +120,11 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
       setLoading(true);
       const inquilinoId = userProfile?.inquilino || caja?.inquilino || "";
 
+      // Reconciliar cualquier recibo anulado preexistente que deba impactar caja
+      try {
+        await reconcileVoidedReceiptsInCaja(inquilinoId, userProfile);
+      } catch (_) {}
+
       // 1. Cargar pacientes para mapeo completo
       let patientMap = {};
       let fullPatientMap = {};
@@ -178,7 +188,7 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
         // Extraer consecutivo explícito si existe
         let consecutiveNumber = "";
         if (m.concepto) {
-          const matchCons = m.concepto.match(/\[(EGR-\d+|RC-\d+)\]/i);
+          const matchCons = m.concepto.match(/\[(EGR-\d+|RC-\d+)\]/i) || m.concepto.match(/\b(EGR-\d+|RC-\d+)\b/i);
           if (matchCons && matchCons[1]) {
             consecutiveNumber = matchCons[1];
           }
@@ -300,12 +310,14 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
   }, [caja?.id, userProfile?.inquilino, caja?.inquilino]);
 
   // Cálculos de totales (excluyendo movimientos anulados)
+  const isEffectiveMovement = (m) => !((m.estado || "").toLowerCase() === "anulado" || m.anulado)
+    || String(m.concepto || "").startsWith("[ANULACION RC]");
   const totalIngresos = movimientos
-    .filter(m => m.tipo === "ingreso" && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado)
+    .filter(m => m.tipo === "ingreso" && isEffectiveMovement(m))
     .reduce((s, m) => s + (Number(m.monto) || 0), 0);
 
   const totalEgresos = movimientos
-    .filter(m => m.tipo === "egreso" && (m.estado || "").toLowerCase() !== "anulado" && !m.anulado)
+    .filter(m => m.tipo === "egreso" && isEffectiveMovement(m))
     .reduce((s, m) => s + (Number(m.monto) || 0), 0);
 
   const totalCaja = (Number(caja.baseInicial) || 0) + totalIngresos - totalEgresos;
@@ -322,7 +334,7 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
     let running = base;
     const map = {};
     sortedOldest.forEach(m => {
-      const isAnulado = (m.estado || "").toLowerCase() === "anulado" || m.anulado;
+      const isAnulado = !isEffectiveMovement(m);
       if (!isAnulado) {
         const signo = m.tipo === "egreso" ? -1 : 1;
         running += (Number(m.monto || 0) * signo);
@@ -336,7 +348,7 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
   const resumenMediosPago = React.useMemo(() => {
     const map = {};
     movimientos.forEach(m => {
-      const isAnulado = (m.estado || "").toLowerCase() === "anulado" || m.anulado;
+      const isAnulado = !isEffectiveMovement(m);
       if (isAnulado) return;
       const raw = (m.metodoPago || m.metodo_pago || "Efectivo").trim();
       const metodo = raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
@@ -891,7 +903,7 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {movsFiltrados.map((m) => {
-                  const esAnulado = (m.estado || "").toLowerCase() === "anulado" || m.anulado;
+                  const esAnulado = !isEffectiveMovement(m);
                   const esEgreso = m.tipo === "egreso";
                   const valorFormateado = esEgreso ? `-${fmt(m.monto || 0)}` : fmt(m.monto || 0);
                   const tercero = m.pacienteNombre || m.tercero || m.usuarioNombre || "—";
@@ -899,6 +911,9 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
                   const docText = esEgreso
                     ? [`Egreso${m.egresoNumero ? ` #${m.egresoNumero}` : ""}`, conceptoLimpio].filter(Boolean).join(" · ")
                     : (m.concepto || "Recibo de caja");
+                  const conceptoVisible = esEgreso && /^\[ANULACION RC\]/i.test(String(m.concepto || ""))
+                    ? conceptoLimpio
+                    : docText;
 
                   return (
                     <tr key={m.id} className={`transition-colors ${esAnulado ? "bg-rose-50/40 hover:bg-rose-50/70" : "hover:bg-slate-50"}`}>
@@ -906,7 +921,7 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
                       <td className={`px-3 py-3 font-medium ${esAnulado ? "text-slate-400" : "text-slate-800"}`}>{tercero}</td>
                       <td className="px-3 py-3 text-slate-600">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className={esAnulado ? "text-slate-400" : ""}>{docText}</span>
+                          <span className={esAnulado ? "text-slate-400" : ""}>{conceptoVisible}</span>
                           {esAnulado && (
                             <span className="inline-block px-1.5 py-0.5 bg-rose-100 text-rose-700 font-bold text-[9px] rounded uppercase tracking-wider">
                               ANULADO
@@ -946,7 +961,7 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
       {selectedMovimiento && (() => {
         let previewConsecutive = selectedMovimiento.nroConsecutivo || selectedMovimiento.nro_consecutivo || "";
         if (!previewConsecutive && selectedMovimiento.concepto) {
-          const match = selectedMovimiento.concepto.match(/\[(EGR-\d+|RC-\d+)\]/i);
+          const match = selectedMovimiento.concepto.match(/\[(EGR-\d+|RC-\d+)\]/i) || selectedMovimiento.concepto.match(/\b(EGR-\d+|RC-\d+)\b/i);
           if (match && match[1]) previewConsecutive = match[1];
         }
         if (!previewConsecutive && selectedMovimiento.id) {

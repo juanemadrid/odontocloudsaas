@@ -14,6 +14,7 @@ import { useAuth } from "../../context/AuthContext";
 import { usePermissions } from "../../hooks/usePermissions";
 import { getConfigSection } from "../../services/configPersistenceService";
 import { loadCajaTransferContext, cajaTransferMovements } from "../../services/bankTransferService";
+import { reconcileVoidedReceiptsInCaja } from "../../services/cajaSyncService";
 
 import CajaListView from "./components/CajaListView";
 import AbrirCajaModal from "./components/AbrirCajaModal";
@@ -94,6 +95,13 @@ export default function Caja() {
     setLoading(true);
 
     try {
+      // Reconciliar cualquier recibo anulado preexistente que no tenga egreso en movimientos_caja
+      try {
+        await reconcileVoidedReceiptsInCaja(inquilino, userProfile);
+      } catch (recErr) {
+        console.warn("Aviso reconciliando recibos anulados en caja:", recErr);
+      }
+
       let list = [];
       try {
         const { data } = await supabase
@@ -131,7 +139,10 @@ export default function Caja() {
         if (c && c.id && !mergedMap.has(c.id)) {
           const trasladoMovs = cajaTransferMovements(trCtx.transfers, c, { allCajas: combined, banks: trCtx.banks });
           const cajaMovs = [...movsList.filter(m => (m.caja_id === c.id || m.cajaId === c.id)), ...trasladoMovs]
-            .filter(m => (m.estado || "").toLowerCase() !== "anulado" && !m.anulado);
+            // Una devolución por anulación es un egreso nuevo y válido; el movimiento
+            // original queda como anulado, pero el egreso de reversión sí debe afectar caja.
+            .filter(m => !((m.estado || "").toLowerCase() === "anulado" || m.anulado)
+              || String(m.concepto || "").startsWith("[ANULACION RC]"));
           const movIngresos = cajaMovs.filter(m => m.tipo === "ingreso").reduce((s, m) => s + Number(m.monto || 0), 0);
           const movEgresos = cajaMovs.filter(m => m.tipo === "egreso").reduce((s, m) => s + Number(m.monto || 0), 0);
           const baseInicial = Number(c.base_inicial ?? c.baseInicial ?? 0);
