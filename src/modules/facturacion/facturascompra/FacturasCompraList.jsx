@@ -182,7 +182,57 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
       (cfgFacturas || []).forEach(f => {
         if (f?.id) fcMap.set(f.id, { ...(fcMap.get(f.id) || {}), ...f });
       });
-      const list = Array.from(fcMap.values());
+
+      // Sincronizar nombres actualizados desde terceros (ej: corrección ortográfica del proveedor)
+      let tercerosList = [];
+      try {
+        const { data: tData } = await supabase
+          .from("terceros")
+          .select("*")
+          .eq("tenant_id", inquilino);
+        if (tData && tData.length > 0) tercerosList = tData;
+      } catch (e) {}
+
+      if (tercerosList.length === 0) {
+        try {
+          const cfgT = cfgRowData?.terceros || [];
+          if (Array.isArray(cfgT) && cfgT.length > 0) tercerosList = cfgT;
+        } catch (e) {}
+      }
+
+      let needsSyncSave = false;
+      const list = Array.from(fcMap.values()).map(f => {
+        if (!f) return f;
+        const fDocNums = String(f.documentoTercero || f.nit || f.cedula || "").replace(/\D/g, "");
+        const tMatch = tercerosList.find(t => {
+          if (f.terceroId && String(t.id) === String(f.terceroId)) return true;
+          const tDocNums = String(t.documento || t.numero_documento || t.nroDocumento || t.nit || "").replace(/\D/g, "");
+          return fDocNums && tDocNums && fDocNums.length >= 4 && (fDocNums === tDocNums || fDocNums.startsWith(tDocNums) || tDocNums.startsWith(fDocNums));
+        });
+
+        if (tMatch) {
+          const tNombre = (tMatch.nombre || tMatch.razonSocial || tMatch.razon_social || tMatch.nombreCompleto || "").trim();
+          if (tNombre && tNombre !== f.proveedor) {
+            needsSyncSave = true;
+            return {
+              ...f,
+              proveedor: tNombre,
+              tercero: tNombre,
+              proveedorNombre: tNombre,
+              terceroNombre: tNombre,
+              terceroId: tMatch.id || f.terceroId
+            };
+          }
+        }
+        return f;
+      });
+
+      if (needsSyncSave) {
+        try {
+          saveConfigSection(inquilino, "facturas_compra", list).catch(() => {});
+        } catch (e) {}
+      }
+
       setAllFacturasRef(list);
 
       // Cargar egresos/pagos para el modal de asociación y documentos asociados

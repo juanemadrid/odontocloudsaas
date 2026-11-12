@@ -120,6 +120,44 @@ export default function PagosList({ onNew }) {
           fcList = Array.from(fcMap.values());
         }
 
+        // Sincronizar nombres de proveedores con terceros actualizados
+        let tercerosList = [];
+        try {
+          const { data: tData } = await supabase
+            .from("terceros")
+            .select("*")
+            .eq("tenant_id", inquilino);
+          if (tData && tData.length > 0) tercerosList = tData;
+        } catch (e) {}
+        if (tercerosList.length === 0) {
+          const cfgT = cfgRow?.config?.terceros || [];
+          if (Array.isArray(cfgT) && cfgT.length > 0) tercerosList = cfgT;
+        }
+
+        fcList = fcList.map(f => {
+          if (!f) return f;
+          const fDocNums = String(f.documentoTercero || f.nit || f.cedula || "").replace(/\D/g, "");
+          const tMatch = tercerosList.find(t => {
+            if (f.terceroId && String(t.id) === String(f.terceroId)) return true;
+            const tDocNums = String(t.documento || t.numero_documento || t.nroDocumento || t.nit || "").replace(/\D/g, "");
+            return fDocNums && tDocNums && fDocNums.length >= 4 && (fDocNums === tDocNums || fDocNums.startsWith(tDocNums) || tDocNums.startsWith(fDocNums));
+          });
+          if (tMatch) {
+            const tNombre = (tMatch.nombre || tMatch.razonSocial || tMatch.razon_social || tMatch.nombreCompleto || "").trim();
+            if (tNombre && tNombre !== f.proveedor) {
+              return {
+                ...f,
+                proveedor: tNombre,
+                tercero: tNombre,
+                proveedorNombre: tNombre,
+                terceroNombre: tNombre,
+                terceroId: tMatch.id || f.terceroId
+              };
+            }
+          }
+          return f;
+        });
+
         if (cfgRow?.config?.empresa_datos) {
           setClinic(cfgRow.config.empresa_datos);
         }
