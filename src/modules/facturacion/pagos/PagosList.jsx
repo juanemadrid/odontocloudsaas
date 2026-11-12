@@ -1,6 +1,8 @@
 import { expenseMatchesInvoice, getExpenseNumber } from '../../../services/supplierExpenseLinks';
+import { mismoTercero } from '../../../utils/terceroMatch';
+import { associateSupplierExpense } from '../../../services/supplierExpenseService';
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { FiCreditCard, FiSearch, FiCalendar, FiPrinter, FiTrash2, FiPlus, FiHome, FiFileText, FiAlertTriangle, FiSlash, FiX, FiEye } from "react-icons/fi";
+import { FiCreditCard, FiSearch, FiCalendar, FiPrinter, FiTrash2, FiPlus, FiHome, FiFileText, FiAlertTriangle, FiSlash, FiX, FiEye, FiLink } from "react-icons/fi";
 import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { toast } from "sonner";
@@ -53,6 +55,13 @@ export default function PagosList({ onNew }) {
 
   // Estado para el modal de Documentos Asociados (Doc. Ref.)
   const [selectedPagoDocs, setSelectedPagoDocs] = useState(null);
+
+  // Estado para vincular factura / documento soporte a un egreso desde Doc. Ref.
+  const [pagoAVincular, setPagoAVincular] = useState(null);
+  const [facturaSeleccionadaId, setFacturaSeleccionadaId] = useState("");
+  const [montoAVincular, setMontoAVincular] = useState("");
+  const [vinculandoDoc, setVinculandoDoc] = useState(false);
+  const [mostrarTodasFacturas, setMostrarTodasFacturas] = useState(false);
 
   // Estado para el modal de anulación
   const [pagoAAnular, setPagoAAnular] = useState(null);
@@ -192,6 +201,72 @@ export default function PagosList({ onNew }) {
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paginatedList = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const handleOpenVincularDoc = (pago) => {
+    if (!pago || pago.anulado || (pago.estado || "").toLowerCase() === "anulado") {
+      toast.info("No se pueden vincular documentos a un egreso anulado");
+      return;
+    }
+    setPagoAVincular(pago);
+    setFacturaSeleccionadaId("");
+    setMostrarTodasFacturas(false);
+
+    const facturasDelTercero = (facturasCompra || []).filter(fc => {
+      const isAnulada = ["anulada", "anulado"].includes(String(fc.estado || "").toLowerCase());
+      if (isAnulada) return false;
+      const pend = Number(fc.saldoPendiente ?? fc.saldo_pendiente ?? fc.totalNeto ?? fc.total ?? 0);
+      return pend > 0 && mismoTercero(pago, fc);
+    });
+
+    const egresoDisponible = Math.max(0, Number(pago.monto || pago.total || 0) - Number(pago.valorAplicado || 0));
+
+    if (facturasDelTercero.length === 1) {
+      const fc = facturasDelTercero[0];
+      setFacturaSeleccionadaId(fc.id);
+      const pend = Number(fc.saldoPendiente ?? fc.saldo_pendiente ?? fc.totalNeto ?? fc.total ?? 0);
+      setMontoAVincular(String(Math.min(pend, egresoDisponible || pend)));
+    } else {
+      setMontoAVincular(String(egresoDisponible || ""));
+    }
+  };
+
+  const handleSaveVincularDoc = async () => {
+    if (!pagoAVincular || !facturaSeleccionadaId) {
+      toast.error("Seleccione una factura o documento soporte para vincular");
+      return;
+    }
+    const montoNum = parseFloat(montoAVincular) || 0;
+    if (montoNum <= 0) {
+      toast.error("El valor a vincular debe ser mayor a 0");
+      return;
+    }
+
+    const targetFc = (facturasCompra || []).find(f => String(f.id) === String(facturaSeleccionadaId));
+    const pendFc = Number(targetFc?.saldoPendiente ?? targetFc?.saldo_pendiente ?? targetFc?.totalNeto ?? targetFc?.total ?? 0);
+    if (montoNum > pendFc + 0.001) {
+      toast.error(`El valor a vincular (${fmt(montoNum)}) no puede superar el saldo pendiente del documento (${fmt(pendFc)})`);
+      return;
+    }
+
+    setVinculandoDoc(true);
+    try {
+      await associateSupplierExpense(
+        inquilino,
+        facturaSeleccionadaId,
+        pagoAVincular.id,
+        montoNum,
+        crypto.randomUUID()
+      );
+      toast.success("Documento vinculado exitosamente al egreso");
+      setPagoAVincular(null);
+      await loadData();
+    } catch (err) {
+      console.error("Error vinculando documento al egreso:", err);
+      toast.error(err.message || "Error al vincular el documento");
+    } finally {
+      setVinculandoDoc(false);
+    }
+  };
 
   const handleOpenAnularModal = (pago) => {
     if (pago.anulado || (pago.estado || "").toLowerCase() === "anulado") {
@@ -625,8 +700,18 @@ export default function PagosList({ onNew }) {
                             >
                               <FiEye size={13} />
                             </button>
-                          ) : (
+                          ) : isAnulado ? (
                             <span className="text-slate-400 font-mono">—</span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenVincularDoc(p)}
+                              className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-slate-400 hover:text-sky-600 hover:bg-sky-50 transition-colors cursor-pointer text-xs font-mono font-bold group"
+                              title="Vincular factura de compra o documento soporte a este egreso"
+                            >
+                              <span>—</span>
+                              <FiPlus size={10} className="hidden group-hover:inline ml-0.5 text-sky-600" />
+                            </button>
                           )}
                         </td>
                         <td className={`py-3 px-4 font-bold uppercase ${isAnulado ? "text-slate-400" : "text-slate-800"}`}>
@@ -835,6 +920,182 @@ export default function PagosList({ onNew }) {
             </div>
           </div>
         )}
+
+        {/* Modal: Vincular Documento a Egreso (Doc. Ref.) */}
+        {pagoAVincular && (() => {
+          const egresoTotal = Number(pagoAVincular.monto || pagoAVincular.total || 0);
+          const egresoDisponible = Math.max(0, egresoTotal - Number(pagoAVincular.valorAplicado || 0));
+          const numEgreso = getExpenseNumber(pagoAVincular) || pagoAVincular.id;
+
+          const facturasDelTercero = (facturasCompra || []).filter(fc => {
+            const isAnulada = ["anulada", "anulado"].includes(String(fc.estado || "").toLowerCase());
+            if (isAnulada) return false;
+            const pend = Number(fc.saldoPendiente ?? fc.saldo_pendiente ?? fc.totalNeto ?? fc.total ?? 0);
+            return pend > 0 && mismoTercero(pagoAVincular, fc);
+          });
+
+          const otrasFacturas = (facturasCompra || []).filter(fc => {
+            const isAnulada = ["anulada", "anulado"].includes(String(fc.estado || "").toLowerCase());
+            if (isAnulada) return false;
+            const pend = Number(fc.saldoPendiente ?? fc.saldo_pendiente ?? fc.totalNeto ?? fc.total ?? 0);
+            return pend > 0 && !mismoTercero(pagoAVincular, fc);
+          });
+
+          const facturasDisponibles = mostrarTodasFacturas
+            ? [...facturasDelTercero, ...otrasFacturas]
+            : facturasDelTercero;
+
+          const targetFc = (facturasCompra || []).find(f => String(f.id) === String(facturaSeleccionadaId));
+          const pendFc = targetFc ? Number(targetFc.saldoPendiente ?? targetFc.saldo_pendiente ?? targetFc.totalNeto ?? targetFc.total ?? 0) : 0;
+
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-fadeIn">
+              <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden flex flex-col animate-scaleUp">
+                {/* Header */}
+                <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-800">
+                      Vincular documento de referencia
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      Egreso #{numEgreso} — {pagoAVincular.proveedor || pagoAVincular.tercero} ({fmt(egresoTotal)})
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPagoAVincular(null)}
+                    className="text-slate-400 hover:text-slate-600 cursor-pointer p-1"
+                  >
+                    <FiX size={16} />
+                  </button>
+                </div>
+
+                {/* Form */}
+                <div className="p-6 space-y-4 text-xs">
+                  {/* Selector de documento */}
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">
+                      Documento soporte o Factura de compra <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={facturaSeleccionadaId}
+                      onChange={(e) => {
+                        const newId = e.target.value;
+                        setFacturaSeleccionadaId(newId);
+                        const fc = (facturasCompra || []).find(f => String(f.id) === String(newId));
+                        if (fc) {
+                          const pFc = Number(fc.saldoPendiente ?? fc.saldo_pendiente ?? fc.totalNeto ?? fc.total ?? 0);
+                          setMontoAVincular(String(Math.min(pFc, egresoDisponible || pFc)));
+                        }
+                      }}
+                      className="w-full h-9 px-3 bg-white border border-slate-200 rounded text-xs text-slate-800 focus:border-blue-500 outline-none"
+                      required
+                    >
+                      <option value="">Seleccione un documento...</option>
+                      {facturasDelTercero.length === 0 && !mostrarTodasFacturas && (
+                        <option value="" disabled>No hay documentos pendientes a nombre de este tercero</option>
+                      )}
+                      {mostrarTodasFacturas && otrasFacturas.length > 0 && facturasDelTercero.length > 0 ? (
+                        <>
+                          <optgroup label="Documentos de este tercero">
+                            {facturasDelTercero.map(fc => {
+                              const numDoc = fc.nroFactura || fc.documentoNumero || fc.id;
+                              const pFc = Number(fc.saldoPendiente ?? fc.saldo_pendiente ?? fc.totalNeto ?? fc.total ?? 0);
+                              const isDs = Boolean(fc.docSoporteDian || fc.cuds || String(numDoc).startsWith('DCS'));
+                              return (
+                                <option key={fc.id} value={fc.id}>
+                                  {numDoc} - {fc.proveedor || fc.tercero} ({isDs ? 'Doc. Soporte' : 'Factura'}, Pend: {fmt(pFc)})
+                                </option>
+                              );
+                            })}
+                          </optgroup>
+                          <optgroup label="Otros documentos pendientes">
+                            {otrasFacturas.map(fc => {
+                              const numDoc = fc.nroFactura || fc.documentoNumero || fc.id;
+                              const pFc = Number(fc.saldoPendiente ?? fc.saldo_pendiente ?? fc.totalNeto ?? fc.total ?? 0);
+                              const isDs = Boolean(fc.docSoporteDian || fc.cuds || String(numDoc).startsWith('DCS'));
+                              return (
+                                <option key={fc.id} value={fc.id}>
+                                  {numDoc} - {fc.proveedor || fc.tercero} ({isDs ? 'Doc. Soporte' : 'Factura'}, Pend: {fmt(pFc)})
+                                </option>
+                              );
+                            })}
+                          </optgroup>
+                        </>
+                      ) : (
+                        facturasDisponibles.map(fc => {
+                          const numDoc = fc.nroFactura || fc.documentoNumero || fc.id;
+                          const pFc = Number(fc.saldoPendiente ?? fc.saldo_pendiente ?? fc.totalNeto ?? fc.total ?? 0);
+                          const isDs = Boolean(fc.docSoporteDian || fc.cuds || String(numDoc).startsWith('DCS'));
+                          return (
+                            <option key={fc.id} value={fc.id}>
+                              {numDoc} - {fc.proveedor || fc.tercero} ({isDs ? 'Doc. Soporte' : 'Factura'}, Pend: {fmt(pFc)})
+                            </option>
+                          );
+                        })
+                      )}
+                    </select>
+
+                    {otrasFacturas.length > 0 && (
+                      <div className="mt-1.5 flex items-center justify-between">
+                        <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-500 hover:text-slate-700 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={mostrarTodasFacturas}
+                            onChange={(e) => setMostrarTodasFacturas(e.target.checked)}
+                            className="rounded text-blue-600 focus:ring-0 cursor-pointer"
+                          />
+                          Mostrar todos los documentos pendientes ({otrasFacturas.length + facturasDelTercero.length})
+                        </label>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Valor a vincular */}
+                  <div>
+                    <label className="block font-medium text-slate-700 mb-1">
+                      Valor a vincular <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={montoAVincular}
+                      onChange={(e) => setMontoAVincular(e.target.value)}
+                      placeholder="Valor a vincular..."
+                      className="w-full h-9 px-3 bg-white border border-slate-200 rounded text-xs text-slate-800 font-bold focus:border-blue-500 outline-none"
+                      required
+                    />
+                    {targetFc && (
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        Saldo pendiente del documento: <span className="font-bold text-slate-700">{fmt(pendFc)}</span>
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Botones de acción */}
+                  <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setPagoAVincular(null)}
+                      className="px-4 py-2 border border-slate-200 text-slate-600 rounded text-xs font-semibold hover:bg-slate-50 cursor-pointer"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      disabled={vinculandoDoc || !facturaSeleccionadaId || !montoAVincular}
+                      onClick={handleSaveVincularDoc}
+                      className="px-4 py-2 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded text-xs font-bold cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {vinculandoDoc ? "Vinculando..." : "Vincular documento"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
       </div>
 

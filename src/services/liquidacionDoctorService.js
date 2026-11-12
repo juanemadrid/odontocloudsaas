@@ -855,6 +855,7 @@ export const crearLiquidacionGenerada = async (tenantId, liquidacionData, userPr
         inquilino: tenantId,
         profesionalId: liquidacionData.doctor.id,
         profesionalNombre: liquidacionData.doctor.nombre,
+        profesionalCedula: liquidacionData.doctor?.cedula || liquidacionData.doctor?.documento || liquidacionData.doctor?.identificacion || "",
         fechaInicio: liquidacionData.dateRange.desde,
         fechaFin: liquidacionData.dateRange.hasta,
         totalRecaudado: liquidacionData.totalRecaudado,
@@ -1302,6 +1303,14 @@ export const pagarLiquidacion = async (tenantId, liquidacion, pagoOptions = {}, 
 
     // 1. Crear registro de pago a proveedor (Médico)
     const doctorName = liquidacion.profesionalNombre || "Doctor";
+    let doctorDoc = liquidacion.profesionalCedula || liquidacion.profesionalDocumento || liquidacion.cedula || liquidacion.documento || "";
+    if (!doctorDoc && liquidacion.profesionalId) {
+        try {
+            const { data: prof } = await supabase.from("profiles").select("cedula, documento, identificacion, numero_documento").eq("id", liquidacion.profesionalId).maybeSingle();
+            doctorDoc = prof?.cedula || prof?.documento || prof?.identificacion || prof?.numero_documento || "";
+        } catch (e) {}
+    }
+
     const pagoRecord = {
         id: pagoId,
         tenant_id: tenantId,
@@ -1310,6 +1319,11 @@ export const pagarLiquidacion = async (tenantId, liquidacion, pagoOptions = {}, 
         profesional: doctorName,
         tercero: doctorName,
         proveedor: doctorName,
+        terceroId: liquidacion.profesionalId,
+        documento: doctorDoc,
+        documentoTercero: doctorDoc,
+        terceroDoc: doctorDoc,
+        nit: doctorDoc,
         bancoCaja: pagoOptions.bancoCaja || "CAJA PRINCIPAL",
         medioPago: pagoOptions.medioPago || "Transferencia",
         cajaId: pagoOptions.cajaId || null,

@@ -1,16 +1,16 @@
 /**
  * ¿Dos registros (factura de compra, documento soporte, egreso…) son del mismo tercero?
  * Compara, en este orden: el id del tercero, el documento (NIT/cédula, sin el dígito de verificación)
- * y el nombre o razón social normalizado. Misma lógica que usa "Añadir factura" en Egresos.
+ * y el nombre o razón social normalizado con tolerancia fonética (S/Z, B/V, etc.).
  */
 const str = (v) => (v === null || v === undefined ? "" : String(v).trim());
 
 export function terceroNombre(r) {
   if (!r) return "";
-  for (const k of ["proveedor", "tercero", "proveedorNombre", "terceroNombre", "nombre", "paciente", "pacienteNombre"]) {
+  for (const k of ["proveedor", "tercero", "proveedorNombre", "terceroNombre", "nombre", "paciente", "pacienteNombre", "profesional", "profesionalNombre", "doctor", "doctorNombre"]) {
     if (typeof r[k] === "string" && r[k].trim()) return r[k].trim();
   }
-  for (const k of ["tercero", "proveedor", "paciente", "terceroObj"]) {
+  for (const k of ["tercero", "proveedor", "paciente", "terceroObj", "profesionalObj", "doctorObj"]) {
     const o = r[k];
     if (o && typeof o === "object") {
       const n = o.nombre || o.razonSocial || o.razon_social || o.nombre_completo || o.nombreCompleto || o.nombres;
@@ -22,13 +22,20 @@ export function terceroNombre(r) {
 
 export function terceroDocumento(r) {
   if (!r) return "";
-  for (const k of ["documentoTercero", "terceroDoc", "proveedorDoc", "nit", "nroDocumento", "documento", "documentoPaciente"]) {
-    if (typeof r[k] === "string" || typeof r[k] === "number") { const v = str(r[k]); if (v) return v; }
+  for (const k of [
+    "documentoTercero", "terceroDoc", "proveedorDoc", "nit", "nroDocumento",
+    "documento", "documentoPaciente", "cedula", "identificacion",
+    "documentoProfesional", "docProfesional"
+  ]) {
+    if (typeof r[k] === "string" || typeof r[k] === "number") {
+      const v = str(r[k]);
+      if (v) return v;
+    }
   }
-  for (const k of ["terceroObj", "tercero", "proveedor"]) {
+  for (const k of ["terceroObj", "tercero", "proveedor", "profesionalObj", "doctorObj"]) {
     const o = r[k];
     if (o && typeof o === "object") {
-      const d = o.documento || o.numero_documento || o.nroDocumento || o.nit || o.identificacion;
+      const d = o.documento || o.numero_documento || o.nroDocumento || o.nit || o.identificacion || o.cedula;
       if (d) return str(d);
     }
   }
@@ -37,16 +44,41 @@ export function terceroDocumento(r) {
 
 export function terceroId(r) {
   if (!r) return "";
-  return str(r.terceroId || r.tercero_id || r.proveedorId || r.proveedor_id || r.pacienteId || r.paciente_id
-    || (r.terceroObj && r.terceroObj.id) || (r.tercero && typeof r.tercero === "object" && r.tercero.id)
-    || (r.proveedor && typeof r.proveedor === "object" && r.proveedor.id));
+  const direct = r.terceroId || r.tercero_id || r.proveedorId || r.proveedor_id
+    || r.pacienteId || r.paciente_id || r.profesionalId || r.profesional_id
+    || r.doctorId || r.doctor_id;
+  if (direct) return str(direct);
+
+  if (r.terceroObj && typeof r.terceroObj === "object" && r.terceroObj.id) return str(r.terceroObj.id);
+  if (r.tercero && typeof r.tercero === "object" && r.tercero.id) return str(r.tercero.id);
+  if (r.proveedor && typeof r.proveedor === "object" && r.proveedor.id) return str(r.proveedor.id);
+  return "";
 }
 
-const normalizar = (v) => str(v).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+export const normalizar = (v) => str(v).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
   .replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
-const sinSociedad = (v) => normalizar(v)
+
+// Normalización fonética para nombres en español (seseo z/s/c suave, v/b, h muda)
+export const normalizarFonetica = (v) => {
+  let s = normalizar(v);
+  if (!s) return "";
+  return s
+    .replace(/z/g, "s")
+    .replace(/c(?=[ei])/g, "s")
+    .replace(/v/g, "b")
+    .replace(/h/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
+export const sinSociedad = (v) => normalizar(v)
   .replace(/\b(s ?a ?s|s ?a|ltda|limitada|e ?u|eps|ips|sociedad|cia|y cia|s en c|e s p)\b/g, " ")
   .replace(/\s+/g, " ").trim();
+
+export const sinSociedadFonetica = (v) => normalizarFonetica(v)
+  .replace(/\b(s ?a ?s|s ?a|ltda|limitada|e ?u|eps|ips|sociedad|cia|y cia|s en c|e s p)\b/g, " ")
+  .replace(/\s+/g, " ").trim();
+
 const digitos = (v) => {
   const s = str(v);
   const base = s.includes("-") ? s.split("-")[0] : s;
@@ -67,6 +99,22 @@ export function mismoTercero(a, b) {
     if (normalizar(nA) === normalizar(nB)) return true;
     const cA = sinSociedad(nA), cB = sinSociedad(nB);
     if (cA.length >= 4 && cB.length >= 4 && cA === cB) return true;
+
+    // Comparación fonética en español (ej: HERNÁNDEZ vs HERNANDES, PÉREZ vs PERES)
+    const fA = sinSociedadFonetica(nA), fB = sinSociedadFonetica(nB);
+    if (fA.length >= 4 && fB.length >= 4 && fA === fB) return true;
+
+    // Comparación por palabras/tokens significativos (permite segundo nombre omitido)
+    const stopWords = new Set(["de", "del", "la", "las", "los", "el", "y", "e"]);
+    const tokensA = fA.split(" ").filter((w) => w.length >= 3 && !stopWords.has(w));
+    const tokensB = fB.split(" ").filter((w) => w.length >= 3 && !stopWords.has(w));
+    if (tokensA.length >= 2 && tokensB.length >= 2) {
+      const setB = new Set(tokensB);
+      const matches = tokensA.filter((w) => setB.has(w));
+      if (matches.length >= 2 && (matches.length === tokensA.length || matches.length === tokensB.length)) {
+        return true;
+      }
+    }
   }
   return false;
 }

@@ -13,4 +13,23 @@ assert.equal(mismoTercero({ proveedor: 'ELIECER JOSE HERNANDES DEL CASTILLO' }, 
 assert.equal(mismoTercero({ documentoTercero: '12' }, { documentoTercero: '12' }), false, 'documentos muy cortos no cuentan');
 assert.equal(terceroNombre({ tercero: { nombre: 'ANA' } }), 'ANA');
 assert.equal(terceroDocumento({ terceroObj: { documento: '123456' } }), '123456');
+
+// Caso real del usuario: egreso generado desde liquidación con 'HERNÁNDEZ' vs documento soporte con 'HERNANDES'
+const egreso1663 = {
+  id: 'pago_liq_1663',
+  consecutivo: '1663',
+  tercero: 'ELIECER JOSE HERNÁNDEZ DEL CASTILLO',
+  proveedor: 'ELIECER JOSE HERNÁNDEZ DEL CASTILLO',
+  concepto: 'Liquidación comisiones',
+  monto: 1248000
+};
+const dcse789 = {
+  id: 'fc_789',
+  nroFactura: 'DCSE789',
+  proveedor: 'ELIECER JOSE HERNANDES DEL CASTILLO',
+  documentoTercero: '1083043573',
+  terceroId: 'tercero_eliecer'
+};
+assert.equal(mismoTercero(egreso1663, dcse789), true, 'egreso 1663 debe coincidir con DCSE789 pese a Z/S y sin documento previo en el egreso');
+
 console.log('OK: filtro de egresos por tercero.');

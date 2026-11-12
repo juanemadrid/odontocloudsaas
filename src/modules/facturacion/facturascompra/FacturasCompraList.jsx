@@ -111,6 +111,7 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
   ]);
   const [egresosList, setEgresosList] = useState([]);
   const [savingEgreso, setSavingEgreso] = useState(false);
+  const [mostrarTodosEgresos, setMostrarTodosEgresos] = useState(false);
 
   // Modal Ver Detalle Factura
   const [viewingFactura, setViewingFactura] = useState(null);
@@ -444,6 +445,7 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
     }
 
     setFacturaToAsociar(targetFactura);
+    setMostrarTodosEgresos(false);
     setEgresosRows([
       {
         rowId: crypto.randomUUID(),
@@ -1721,12 +1723,16 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
         const { porPagarFinal: pendienteFactura, asocs: egresosPrevios } = getFacturaPaymentSummary(facturaToAsociar);
         const totalAAsociar = egresosRows.reduce((sum, r) => sum + (parseFloat(r.valorAPagar) || 0), 0);
         const restanteTrasAsociar = Math.max(0, pendienteFactura - totalAAsociar);
-        // Solo los egresos del mismo tercero (proveedor / beneficiario) de esta factura o documento soporte
-        // que todavía tengan saldo para asociar (los que ya se usaron completos en otra factura no se muestran).
+        // Egresos del mismo tercero con saldo disponible (o todos si el usuario activa el filtro amplio)
         const egresosEnUso = new Set(egresosRows.map(r => String(r.egresoId)).filter(Boolean));
-        const activeEgresos = egresosList.filter(eg => !isEgresoAnulado(eg) && mismoTercero(eg, facturaToAsociar)
+        const egresosTercero = egresosList.filter(eg => !isEgresoAnulado(eg) && mismoTercero(eg, facturaToAsociar)
           && (getEgresoDisponible(eg) > 0 || egresosEnUso.has(String(eg.id))));
-        const sinEgresosDelTercero = activeEgresos.length === 0;
+        const otrosEgresos = egresosList.filter(eg => !isEgresoAnulado(eg) && !mismoTercero(eg, facturaToAsociar)
+          && (getEgresoDisponible(eg) > 0 || egresosEnUso.has(String(eg.id))));
+        const activeEgresos = mostrarTodosEgresos
+          ? [...egresosTercero, ...otrosEgresos]
+          : egresosTercero;
+        const sinEgresosDelTercero = egresosTercero.length === 0;
 
         return (
           <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
@@ -1848,37 +1854,94 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
                               required
                             >
                               <option value="">Seleccione...</option>
-                              {sinEgresosDelTercero && (
+                              {sinEgresosDelTercero && !mostrarTodosEgresos && (
                                 <option value="" disabled>No hay egresos disponibles a nombre de este tercero</option>
                               )}
-                              {activeEgresos.map(eg => {
-                                const egDisp = getEgresoDisponible(eg);
-                                const isSelectedElsewhere = selectedInOtherRows.has(String(eg.id));
-                                const isCurrent = String(row.egresoId) === String(eg.id);
-                                const disabled = !isCurrent && (egDisp <= 0 || isSelectedElsewhere);
-                                return (
-                                  <option key={eg.id} value={eg.id} disabled={disabled}>
-                                    {getExpenseNumber(eg) || "Sin consecutivo"} - {eg.proveedor || eg.tercero || "Egreso"} (Disp: {fmt(egDisp)})
-                                    {egDisp <= 0 ? " [Sin saldo]" : isSelectedElsewhere ? " [Seleccionado]" : ""}
-                                  </option>
-                                );
-                              })}
+                              {mostrarTodosEgresos && otrosEgresos.length > 0 && egresosTercero.length > 0 ? (
+                                <>
+                                  <optgroup label="Egresos de este tercero">
+                                    {egresosTercero.map(eg => {
+                                      const egDisp = getEgresoDisponible(eg);
+                                      const isSelectedElsewhere = selectedInOtherRows.has(String(eg.id));
+                                      const isCurrent = String(row.egresoId) === String(eg.id);
+                                      const disabled = !isCurrent && (egDisp <= 0 || isSelectedElsewhere);
+                                      return (
+                                        <option key={eg.id} value={eg.id} disabled={disabled}>
+                                          #{getExpenseNumber(eg) || "Sin consecutivo"} - {eg.proveedor || eg.tercero || "Egreso"} (Disp: {fmt(egDisp)})
+                                          {egDisp <= 0 ? " [Sin saldo]" : isSelectedElsewhere ? " [Seleccionado]" : ""}
+                                        </option>
+                                      );
+                                    })}
+                                  </optgroup>
+                                  <optgroup label="Otros egresos con saldo disponible">
+                                    {otrosEgresos.map(eg => {
+                                      const egDisp = getEgresoDisponible(eg);
+                                      const isSelectedElsewhere = selectedInOtherRows.has(String(eg.id));
+                                      const isCurrent = String(row.egresoId) === String(eg.id);
+                                      const disabled = !isCurrent && (egDisp <= 0 || isSelectedElsewhere);
+                                      return (
+                                        <option key={eg.id} value={eg.id} disabled={disabled}>
+                                          #{getExpenseNumber(eg) || "Sin consecutivo"} - {eg.proveedor || eg.tercero || "Egreso"} (Disp: {fmt(egDisp)})
+                                          {egDisp <= 0 ? " [Sin saldo]" : isSelectedElsewhere ? " [Seleccionado]" : ""}
+                                        </option>
+                                      );
+                                    })}
+                                  </optgroup>
+                                </>
+                              ) : (
+                                activeEgresos.map(eg => {
+                                  const egDisp = getEgresoDisponible(eg);
+                                  const isSelectedElsewhere = selectedInOtherRows.has(String(eg.id));
+                                  const isCurrent = String(row.egresoId) === String(eg.id);
+                                  const disabled = !isCurrent && (egDisp <= 0 || isSelectedElsewhere);
+                                  return (
+                                    <option key={eg.id} value={eg.id} disabled={disabled}>
+                                      #{getExpenseNumber(eg) || "Sin consecutivo"} - {eg.proveedor || eg.tercero || "Egreso"} (Disp: {fmt(egDisp)})
+                                      {egDisp <= 0 ? " [Sin saldo]" : isSelectedElsewhere ? " [Seleccionado]" : ""}
+                                    </option>
+                                  );
+                                })
+                              )}
                             </select>
-                            {sinEgresosDelTercero && idx === 0 && (
+                            {otrosEgresos.length > 0 && (
+                              <div className="mt-1.5 flex items-center justify-between">
+                                <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-500 hover:text-slate-700 cursor-pointer select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={mostrarTodosEgresos}
+                                    onChange={(e) => setMostrarTodosEgresos(e.target.checked)}
+                                    className="rounded text-blue-600 focus:ring-0 cursor-pointer"
+                                  />
+                                  Mostrar todos los egresos con saldo disponible ({otrosEgresos.length + egresosTercero.length})
+                                </label>
+                              </div>
+                            )}
+                            {sinEgresosDelTercero && !mostrarTodosEgresos && idx === 0 && (
                               <div className="mt-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 flex flex-col gap-2.5">
                                 <div className="text-[11px] leading-snug">
                                   <p className="font-bold">No hay egresos disponibles a nombre de este tercero.</p>
                                   <p className="text-amber-700">Los que tenía ya están asociados a otras facturas.</p>
                                 </div>
-                                {onCrearEgreso && (
-                                  <button
-                                    type="button"
-                                    onClick={() => { setShowAsociarModal(false); onCrearEgreso(facturaToAsociar); }}
-                                    className="self-start px-3.5 py-2 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded-md text-[11px] font-bold cursor-pointer border-0 whitespace-nowrap"
-                                  >
-                                    + Crear egreso para este documento
-                                  </button>
-                                )}
+                                <div className="flex flex-wrap items-center gap-2">
+                                  {otrosEgresos.length > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setMostrarTodosEgresos(true)}
+                                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-bold cursor-pointer border-0"
+                                    >
+                                      Ver otros egresos disponibles ({otrosEgresos.length})
+                                    </button>
+                                  )}
+                                  {onCrearEgreso && (
+                                    <button
+                                      type="button"
+                                      onClick={() => { setShowAsociarModal(false); onCrearEgreso(facturaToAsociar); }}
+                                      className="px-3 py-1.5 bg-[#8dc63f] hover:bg-[#7cb035] text-white rounded text-[11px] font-bold cursor-pointer border-0"
+                                    >
+                                      + Crear egreso para este documento
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                             )}
                           </div>
