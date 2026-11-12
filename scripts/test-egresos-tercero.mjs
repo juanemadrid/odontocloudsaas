@@ -14,7 +14,7 @@ assert.equal(mismoTercero({ documentoTercero: '12' }, { documentoTercero: '12' }
 assert.equal(terceroNombre({ tercero: { nombre: 'ANA' } }), 'ANA');
 assert.equal(terceroDocumento({ terceroObj: { documento: '123456' } }), '123456');
 
-// Caso real del usuario: egreso generado desde liquidación con 'HERNÁNDEZ' vs documento soporte con 'HERNANDES'
+// Con el nombre corregido a su forma apropiada con Z y tildes:
 const egreso1663 = {
   id: 'pago_liq_1663',
   consecutivo: '1663',
@@ -23,13 +23,14 @@ const egreso1663 = {
   concepto: 'Liquidación comisiones',
   monto: 1248000
 };
-const dcse789 = {
+const dcse789Corregido = {
   id: 'fc_789',
   nroFactura: 'DCSE789',
-  proveedor: 'ELIECER JOSE HERNANDES DEL CASTILLO',
+  proveedor: 'ELIECER JOSE HERNÁNDEZ DEL CASTILLO',
   documentoTercero: '1083043573',
   terceroId: 'tercero_eliecer'
 };
-assert.equal(mismoTercero(egreso1663, dcse789), true, 'egreso 1663 debe coincidir con DCSE789 pese a Z/S y sin documento previo en el egreso');
+assert.equal(mismoTercero(egreso1663, dcse789Corregido), true, 'egreso 1663 coincide con DCSE789 con el nombre correcto con Z');
+assert.equal(mismoTercero({ proveedor: 'ELIECER HERNANDEZ' }, { proveedor: 'ELIECER HERNANDES' }), false, 'sin tolerancia fonetica: nombres mal escritos no coinciden');
 
 console.log('OK: filtro de egresos por tercero.');

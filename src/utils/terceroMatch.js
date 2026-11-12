@@ -1,7 +1,7 @@
 /**
  * ¿Dos registros (factura de compra, documento soporte, egreso…) son del mismo tercero?
  * Compara, en este orden: el id del tercero, el documento (NIT/cédula, sin el dígito de verificación)
- * y el nombre o razón social normalizado con tolerancia fonética (S/Z, B/V, etc.).
+ * y el nombre o razón social normalizado estrictamente (sin tildes ni sufijos societarios).
  */
 const str = (v) => (v === null || v === undefined ? "" : String(v).trim());
 
@@ -58,24 +58,7 @@ export function terceroId(r) {
 export const normalizar = (v) => str(v).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
   .replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
 
-// Normalización fonética para nombres en español (seseo z/s/c suave, v/b, h muda)
-export const normalizarFonetica = (v) => {
-  let s = normalizar(v);
-  if (!s) return "";
-  return s
-    .replace(/z/g, "s")
-    .replace(/c(?=[ei])/g, "s")
-    .replace(/v/g, "b")
-    .replace(/h/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-};
-
 export const sinSociedad = (v) => normalizar(v)
-  .replace(/\b(s ?a ?s|s ?a|ltda|limitada|e ?u|eps|ips|sociedad|cia|y cia|s en c|e s p)\b/g, " ")
-  .replace(/\s+/g, " ").trim();
-
-export const sinSociedadFonetica = (v) => normalizarFonetica(v)
   .replace(/\b(s ?a ?s|s ?a|ltda|limitada|e ?u|eps|ips|sociedad|cia|y cia|s en c|e s p)\b/g, " ")
   .replace(/\s+/g, " ").trim();
 
@@ -99,22 +82,6 @@ export function mismoTercero(a, b) {
     if (normalizar(nA) === normalizar(nB)) return true;
     const cA = sinSociedad(nA), cB = sinSociedad(nB);
     if (cA.length >= 4 && cB.length >= 4 && cA === cB) return true;
-
-    // Comparación fonética en español (ej: HERNÁNDEZ vs HERNANDES, PÉREZ vs PERES)
-    const fA = sinSociedadFonetica(nA), fB = sinSociedadFonetica(nB);
-    if (fA.length >= 4 && fB.length >= 4 && fA === fB) return true;
-
-    // Comparación por palabras/tokens significativos (permite segundo nombre omitido)
-    const stopWords = new Set(["de", "del", "la", "las", "los", "el", "y", "e"]);
-    const tokensA = fA.split(" ").filter((w) => w.length >= 3 && !stopWords.has(w));
-    const tokensB = fB.split(" ").filter((w) => w.length >= 3 && !stopWords.has(w));
-    if (tokensA.length >= 2 && tokensB.length >= 2) {
-      const setB = new Set(tokensB);
-      const matches = tokensA.filter((w) => setB.has(w));
-      if (matches.length >= 2 && (matches.length === tokensA.length || matches.length === tokensB.length)) {
-        return true;
-      }
-    }
   }
   return false;
 }
