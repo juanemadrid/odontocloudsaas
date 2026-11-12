@@ -84,7 +84,7 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(15);
+  const [pageSize, setPageSize] = useState(10);
   const [selectedMovimiento, setSelectedMovimiento] = useState(null);
   const [tenantConfig, setTenantConfig] = useState(null);
   const [trasladosCaja, setTrasladosCaja] = useState(() => Array.isArray(caja?.trasladosCierre) ? caja.trasladosCierre : []);
