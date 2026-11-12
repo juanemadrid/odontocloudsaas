@@ -170,13 +170,54 @@ export function buildExpensePrint({ pago = {}, fallbackFactura = null, beneficia
     itemPayments = [{ desc, monto: montoTotal, precioUnitario: montoTotal, cantidad: 1 }];
   }
 
-  let obs = cleanExpenseObservation(pago.observaciones).replace(/factura de compra\s*\/\s*documento soporte:\s*/gi, "").trim();
-  if (/^egreso caja menor:\s*/i.test(obs)) {
-    const content = obs.replace(/^egreso caja menor:\s*/i, "").trim().toLowerCase();
-    if (!content || itemPayments.some((it) => it.desc.toLowerCase().includes(content))) obs = "";
+  // Limpiar observaciones y referencias asociadas
+  let rawObs = cleanExpenseObservation(pago.observaciones)
+    .replace(/factura de compra\s*\/\s*documento soporte:\s*/gi, "")
+    .trim();
+
+  // Si la observación es un texto genérico de caja menor o repite el concepto, limpiarlo
+  if (/^egreso caja menor:\s*/i.test(rawObs)) {
+    const content = rawObs.replace(/^egreso caja menor:\s*/i, "").trim().toLowerCase();
+    if (!content || itemPayments.some((it) => it.desc.toLowerCase().includes(content))) rawObs = "";
   }
-  const refs = [...new Set(facturaRefs)].join(", ");
-  if (refs) obs = !obs ? refs : (obs.includes(refs) ? obs : `${refs} — ${obs}`);
+
+  // Si la observación repite "Pago a Proveedor: ...", limpiarla para evitar redundancia con los datos del tercero y concepto
+  if (/^pago a proveedor:\s*/i.test(rawObs)) {
+    rawObs = "";
+  }
+
+  const normClean = (s) => String(s || "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+  const allRefs = [...new Set([...facturaRefs, numDocFac].filter(Boolean))];
+  const refsText = allRefs.join(", ");
+
+  // Deduplicar segmentos repetidos en la observación (ej: "FE - 21255 — FE - 21255")
+  let obsSegments = rawObs ? rawObs.split(/\s*[—–]\s*/) : [];
+  let uniqueSegments = [];
+  let seenNorm = new Set();
+
+  for (const seg of obsSegments) {
+    const trimmed = seg.trim();
+    if (!trimmed) continue;
+    const n = normClean(trimmed);
+    if (!seenNorm.has(n)) {
+      seenNorm.add(n);
+      uniqueSegments.push(trimmed);
+    }
+  }
+
+  // Si hay referencias a facturas asociadas, verificar si ya están en uniqueSegments antes de agregarlas
+  if (allRefs.length > 0) {
+    const hasRefAlready = uniqueSegments.some((seg) => {
+      const segN = normClean(seg);
+      return allRefs.some((r) => segN.includes(normClean(r)) || normClean(r).includes(segN));
+    });
+
+    if (!hasRefAlready) {
+      uniqueSegments.unshift(refsText);
+    }
+  }
+
+  let obs = uniqueSegments.join(" — ").trim();
   if (!obs && numDocFac) obs = `Pago asociado a documento ${numDocFac}`;
 
   const isAnulado = pago.anulado || text(pago.estado).toLowerCase() === "anulado";

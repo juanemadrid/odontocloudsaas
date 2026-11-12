@@ -1025,7 +1025,10 @@ export default function PagosForm({ onCancel, onSuccess, initialFacturaId = null
                     )].join(", ");
                     if (facturasNums) {
                         if (!obsStr) return facturasNums;
-                        if (!obsStr.includes(facturasNums)) return `${facturasNums} — ${obsStr}`;
+                        const norm = (s) => String(s || "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+                        if (!norm(obsStr).includes(norm(facturasNums)) && !norm(facturasNums).includes(norm(obsStr))) {
+                            return `${facturasNums} — ${obsStr}`;
+                        }
                     }
                     return obsStr;
                 })(),

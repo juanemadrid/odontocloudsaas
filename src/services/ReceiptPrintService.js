@@ -202,12 +202,12 @@ export const ReceiptPrintService = {
             // Resolve values
             const rawLogoUrl = dbLogoUrl || clinic?.logo || clinic?.logoUrl || "";
             const logoUrl = rawLogoUrl;
-            const clinicName = dbClinicName || clinic?.nombreComercial || clinic?.nombre || "Clínica Dental";
-            const clinicNit = dbClinicNit || clinic?.nit || "—";
-            const clinicAddress = dbClinicAddress || clinic?.direccion || "—";
-            const clinicPhone = dbClinicPhone || clinic?.telefono || "—";
-            const clinicEmail = dbClinicEmail || clinic?.email || "";
-            const clinicCity = dbClinicCity || clinic?.ciudad || clinic?.city || userProfile?.tenantCiudad || "";
+            const clinicName = dbClinicName || clinic?.nombreComercial || clinic?.nombre || userProfile?.tenant?.nombre || userProfile?.tenantNombre || "Clínica Dental";
+            const clinicNit = dbClinicNit || clinic?.nit || userProfile?.tenant?.nit || userProfile?.tenantNit || "—";
+            const clinicAddress = dbClinicAddress || clinic?.direccion || clinic?.address || userProfile?.tenant?.direccion || userProfile?.tenantDireccion || userProfile?.direccion || "—";
+            const clinicPhone = dbClinicPhone || clinic?.telefono || clinic?.phone || userProfile?.tenant?.telefono || userProfile?.tenantTelefono || userProfile?.telefono || "—";
+            const clinicEmail = dbClinicEmail || clinic?.email || userProfile?.tenant?.email || userProfile?.tenantEmail || userProfile?.email || "";
+            const clinicCity = dbClinicCity || clinic?.ciudad || clinic?.city || userProfile?.tenant?.ciudad || userProfile?.tenantCiudad || "";
 
             const patientName = patient?.nombreCompleto || `${patient?.nombres || patient?.nombre || ''} ${patient?.apellidos || patient?.apellido || ''}`.trim() || patient?.displayName || pago?.pacienteNombre || pago?.patientNombre || pago?.tercero || pago?.proveedor || "Paciente / Tercero";
             const patientDoc = patient?.documento || patient?.nroDocumento || patient?.numero_documento || patient?.nro_documento || patient?.identificacion || patient?.cedula || patient?.docNumber || pago?.pacienteDocumento || pago?.documento || pago?.patientDoc || pago?.documentoTercero || pago?.nit || "—";

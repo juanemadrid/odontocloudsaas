@@ -692,35 +692,52 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
       nit: clinicNit,
       direccion: clinicAddress,
       telefono: clinicPhone,
-      email: clinicEmail,
+      email: clinicEmail || userProfile?.tenantEmail || userProfile?.tenant?.email || "",
     };
 
     // Caso Egreso: Utilizar exactamente la misma lógica de Facturación > Egresos (prepareExpensePrint)
     // para resolver datos completos del tercero (NIT, celular, dirección) y consecutivo numérico sin "EGR-".
     if (mov.tipo === "egreso") {
       const inq = userProfile?.inquilino || caja?.inquilino || "";
-      const basePago = mov.beneficiarioObj || {};
+      let basePago = mov.beneficiarioObj || {};
+
+      // Si no tenemos el registro completo de pagos_proveedor en mov.beneficiarioObj, buscarlo
+      if (!basePago.id && inq) {
+        const refParsed = mov.referencia || "";
+        const paymentId = getReferenceValue(refParsed, ["PAGO", "PAGO_ID"]);
+        const egresoNum = mov.egresoNumero || getExpenseNumber(mov);
+        if (paymentId || egresoNum) {
+          try {
+            let q = supabase.from("pagos_proveedor").select("*").eq("tenant_id", inq);
+            if (paymentId) q = q.eq("id", paymentId.split(/\s+/)[0]);
+            else if (egresoNum) q = q.or(`numero.eq.${egresoNum},consecutivo.eq.${egresoNum}`);
+            const { data: dbPago } = await q.maybeSingle();
+            if (dbPago) basePago = dbPago;
+          } catch (_) {}
+        }
+      }
+
       const egresoNum = mov.egresoNumero || getExpenseNumber(mov) || basePago.numero || basePago.consecutivo || "";
       const cleanEgresoNum = String(egresoNum).replace(/^EGR-?/i, "").replace(/^Egreso\s*#?\s*/i, "").trim();
 
       const pagoObj = {
         ...basePago,
-        ...mov,
         id: basePago.id || mov.id,
         numero: cleanEgresoNum,
         consecutivo: cleanEgresoNum,
         nroConsecutivo: cleanEgresoNum,
-        tercero: mov.pacienteNombre || mov.tercero || basePago.tercero || basePago.proveedor,
-        proveedor: basePago.proveedor || mov.tercero || mov.pacienteNombre,
-        documentoTercero: mov.terceroDocumento || basePago.documentoTercero || basePago.documento_tercero || basePago.documento || basePago.nit,
-        tipoDocumentoTercero: mov.terceroTipoDoc || basePago.tipoDocumentoTercero || basePago.tipoDocumento,
-        telefono: mov.terceroCelular || basePago.telefono || basePago.celular,
-        monto: mov.monto || basePago.monto || basePago.total,
-        total: mov.monto || basePago.total || basePago.monto,
-        concepto: mov.concepto || basePago.concepto,
-        medioPago: mov.metodoPago || basePago.medioPago || "Efectivo",
-        fecha: mov.fecha || basePago.fecha,
-        observaciones: mov.descripcion || mov.concepto || basePago.observaciones || basePago.notas,
+        tercero: basePago.tercero || basePago.proveedor || mov.pacienteNombre || mov.tercero,
+        proveedor: basePago.proveedor || basePago.tercero || mov.tercero || mov.pacienteNombre,
+        documentoTercero: basePago.documentoTercero || basePago.documento_tercero || basePago.documento || basePago.nit || mov.terceroDocumento,
+        tipoDocumentoTercero: basePago.tipoDocumentoTercero || basePago.tipoDocumento || mov.terceroTipoDoc,
+        telefono: basePago.telefono || basePago.celular || mov.terceroCelular,
+        monto: basePago.monto || basePago.total || mov.monto,
+        total: basePago.total || basePago.monto || mov.monto,
+        concepto: basePago.concepto || mov.concepto,
+        items: Array.isArray(basePago.items) && basePago.items.length > 0 ? basePago.items : undefined,
+        medioPago: basePago.medioPago || mov.metodoPago || "Efectivo",
+        fecha: basePago.fecha || mov.fecha,
+        observaciones: basePago.observaciones || basePago.notas || mov.descripcion || "",
         registradoPor: nombreElaborador,
       };
 
