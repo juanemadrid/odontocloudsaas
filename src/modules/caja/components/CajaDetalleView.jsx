@@ -6,7 +6,7 @@
 // ============================================================
 import React, { useState, useEffect } from "react";
 import supabase from "../../../lib/supabaseClient";
-import { FiSearch, FiEye, FiArrowLeft, FiFileText, FiPrinter, FiX } from "react-icons/fi";
+import { FiSearch, FiEye, FiArrowLeft, FiFileText, FiPrinter, FiX, FiChevronLeft, FiChevronRight, FiChevronsLeft, FiChevronsRight } from "react-icons/fi";
 import { ReceiptPrintService } from "../../../services/ReceiptPrintService";
 import { loadAllTransfers, loadCajaTransferContext, cajaTransferMovements } from "../../../services/bankTransferService";
 import { getConfigSection } from "../../../services/configPersistenceService";
@@ -83,9 +83,16 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
   const [movimientos, setMovimientos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
   const [selectedMovimiento, setSelectedMovimiento] = useState(null);
   const [tenantConfig, setTenantConfig] = useState(null);
   const [trasladosCaja, setTrasladosCaja] = useState(() => Array.isArray(caja?.trasladosCierre) ? caja.trasladosCierre : []);
+
+  // Resetear a la primera página al cambiar búsqueda o tamaño de página
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, pageSize]);
 
   // Traslados a bancos hechos al cerrar esta caja (registro final del cierre).
   useEffect(() => {
@@ -640,6 +647,29 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
     );
   });
 
+  // Paginación de movimientos
+  const totalPages = Math.max(1, Math.ceil(movsFiltrados.length / pageSize));
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+  const startIndex = (safeCurrentPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, movsFiltrados.length);
+  const paginatedMovimientos = movsFiltrados.slice(startIndex, endIndex);
+
+  const getPageNumbers = () => {
+    const pages = [];
+    const maxVisible = 5;
+    if (totalPages <= maxVisible) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+      let start = Math.max(1, safeCurrentPage - 2);
+      let end = Math.min(totalPages, start + maxVisible - 1);
+      if (end - start < maxVisible - 1) {
+        start = Math.max(1, end - maxVisible + 1);
+      }
+      for (let i = start; i <= end; i++) pages.push(i);
+    }
+    return pages;
+  };
+
   // Generación oficial del PDF mediante ReceiptPrintService (Plantilla Oficial OdontoCloud)
   const handlePrintMovimiento = async (m) => {
     const mov = m || selectedMovimiento;
@@ -902,7 +932,7 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {movsFiltrados.map((m) => {
+                {paginatedMovimientos.map((m) => {
                   const esAnulado = !isEffectiveMovement(m);
                   const esEgreso = m.tipo === "egreso";
                   const valorFormateado = esEgreso ? `-${fmt(m.monto || 0)}` : fmt(m.monto || 0);
@@ -955,6 +985,91 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
             </table>
           )}
         </div>
+
+        {/* Paginación de Movimientos */}
+        {!loading && movsFiltrados.length > 0 && (
+          <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4 text-[12px] text-slate-500">
+            <div className="flex items-center gap-4 flex-wrap">
+              <span>
+                Mostrando <strong className="font-semibold text-slate-700">{startIndex + 1}</strong> a <strong className="font-semibold text-slate-700">{endIndex}</strong> de <strong className="font-semibold text-slate-700">{movsFiltrados.length}</strong> movimientos
+              </span>
+              <div className="flex items-center gap-1.5">
+                <span>Filas:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="h-7 px-2 border border-slate-200 rounded bg-white text-slate-700 text-[11px] font-medium outline-none focus:border-blue-400 cursor-pointer shadow-xs"
+                >
+                  <option value={10}>10</option>
+                  <option value={15}>15</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </div>
+            </div>
+
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(1)}
+                  disabled={safeCurrentPage === 1}
+                  title="Primera página"
+                  className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer shadow-xs"
+                >
+                  <FiChevronsLeft size={13} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={safeCurrentPage === 1}
+                  title="Página anterior"
+                  className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer shadow-xs"
+                >
+                  <FiChevronLeft size={13} />
+                </button>
+
+                {getPageNumbers().map(pageNum => (
+                  <button
+                    key={pageNum}
+                    type="button"
+                    onClick={() => setCurrentPage(pageNum)}
+                    className={`w-7 h-7 flex items-center justify-center rounded text-[11px] font-bold transition-all cursor-pointer shadow-xs ${
+                      pageNum === safeCurrentPage
+                        ? "bg-blue-600 text-white border border-blue-600 shadow-sm"
+                        : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={safeCurrentPage === totalPages}
+                  title="Página siguiente"
+                  className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer shadow-xs"
+                >
+                  <FiChevronRight size={13} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={safeCurrentPage === totalPages}
+                  title="Última página"
+                  className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all cursor-pointer shadow-xs"
+                >
+                  <FiChevronsRight size={13} />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Modal Vista Previa del Comprobante Oficial */}
