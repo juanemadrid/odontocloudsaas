@@ -937,13 +937,28 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
                   const esEgreso = m.tipo === "egreso";
                   const valorFormateado = esEgreso ? `-${fmt(m.monto || 0)}` : fmt(m.monto || 0);
                   const tercero = m.pacienteNombre || m.tercero || m.usuarioNombre || "—";
-                  const conceptoLimpio = esEgreso ? getMovementConcept(m) : String(m.concepto || "").replace(/^\[(?:EGR|RC)-\d+\]\s*/i, "").trim();
-                  const docText = esEgreso
-                    ? [`Egreso${m.egresoNumero ? ` #${m.egresoNumero}` : ""}`, conceptoLimpio].filter(Boolean).join(" · ")
-                    : (m.concepto || "Recibo de caja");
-                  const conceptoVisible = esEgreso && /^\[ANULACION RC\]/i.test(String(m.concepto || ""))
-                    ? conceptoLimpio
-                    : docText;
+                  // Solo mostrar el número de documento en esta columna
+                  let docVisible = "";
+                  if (m.esTraslado) {
+                    docVisible = m.referencia || m.concepto || "Traslado";
+                  } else if (esEgreso) {
+                    const egrNum = m.egresoNumero || getExpenseNumber(m) || (m.nroConsecutivo ? String(m.nroConsecutivo).replace(/^EGR-?/i, "") : "");
+                    if (egrNum) {
+                      docVisible = `Egreso #${egrNum}`;
+                    } else {
+                      const matchTag = String(m.concepto || "").match(/\[EGR-\d+\]/i);
+                      docVisible = matchTag ? matchTag[0] : "Egreso";
+                    }
+                  } else {
+                    // Ingreso / Recibo de caja
+                    const matchTag = String(m.concepto || "").match(/\[RC-\d+\]/i);
+                    if (matchTag) {
+                      docVisible = matchTag[0];
+                    } else {
+                      const rcNum = getReceiptNumber(m) || (m.nroConsecutivo ? String(m.nroConsecutivo).replace(/^RC-?/i, "") : "");
+                      docVisible = rcNum ? `[RC-${rcNum}]` : (m.concepto || "Recibo de caja");
+                    }
+                  }
 
                   return (
                     <tr key={m.id} className={`transition-colors ${esAnulado ? "bg-rose-50/40 hover:bg-rose-50/70" : "hover:bg-slate-50"}`}>
@@ -951,7 +966,9 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
                       <td className={`px-3 py-3 font-medium ${esAnulado ? "text-slate-400" : "text-slate-800"}`}>{tercero}</td>
                       <td className="px-3 py-3 text-slate-600">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className={esAnulado ? "text-slate-400" : ""}>{conceptoVisible}</span>
+                          <span className={esAnulado ? "text-slate-400" : "font-semibold text-slate-700"} title={m.concepto || ""}>
+                            {docVisible}
+                          </span>
                           {esAnulado && (
                             <span className="inline-block px-1.5 py-0.5 bg-rose-100 text-rose-700 font-bold text-[9px] rounded uppercase tracking-wider">
                               ANULADO
