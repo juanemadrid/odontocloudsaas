@@ -248,6 +248,9 @@ export const ReceiptPrintService = {
             if (rawConsecutive.startsWith("No.")) {
                 rawConsecutive = rawConsecutive.replace(/^No\.\s*/i, "");
             }
+            if (isEgreso && rawConsecutive) {
+                rawConsecutive = String(rawConsecutive).replace(/^EGR-?\s*/i, "").replace(/^Egreso\s*#?\s*/i, "").trim();
+            }
             const receiptNumber = rawConsecutive ? rawConsecutive : "S/N";
 
             let formattedDate = "";

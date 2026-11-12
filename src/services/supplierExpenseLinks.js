@@ -1,7 +1,7 @@
 // Internal IDs identify records; they never supply a financial document number.
 export const getExpenseNumber = payment => String(
   payment?.consecutivo || payment?.numero || payment?.nroConsecutivo || payment?.nroPago || payment?.nro_consecutivo || ''
-).trim();
+).trim().replace(/^EGR-?/i, "").replace(/^Egreso\s*#?\s*/i, "").trim();
 
 const text = value => value == null ? '' : String(value).trim();
 const normalized = value => text(value).replace(/[^a-zA-Z0-9]/g, '').toLowerCase();

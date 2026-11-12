@@ -27,42 +27,90 @@ export const cleanExpenseObservation = (value) =>
 const beneficiaryName = (pago, fallbackFactura) =>
   text(pago?.tercero || pago?.proveedor || pago?.profesional || fallbackFactura?.proveedor || fallbackFactura?.tercero);
 
-const beneficiaryFromRecord = (record = {}) => ({
-  nombre: text(record.nombre || record.razonSocial || record.razon_social || record.proveedor || record.tercero
-    || [record.nombres, record.apellidos].filter(Boolean).join(" ")),
-  documento: text(record.documentoTercero || record.nroDocumento || record.nro_documento || record.numero_documento
-    || record.documento || record.nit || record.cedula),
-  tipoDocumento: text(record.tipoDocumento || record.tipo_documento || record.tipoDocumentoTercero),
-  telefono: text(record.telefono || record.celular || record.movil || record.telefonoTercero),
-  direccion: text(record.direccion || record.direccionProveedor),
-  ciudad: text(record.ciudad || record.ciudadProveedor || record.municipio),
-});
+const beneficiaryFromRecord = (record = {}) => {
+  const docNum = text(record.documentoTercero || record.documento_tercero || record.nroDocumento || record.nro_documento || record.numero_documento
+    || record.documento || record.nit || record.cedula || record.identificacion);
+  const dv = text(record.dv);
+  const fullDoc = (dv && !docNum.includes("-")) ? `${docNum}-${dv}` : docNum;
+
+  const rawType = text(record.tipoDocumento || record.tipo_documento || record.tipoDocumentoTercero || record.tipoDoc);
+  const name = text(record.razonSocial || record.razon_social || record.nombreCompleto || record.full_name
+    || record.nombre || record.proveedor || record.tercero
+    || [record.nombres, record.apellidos].filter(Boolean).join(" "));
+
+  const cleanNums = docNum.replace(/-\d+$/, "").replace(/\D/g, "");
+  const isCompany = /s\.?a\.?s\.?|ltda\.?|s\.?a\.?/i.test(name) || cleanNums.length >= 9 || dv;
+  const tipoDoc = rawType ? rawType.toUpperCase() : (isCompany ? "NIT" : "");
+
+  return {
+    nombre: name,
+    documento: fullDoc,
+    tipoDocumento: tipoDoc,
+    telefono: text(record.telefono || record.celular || record.movil || record.telefonoTercero || record.phone),
+    direccion: text(record.direccion || record.direccionProveedor || record.lugarResidencia),
+    ciudad: text(record.ciudad || record.ciudadProveedor || record.municipio || record.ciudadDomicilio),
+  };
+};
 
 // Busca el beneficiario por documento o, si no hay, por nombre exacto (sin tildes/mayúsculas).
 // Si el nombre corresponde a personas con documentos distintos, no adivina.
 export function matchBeneficiary(pago, fallbackFactura, candidates = []) {
   const f = fallbackFactura || {};
+  const ownDoc = text(pago?.documentoTercero || pago?.documento_tercero || pago?.nit || pago?.cedula || pago?.documento || f.documentoTercero || f.nit);
+  const ownName = beneficiaryName(pago, fallbackFactura);
   const own = {
-    nombre: beneficiaryName(pago, fallbackFactura),
-    documento: text(pago?.documentoTercero || pago?.nit || pago?.cedula || f.documentoTercero || f.nit),
-    tipoDocumento: text(pago?.tipoDocumentoTercero || f.tipoDocumentoTercero),
-    telefono: text(pago?.telefono || f.telefono),
+    nombre: ownName,
+    documento: ownDoc,
+    tipoDocumento: text(pago?.tipoDocumentoTercero || pago?.tipoDocumento || f.tipoDocumentoTercero),
+    telefono: text(pago?.telefono || pago?.celular || f.telefono),
     direccion: text(pago?.direccion || f.direccion || f.direccionProveedor),
     ciudad: text(pago?.ciudad || f.ciudad || f.ciudadProveedor),
   };
+
+  const cleanDocDigits = (val) => text(val).replace(/-\d+$/, "").replace(/\D/g, "");
+  const cleanName = (val) => text(val).normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+
   const people = candidates.map((c) => (c && c.__compra ? c : beneficiaryFromRecord(c))).filter((c) => c.nombre || c.documento);
   let matches = [];
-  if (digits(own.documento)) matches = people.filter((c) => digits(c.documento) && digits(c.documento) === digits(own.documento));
-  if (!matches.length && own.nombre) matches = people.filter((c) => sameName(c.nombre) === sameName(own.nombre));
-  const docs = new Set(matches.map((c) => digits(c.documento)).filter(Boolean));
+
+  // 1. Coincidencia por documento (considerando NIT base y dígitos exactos)
+  const ownBaseDoc = cleanDocDigits(own.documento);
+  if (ownBaseDoc) {
+    matches = people.filter((c) => {
+      const cBase = cleanDocDigits(c.documento);
+      return cBase && (cBase === ownBaseDoc || digits(c.documento) === digits(own.documento));
+    });
+  }
+
+  // 2. Coincidencia por nombre normalizado (sin signos de puntuación, mayúsculas ni tildes)
+  if (!matches.length && own.nombre) {
+    const ownCleanName = cleanName(own.nombre);
+    if (ownCleanName) {
+      matches = people.filter((c) => {
+        const cCleanName = cleanName(c.nombre);
+        return cCleanName && (cCleanName === ownCleanName || cCleanName.includes(ownCleanName) || ownCleanName.includes(cCleanName));
+      });
+    }
+  }
+
+  const docs = new Set(matches.map((c) => cleanDocDigits(c.documento)).filter(Boolean));
   const found = docs.size > 1 ? {} : matches.reduce((acc, c) => ({
-    documento: acc.documento || c.documento, tipoDocumento: acc.tipoDocumento || c.tipoDocumento,
-    telefono: acc.telefono || c.telefono, direccion: acc.direccion || c.direccion, ciudad: acc.ciudad || c.ciudad,
+    documento: acc.documento || c.documento,
+    tipoDocumento: acc.tipoDocumento || c.tipoDocumento,
+    telefono: acc.telefono || c.telefono,
+    direccion: acc.direccion || c.direccion,
+    ciudad: acc.ciudad || c.ciudad,
   }), {});
+
+  const finalName = own.nombre || "BENEFICIARIO / TERCERO";
+  const finalDoc = own.documento || found.documento || "";
+  const isCompany = /s\.?a\.?s\.?|ltda\.?|s\.?a\.?/i.test(finalName) || cleanDocDigits(finalDoc).length >= 9 || (finalDoc && finalDoc.includes("-"));
+  const finalTipoDoc = own.tipoDocumento || found.tipoDocumento || (isCompany ? "NIT" : (finalDoc ? "CC" : ""));
+
   return {
-    nombre: own.nombre || "BENEFICIARIO / TERCERO",
-    documento: own.documento || found.documento || "",
-    tipoDocumento: own.tipoDocumento || found.tipoDocumento || "",
+    nombre: finalName,
+    documento: finalDoc,
+    tipoDocumento: finalTipoDoc,
     telefono: own.telefono || found.telefono || "",
     direccion: own.direccion || found.direccion || "",
     ciudad: own.ciudad || found.ciudad || "",
@@ -73,11 +121,18 @@ const isPurchaseItem = (it) => it?.isFactura || it?.facturaId || /^FC[A-Z0-9\-_]
 
 export function buildExpensePrint({ pago = {}, fallbackFactura = null, beneficiary, facturasMap = {}, userProfile = {} }) {
   const who = beneficiary || matchBeneficiary(pago, fallbackFactura, []);
-  const isNit = (who.tipoDocumento || "").toUpperCase() === "NIT" || digits(who.documento).length >= 9;
+  const cleanDoc = text(who.documento);
+  const cleanDocNums = cleanDoc.replace(/-\d+$/, "").replace(/\D/g, "");
+  const isNit = (who.tipoDocumento || "").toUpperCase() === "NIT"
+    || /s\.?a\.?s\.?|ltda\.?|s\.?a\.?/i.test(who.nombre)
+    || cleanDocNums.length >= 9
+    || (cleanDoc && cleanDoc.includes("-"));
+  const finalTipoDoc = who.tipoDocumento || (isNit ? "NIT" : (cleanDoc && cleanDoc !== "—" ? "CC" : ""));
+
   const patientPayload = {
     nombreCompleto: who.nombre,
     documento: who.documento || "—",
-    tipoDocumento: who.tipoDocumento || (isNit ? "NIT" : "CC"),
+    tipoDocumento: finalTipoDoc,
     direccion: who.direccion || "—",
     ciudad: who.ciudad || userProfile?.tenantCiudad || "Sincelejo",
     celular: who.telefono || "—",
@@ -126,6 +181,8 @@ export function buildExpensePrint({ pago = {}, fallbackFactura = null, beneficia
 
   const isAnulado = pago.anulado || text(pago.estado).toLowerCase() === "anulado";
   const motivo = text(pago.motivo_anulacion || pago.motivoAnulacion);
+  const rawCleanNum = String(getExpenseNumber(pago) || pago.numero || pago.consecutivo || pago.nroConsecutivo || "S/N").replace(/^EGR-?/i, "").replace(/^Egreso\s*#?\s*/i, "").trim();
+
   const pagoPayload = {
     ...pago,
     tipo: "egreso",
@@ -134,7 +191,7 @@ export function buildExpensePrint({ pago = {}, fallbackFactura = null, beneficia
     monto: montoTotal,
     total: montoTotal,
     concepto: formatEgresoConcepto(itemPayments[0]?.desc || pago.concepto || "Egreso / Pago a proveedor", pago),
-    nroConsecutivo: getExpenseNumber(pago) || "S/N",
+    nroConsecutivo: rawCleanNum || "S/N",
     medio: pago.medioPago || pago.medio || pago.bancoCaja || fallbackFactura?.medioPago || "Efectivo",
     registradoPor: pago.registradoPor || pago.registrado_por || pago.usuarioCreador || pago.usuario_nombre || pago.usuarioNombre
       || pago.creadoPor || pago.creado_por || pago.created_by || pago.cajero || pago.usuario || userProfile?.nombreCompleto || "Administración",
@@ -146,17 +203,25 @@ export function buildExpensePrint({ pago = {}, fallbackFactura = null, beneficia
 }
 
 async function loadSources(tenantId, client) {
-  const [purchases, config, sqlThirds] = await Promise.all([
-    client.from("facturas_compra").select("*").eq("tenant_id", tenantId).then((r) => r.data || [], () => []),
-    client.from("website_config").select("config").eq("tenant_id", tenantId).maybeSingle().then((r) => r.data?.config || {}, () => ({})),
-    queryOptionalBillingTable("terceros", (t) => t.select("*").eq("tenant_id", tenantId)).then((r) => r?.data || [], () => []),
+  const [purchases, config, directThirds, profiles, rawExpenses] = await Promise.all([
+    client.from("facturas_compra").select("*").eq("tenant_id", tenantId).then((r) => r.data || [], () => []).catch(() => []),
+    client.from("website_config").select("config").eq("tenant_id", tenantId).maybeSingle().then((r) => r.data?.config || {}, () => ({})).catch(() => ({})),
+    client.from("terceros").select("*").eq("tenant_id", tenantId).then((r) => r.data || [], () => []).catch(() => []),
+    client.from("profiles").select("*").eq("tenant_id", tenantId).then((r) => r.data || [], () => []).catch(() => []),
+    client.from("pagos_proveedor").select("*").eq("tenant_id", tenantId).then((r) => r.data || [], () => []).catch(() => []),
   ]);
   const allPurchases = purchases.length ? purchases : (config.facturas_compra || []);
   const facturasMap = {};
   for (const f of allPurchases) {
     for (const key of [f.id, f.nroFactura, f.documentoNumero]) if (key) facturasMap[key] = f;
   }
-  const thirds = [...sqlThirds, ...(config.terceros || []), ...(config.proveedores || [])];
+  const thirds = [
+    ...(Array.isArray(directThirds) ? directThirds : []),
+    ...(Array.isArray(profiles) ? profiles : []),
+    ...(Array.isArray(rawExpenses) ? rawExpenses : []),
+    ...(config.terceros || []),
+    ...(config.proveedores || []),
+  ];
   // De una factura de compra solo se toman los datos del proveedor (no su número de documento).
   const fromPurchases = allPurchases.map((f) => ({ __compra: true,
     nombre: text(f.proveedor || f.tercero), documento: text(f.documentoTercero || f.nitProveedor),
