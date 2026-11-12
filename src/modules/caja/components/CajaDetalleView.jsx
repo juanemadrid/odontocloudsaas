@@ -937,26 +937,26 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
                   const esEgreso = m.tipo === "egreso";
                   const valorFormateado = esEgreso ? `-${fmt(m.monto || 0)}` : fmt(m.monto || 0);
                   const tercero = m.pacienteNombre || m.tercero || m.usuarioNombre || "—";
-                  // Solo mostrar el número de documento en esta columna
+                  // Solo mostrar el número de documento en esta columna (sin llaves ni corchetes)
                   let docVisible = "";
                   if (m.esTraslado) {
-                    docVisible = m.referencia || m.concepto || "Traslado";
+                    docVisible = (m.referencia || m.concepto || "Traslado").replace(/[\[\]]/g, "").trim();
                   } else if (esEgreso) {
                     const egrNum = m.egresoNumero || getExpenseNumber(m) || (m.nroConsecutivo ? String(m.nroConsecutivo).replace(/^EGR-?/i, "") : "");
                     if (egrNum) {
                       docVisible = `Egreso #${egrNum}`;
                     } else {
-                      const matchTag = String(m.concepto || "").match(/\[EGR-\d+\]/i);
-                      docVisible = matchTag ? matchTag[0] : "Egreso";
+                      const matchTag = String(m.concepto || "").match(/\[?EGR-(\d+)\]?/i);
+                      docVisible = matchTag ? `Egreso #${matchTag[1]}` : "Egreso";
                     }
                   } else {
-                    // Ingreso / Recibo de caja
-                    const matchTag = String(m.concepto || "").match(/\[RC-\d+\]/i);
-                    if (matchTag) {
-                      docVisible = matchTag[0];
+                    // Ingreso / Recibo de caja (ej. RC-2124)
+                    const matchTag = String(m.concepto || "").match(/\[?RC-(\d+)\]?/i);
+                    const rcNum = (matchTag && matchTag[1]) || getReceiptNumber(m) || (m.nroConsecutivo ? String(m.nroConsecutivo).replace(/^RC-?/i, "") : "");
+                    if (rcNum) {
+                      docVisible = `RC-${rcNum}`;
                     } else {
-                      const rcNum = getReceiptNumber(m) || (m.nroConsecutivo ? String(m.nroConsecutivo).replace(/^RC-?/i, "") : "");
-                      docVisible = rcNum ? `[RC-${rcNum}]` : (m.concepto || "Recibo de caja");
+                      docVisible = String(m.concepto || "Recibo de caja").replace(/[\[\]]/g, "").trim();
                     }
                   }
 
@@ -1190,7 +1190,7 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
                   </thead>
                   <tbody>
                     <tr>
-                      <td className="p-2 text-slate-800">{selectedMovimiento.concepto || selectedMovimiento.descripcion || "Movimiento de caja"}</td>
+                      <td className="p-2 text-slate-800">{getMovementConcept(selectedMovimiento) || selectedMovimiento.concepto || selectedMovimiento.descripcion || "Movimiento de caja"}</td>
                       <td className="p-2 text-center text-slate-600">1</td>
                       <td className="p-2 text-right font-semibold text-slate-800">{fmt(selectedMovimiento.monto)}</td>
                     </tr>
