@@ -7,14 +7,30 @@ const str = (v) => (v === null || v === undefined ? "" : String(v).trim());
 
 export function terceroNombre(r) {
   if (!r) return "";
+  const ap = String(r.apellidos || r.apellido || "").trim();
   for (const k of ["proveedor", "tercero", "proveedorNombre", "terceroNombre", "nombre", "paciente", "pacienteNombre", "profesional", "profesionalNombre", "doctor", "doctorNombre"]) {
-    if (typeof r[k] === "string" && r[k].trim()) return r[k].trim();
+    if (typeof r[k] === "string" && r[k].trim()) {
+      const nom = r[k].trim();
+      if (ap && !nom.toLowerCase().includes(ap.toLowerCase())) {
+        return `${nom} ${ap}`.trim();
+      }
+      return nom;
+    }
   }
   for (const k of ["tercero", "proveedor", "paciente", "terceroObj", "profesionalObj", "doctorObj"]) {
     const o = r[k];
     if (o && typeof o === "object") {
-      const n = o.nombre || o.razonSocial || o.razon_social || o.nombre_completo || o.nombreCompleto || o.nombres;
-      if (n) return String(n).trim();
+      const oAp = String(o.apellidos || o.apellido || ap || "").trim();
+      const n = (o.apellidos || o.apellido)
+        ? [o.nombre, o.apellidos || o.apellido].filter(Boolean).join(" ").trim()
+        : (o.razonSocial || o.razon_social || o.nombre_completo || o.nombreCompleto || o.nombre || o.nombres);
+      if (n) {
+        const nom = String(n).trim();
+        if (oAp && !nom.toLowerCase().includes(oAp.toLowerCase())) {
+          return `${nom} ${oAp}`.trim();
+        }
+        return nom;
+      }
     }
   }
   return "";

@@ -523,6 +523,12 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                 ? (prefijo ? `${prefijo}-DS-${Date.now().toString().slice(-4)}` : `DS-${Date.now().toString().slice(-4)}`)
                 : (prefijo ? `${prefijo} - ${nroFactura}` : nroFactura);
 
+            const tNom = (selectedTercero?.nombre || terceroSearchQuery || terceroId || "").trim();
+            const tAp = (selectedTercero?.apellidos || selectedTercero?.apellido || "").trim();
+            const tNombreCompleto = (tNom && tAp && !tNom.toLowerCase().includes(tAp.toLowerCase()))
+                ? `${tNom} ${tAp}`.trim()
+                : (selectedTercero?.razonSocial || selectedTercero?.razon_social || selectedTercero?.nombreCompleto || tNom || "Tercero");
+
             const facturaRecord = {
                 id: `fc_${Date.now()}`,
                 tenant_id: inquilino,
@@ -537,9 +543,10 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                 nroFactura: fullDocCode,
                 documentoNumero: fullDocCode,
                 terceroId: selectedTercero?.id || terceroId,
-                tercero: selectedTercero?.nombre || terceroId || terceroSearchQuery,
-                proveedor: selectedTercero?.nombre || terceroId || terceroSearchQuery,
-                documentoTercero: selectedTercero?.documento || selectedTercero?.nroDocumento || "",
+                tercero: tNombreCompleto,
+                proveedor: tNombreCompleto,
+                apellidos: tAp,
+                documentoTercero: selectedTercero?.documento || selectedTercero?.nroDocumento || selectedTercero?.nit || "",
                 tipoTercero: selectedTercero?.tipo || "tercero",
                 direccion: selectedTercero?.direccion || selectedTercero?.direccionDomicilio || "",
                 direccionProveedor: selectedTercero?.direccion || selectedTercero?.direccionDomicilio || "",

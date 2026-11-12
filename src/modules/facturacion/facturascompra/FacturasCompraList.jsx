@@ -111,7 +111,6 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
   ]);
   const [egresosList, setEgresosList] = useState([]);
   const [savingEgreso, setSavingEgreso] = useState(false);
-  const [mostrarTodosEgresos, setMostrarTodosEgresos] = useState(false);
 
   // Modal Ver Detalle Factura
   const [viewingFactura, setViewingFactura] = useState(null);
@@ -203,16 +202,27 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
       let needsSyncSave = false;
       const list = Array.from(fcMap.values()).map(f => {
         if (!f) return f;
-        const fDocNums = String(f.documentoTercero || f.nit || f.cedula || "").replace(/\D/g, "");
+        const fDocNums = String(f.documentoTercero || f.nit || f.cedula || f.documento || f.identificacion || f.proveedorDoc || f.nroDocumento || "").replace(/\D/g, "");
         const tMatch = tercerosList.find(t => {
           if (f.terceroId && String(t.id) === String(f.terceroId)) return true;
           const tDocNums = String(t.documento || t.numero_documento || t.nroDocumento || t.nit || "").replace(/\D/g, "");
-          return fDocNums && tDocNums && fDocNums.length >= 4 && (fDocNums === tDocNums || fDocNums.startsWith(tDocNums) || tDocNums.startsWith(fDocNums));
+          if (fDocNums && tDocNums && fDocNums.length >= 4 && (fDocNums === tDocNums || fDocNums.startsWith(tDocNums) || tDocNums.startsWith(fDocNums))) return true;
+          return mismoTercero(t, f);
         });
 
         if (tMatch) {
-          const tNombre = (tMatch.nombre || tMatch.razonSocial || tMatch.razon_social || tMatch.nombreCompleto || "").trim();
-          if (tNombre && tNombre !== f.proveedor) {
+          const nom = (tMatch.nombre || "").trim();
+          const ap = (tMatch.apellidos || tMatch.apellido || "").trim();
+          let tNombre = "";
+          if (nom && ap && !nom.toLowerCase().includes(ap.toLowerCase())) {
+            tNombre = `${nom} ${ap}`.trim();
+          } else if (ap) {
+            tNombre = `${nom} ${ap}`.trim();
+          } else {
+            tNombre = (tMatch.razonSocial || tMatch.razon_social || tMatch.nombreCompleto || tMatch.nombre_completo || nom || "").trim();
+          }
+
+          if (tNombre && (tNombre !== f.proveedor || !f.apellidos || !f.documentoTercero || !f.terceroId)) {
             needsSyncSave = true;
             return {
               ...f,
@@ -220,7 +230,10 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
               tercero: tNombre,
               proveedorNombre: tNombre,
               terceroNombre: tNombre,
-              terceroId: tMatch.id || f.terceroId
+              apellidos: ap,
+              terceroId: tMatch.id || f.terceroId,
+              documentoTercero: tMatch.documento || tMatch.numero_documento || tMatch.nit || f.documentoTercero,
+              _syncedWithTercero: true
             };
           }
         }
@@ -230,6 +243,20 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
       if (needsSyncSave) {
         try {
           saveConfigSection(inquilino, "facturas_compra", list).catch(() => {});
+          const modified = list.filter(f => f && f._syncedWithTercero);
+          for (const item of modified) {
+            try {
+              supabase.from("facturas_compra").update({
+                proveedor: item.proveedor,
+                tercero: item.tercero,
+                proveedorNombre: item.proveedorNombre,
+                terceroNombre: item.terceroNombre,
+                apellidos: item.apellidos,
+                terceroId: item.terceroId,
+                documentoTercero: item.documentoTercero
+              }).eq("id", item.id).eq("tenant_id", inquilino).then(() => {});
+            } catch (err) {}
+          }
         } catch (e) {}
       }
 
@@ -258,6 +285,44 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
             if (p?.id) map.set(p.id, { ...(map.get(p.id) || {}), ...p });
           });
           pList = Array.from(map.values());
+        }
+
+        if (Array.isArray(tercerosList) && tercerosList.length > 0) {
+          pList = pList.map(p => {
+            if (!p) return p;
+            const pDocNums = String(p.documentoTercero || p.nit || p.cedula || p.documento || "").replace(/\D/g, "");
+            const tMatch = tercerosList.find(t => {
+              if (p.terceroId && String(t.id) === String(p.terceroId)) return true;
+              const tDocNums = String(t.documento || t.numero_documento || t.nroDocumento || t.nit || "").replace(/\D/g, "");
+              if (pDocNums && tDocNums && pDocNums.length >= 4 && (pDocNums === tDocNums || pDocNums.startsWith(tDocNums) || tDocNums.startsWith(pDocNums))) return true;
+              return mismoTercero(t, p);
+            });
+            if (tMatch) {
+              const nom = (tMatch.nombre || "").trim();
+              const ap = (tMatch.apellidos || tMatch.apellido || "").trim();
+              let tNombre = "";
+              if (nom && ap && !nom.toLowerCase().includes(ap.toLowerCase())) {
+                tNombre = `${nom} ${ap}`.trim();
+              } else if (ap) {
+                tNombre = `${nom} ${ap}`.trim();
+              } else {
+                tNombre = (tMatch.razonSocial || tMatch.razon_social || tMatch.nombreCompleto || tMatch.nombre_completo || nom || "").trim();
+              }
+              if (tNombre) {
+                return {
+                  ...p,
+                  proveedor: tNombre,
+                  tercero: tNombre,
+                  proveedorNombre: tNombre,
+                  terceroNombre: tNombre,
+                  apellidos: ap,
+                  terceroId: tMatch.id || p.terceroId,
+                  documentoTercero: tMatch.documento || tMatch.numero_documento || tMatch.nit || p.documentoTercero
+                };
+              }
+            }
+            return p;
+          });
         }
 
         setEgresosList(pList);
@@ -495,7 +560,6 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
     }
 
     setFacturaToAsociar(targetFactura);
-    setMostrarTodosEgresos(false);
     setEgresosRows([
       {
         rowId: crypto.randomUUID(),
@@ -1773,16 +1837,11 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
         const { porPagarFinal: pendienteFactura, asocs: egresosPrevios } = getFacturaPaymentSummary(facturaToAsociar);
         const totalAAsociar = egresosRows.reduce((sum, r) => sum + (parseFloat(r.valorAPagar) || 0), 0);
         const restanteTrasAsociar = Math.max(0, pendienteFactura - totalAAsociar);
-        // Egresos del mismo tercero con saldo disponible (o todos si el usuario activa el filtro amplio)
+        // Solo los egresos del mismo tercero con saldo disponible
         const egresosEnUso = new Set(egresosRows.map(r => String(r.egresoId)).filter(Boolean));
-        const egresosTercero = egresosList.filter(eg => !isEgresoAnulado(eg) && mismoTercero(eg, facturaToAsociar)
+        const activeEgresos = egresosList.filter(eg => !isEgresoAnulado(eg) && mismoTercero(eg, facturaToAsociar)
           && (getEgresoDisponible(eg) > 0 || egresosEnUso.has(String(eg.id))));
-        const otrosEgresos = egresosList.filter(eg => !isEgresoAnulado(eg) && !mismoTercero(eg, facturaToAsociar)
-          && (getEgresoDisponible(eg) > 0 || egresosEnUso.has(String(eg.id))));
-        const activeEgresos = mostrarTodosEgresos
-          ? [...egresosTercero, ...otrosEgresos]
-          : egresosTercero;
-        const sinEgresosDelTercero = egresosTercero.length === 0;
+        const sinEgresosDelTercero = activeEgresos.length === 0;
 
         return (
           <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
@@ -1792,7 +1851,11 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
                 <div>
                   <h3 className="text-sm font-bold text-slate-800">Egreso a asociar</h3>
                   <p className="text-[11px] text-slate-500">
-                    {facturaToAsociar.nroFactura || facturaToAsociar.documentoNumero || facturaToAsociar.id} — {facturaToAsociar.proveedor || facturaToAsociar.tercero || "Proveedor"}
+                    {facturaToAsociar.nroFactura || facturaToAsociar.documentoNumero || facturaToAsociar.id} — {(() => {
+                      const nom = facturaToAsociar.proveedor || facturaToAsociar.tercero || "Proveedor";
+                      const ap = facturaToAsociar.apellidos || facturaToAsociar.apellido || "";
+                      return (ap && !nom.toLowerCase().includes(ap.toLowerCase())) ? `${nom} ${ap}`.trim() : nom;
+                    })()}
                   </p>
                 </div>
                 <button
@@ -1904,85 +1967,30 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
                               required
                             >
                               <option value="">Seleccione...</option>
-                              {sinEgresosDelTercero && !mostrarTodosEgresos && (
+                              {sinEgresosDelTercero && (
                                 <option value="" disabled>No hay egresos disponibles a nombre de este tercero</option>
                               )}
-                              {mostrarTodosEgresos && otrosEgresos.length > 0 && egresosTercero.length > 0 ? (
-                                <>
-                                  <optgroup label="Egresos de este tercero">
-                                    {egresosTercero.map(eg => {
-                                      const egDisp = getEgresoDisponible(eg);
-                                      const isSelectedElsewhere = selectedInOtherRows.has(String(eg.id));
-                                      const isCurrent = String(row.egresoId) === String(eg.id);
-                                      const disabled = !isCurrent && (egDisp <= 0 || isSelectedElsewhere);
-                                      return (
-                                        <option key={eg.id} value={eg.id} disabled={disabled}>
-                                          #{getExpenseNumber(eg) || "Sin consecutivo"} - {eg.proveedor || eg.tercero || "Egreso"} (Disp: {fmt(egDisp)})
-                                          {egDisp <= 0 ? " [Sin saldo]" : isSelectedElsewhere ? " [Seleccionado]" : ""}
-                                        </option>
-                                      );
-                                    })}
-                                  </optgroup>
-                                  <optgroup label="Otros egresos con saldo disponible">
-                                    {otrosEgresos.map(eg => {
-                                      const egDisp = getEgresoDisponible(eg);
-                                      const isSelectedElsewhere = selectedInOtherRows.has(String(eg.id));
-                                      const isCurrent = String(row.egresoId) === String(eg.id);
-                                      const disabled = !isCurrent && (egDisp <= 0 || isSelectedElsewhere);
-                                      return (
-                                        <option key={eg.id} value={eg.id} disabled={disabled}>
-                                          #{getExpenseNumber(eg) || "Sin consecutivo"} - {eg.proveedor || eg.tercero || "Egreso"} (Disp: {fmt(egDisp)})
-                                          {egDisp <= 0 ? " [Sin saldo]" : isSelectedElsewhere ? " [Seleccionado]" : ""}
-                                        </option>
-                                      );
-                                    })}
-                                  </optgroup>
-                                </>
-                              ) : (
-                                activeEgresos.map(eg => {
-                                  const egDisp = getEgresoDisponible(eg);
-                                  const isSelectedElsewhere = selectedInOtherRows.has(String(eg.id));
-                                  const isCurrent = String(row.egresoId) === String(eg.id);
-                                  const disabled = !isCurrent && (egDisp <= 0 || isSelectedElsewhere);
-                                  return (
-                                    <option key={eg.id} value={eg.id} disabled={disabled}>
-                                      #{getExpenseNumber(eg) || "Sin consecutivo"} - {eg.proveedor || eg.tercero || "Egreso"} (Disp: {fmt(egDisp)})
-                                      {egDisp <= 0 ? " [Sin saldo]" : isSelectedElsewhere ? " [Seleccionado]" : ""}
-                                    </option>
-                                  );
-                                })
-                              )}
+                              {activeEgresos.map(eg => {
+                                const egDisp = getEgresoDisponible(eg);
+                                const isSelectedElsewhere = selectedInOtherRows.has(String(eg.id));
+                                const isCurrent = String(row.egresoId) === String(eg.id);
+                                const disabled = !isCurrent && (egDisp <= 0 || isSelectedElsewhere);
+                                return (
+                                  <option key={eg.id} value={eg.id} disabled={disabled}>
+                                    #{getExpenseNumber(eg) || "Sin consecutivo"} - {eg.proveedor || eg.tercero || "Egreso"} (Disp: {fmt(egDisp)})
+                                    {egDisp <= 0 ? " [Sin saldo]" : isSelectedElsewhere ? " [Seleccionado]" : ""}
+                                  </option>
+                                );
+                              })}
                             </select>
-                            {otrosEgresos.length > 0 && (
-                              <div className="mt-1.5 flex items-center justify-between">
-                                <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-500 hover:text-slate-700 cursor-pointer select-none">
-                                  <input
-                                    type="checkbox"
-                                    checked={mostrarTodosEgresos}
-                                    onChange={(e) => setMostrarTodosEgresos(e.target.checked)}
-                                    className="rounded text-blue-600 focus:ring-0 cursor-pointer"
-                                  />
-                                  Mostrar todos los egresos con saldo disponible ({otrosEgresos.length + egresosTercero.length})
-                                </label>
-                              </div>
-                            )}
-                            {sinEgresosDelTercero && !mostrarTodosEgresos && idx === 0 && (
+                            {sinEgresosDelTercero && idx === 0 && (
                               <div className="mt-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 flex flex-col gap-2.5">
                                 <div className="text-[11px] leading-snug">
                                   <p className="font-bold">No hay egresos disponibles a nombre de este tercero.</p>
                                   <p className="text-amber-700">Los que tenía ya están asociados a otras facturas.</p>
                                 </div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                  {otrosEgresos.length > 0 && (
-                                    <button
-                                      type="button"
-                                      onClick={() => setMostrarTodosEgresos(true)}
-                                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-bold cursor-pointer border-0"
-                                    >
-                                      Ver otros egresos disponibles ({otrosEgresos.length})
-                                    </button>
-                                  )}
-                                  {onCrearEgreso && (
+                                {onCrearEgreso && (
+                                  <div className="flex flex-wrap items-center gap-2">
                                     <button
                                       type="button"
                                       onClick={() => { setShowAsociarModal(false); onCrearEgreso(facturaToAsociar); }}
@@ -1990,8 +1998,8 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
                                     >
                                       + Crear egreso para este documento
                                     </button>
-                                  )}
-                                </div>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>

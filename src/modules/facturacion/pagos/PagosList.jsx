@@ -61,7 +61,6 @@ export default function PagosList({ onNew }) {
   const [facturaSeleccionadaId, setFacturaSeleccionadaId] = useState("");
   const [montoAVincular, setMontoAVincular] = useState("");
   const [vinculandoDoc, setVinculandoDoc] = useState(false);
-  const [mostrarTodasFacturas, setMostrarTodasFacturas] = useState(false);
 
   // Estado para el modal de anulación
   const [pagoAAnular, setPagoAAnular] = useState(null);
@@ -136,26 +135,75 @@ export default function PagosList({ onNew }) {
 
         fcList = fcList.map(f => {
           if (!f) return f;
-          const fDocNums = String(f.documentoTercero || f.nit || f.cedula || "").replace(/\D/g, "");
+          const fDocNums = String(f.documentoTercero || f.nit || f.cedula || f.documento || f.identificacion || f.proveedorDoc || f.nroDocumento || "").replace(/\D/g, "");
           const tMatch = tercerosList.find(t => {
             if (f.terceroId && String(t.id) === String(f.terceroId)) return true;
             const tDocNums = String(t.documento || t.numero_documento || t.nroDocumento || t.nit || "").replace(/\D/g, "");
-            return fDocNums && tDocNums && fDocNums.length >= 4 && (fDocNums === tDocNums || fDocNums.startsWith(tDocNums) || tDocNums.startsWith(fDocNums));
+            if (fDocNums && tDocNums && fDocNums.length >= 4 && (fDocNums === tDocNums || fDocNums.startsWith(tDocNums) || tDocNums.startsWith(fDocNums))) return true;
+            return mismoTercero(t, f);
           });
           if (tMatch) {
-            const tNombre = (tMatch.nombre || tMatch.razonSocial || tMatch.razon_social || tMatch.nombreCompleto || "").trim();
-            if (tNombre && tNombre !== f.proveedor) {
+            const nom = (tMatch.nombre || "").trim();
+            const ap = (tMatch.apellidos || tMatch.apellido || "").trim();
+            let tNombre = "";
+            if (nom && ap && !nom.toLowerCase().includes(ap.toLowerCase())) {
+              tNombre = `${nom} ${ap}`.trim();
+            } else if (ap) {
+              tNombre = `${nom} ${ap}`.trim();
+            } else {
+              tNombre = (tMatch.razonSocial || tMatch.razon_social || tMatch.nombreCompleto || tMatch.nombre_completo || nom || "").trim();
+            }
+            if (tNombre) {
               return {
                 ...f,
                 proveedor: tNombre,
                 tercero: tNombre,
                 proveedorNombre: tNombre,
                 terceroNombre: tNombre,
-                terceroId: tMatch.id || f.terceroId
+                apellidos: ap,
+                terceroId: tMatch.id || f.terceroId,
+                documentoTercero: tMatch.documento || tMatch.numero_documento || tMatch.nit || f.documentoTercero
               };
             }
           }
           return f;
+        });
+
+        // Sincronizar egresos con terceros para asegurar id, documento y nombre completo
+        list = list.map(p => {
+          if (!p) return p;
+          const pDocNums = String(p.documentoTercero || p.nit || p.cedula || p.documento || "").replace(/\D/g, "");
+          const tMatch = tercerosList.find(t => {
+            if (p.terceroId && String(t.id) === String(p.terceroId)) return true;
+            const tDocNums = String(t.documento || t.numero_documento || t.nroDocumento || t.nit || "").replace(/\D/g, "");
+            if (pDocNums && tDocNums && pDocNums.length >= 4 && (pDocNums === tDocNums || pDocNums.startsWith(tDocNums) || tDocNums.startsWith(pDocNums))) return true;
+            return mismoTercero(t, p);
+          });
+          if (tMatch) {
+            const nom = (tMatch.nombre || "").trim();
+            const ap = (tMatch.apellidos || tMatch.apellido || "").trim();
+            let tNombre = "";
+            if (nom && ap && !nom.toLowerCase().includes(ap.toLowerCase())) {
+              tNombre = `${nom} ${ap}`.trim();
+            } else if (ap) {
+              tNombre = `${nom} ${ap}`.trim();
+            } else {
+              tNombre = (tMatch.razonSocial || tMatch.razon_social || tMatch.nombreCompleto || tMatch.nombre_completo || nom || "").trim();
+            }
+            if (tNombre) {
+              return {
+                ...p,
+                proveedor: tNombre,
+                tercero: tNombre,
+                proveedorNombre: tNombre,
+                terceroNombre: tNombre,
+                apellidos: ap,
+                terceroId: tMatch.id || p.terceroId,
+                documentoTercero: tMatch.documento || tMatch.numero_documento || tMatch.nit || p.documentoTercero
+              };
+            }
+          }
+          return p;
         });
 
         if (cfgRow?.config?.empresa_datos) {
@@ -972,16 +1020,7 @@ export default function PagosList({ onNew }) {
             return pend > 0 && mismoTercero(pagoAVincular, fc);
           });
 
-          const otrasFacturas = (facturasCompra || []).filter(fc => {
-            const isAnulada = ["anulada", "anulado"].includes(String(fc.estado || "").toLowerCase());
-            if (isAnulada) return false;
-            const pend = Number(fc.saldoPendiente ?? fc.saldo_pendiente ?? fc.totalNeto ?? fc.total ?? 0);
-            return pend > 0 && !mismoTercero(pagoAVincular, fc);
-          });
-
-          const facturasDisponibles = mostrarTodasFacturas
-            ? [...facturasDelTercero, ...otrasFacturas]
-            : facturasDelTercero;
+          const facturasDisponibles = facturasDelTercero;
 
           const targetFc = (facturasCompra || []).find(f => String(f.id) === String(facturaSeleccionadaId));
           const pendFc = targetFc ? Number(targetFc.saldoPendiente ?? targetFc.saldo_pendiente ?? targetFc.totalNeto ?? targetFc.total ?? 0) : 0;
@@ -996,7 +1035,11 @@ export default function PagosList({ onNew }) {
                       Vincular documento de referencia
                     </h3>
                     <p className="text-[11px] text-slate-500">
-                      Egreso #{numEgreso} — {pagoAVincular.proveedor || pagoAVincular.tercero} ({fmt(egresoTotal)})
+                      Egreso #{numEgreso} — {(() => {
+                        const nom = pagoAVincular.proveedor || pagoAVincular.tercero || "Tercero";
+                        const ap = pagoAVincular.apellidos || pagoAVincular.apellido || "";
+                        return (ap && !nom.toLowerCase().includes(ap.toLowerCase())) ? `${nom} ${ap}`.trim() : nom;
+                      })()} ({fmt(egresoTotal)})
                     </p>
                   </div>
                   <button
@@ -1030,63 +1073,20 @@ export default function PagosList({ onNew }) {
                       required
                     >
                       <option value="">Seleccione un documento...</option>
-                      {facturasDelTercero.length === 0 && !mostrarTodasFacturas && (
+                      {facturasDelTercero.length === 0 && (
                         <option value="" disabled>No hay documentos pendientes a nombre de este tercero</option>
                       )}
-                      {mostrarTodasFacturas && otrasFacturas.length > 0 && facturasDelTercero.length > 0 ? (
-                        <>
-                          <optgroup label="Documentos de este tercero">
-                            {facturasDelTercero.map(fc => {
-                              const numDoc = fc.nroFactura || fc.documentoNumero || fc.id;
-                              const pFc = Number(fc.saldoPendiente ?? fc.saldo_pendiente ?? fc.totalNeto ?? fc.total ?? 0);
-                              const isDs = Boolean(fc.docSoporteDian || fc.cuds || String(numDoc).startsWith('DCS'));
-                              return (
-                                <option key={fc.id} value={fc.id}>
-                                  {numDoc} - {fc.proveedor || fc.tercero} ({isDs ? 'Doc. Soporte' : 'Factura'}, Pend: {fmt(pFc)})
-                                </option>
-                              );
-                            })}
-                          </optgroup>
-                          <optgroup label="Otros documentos pendientes">
-                            {otrasFacturas.map(fc => {
-                              const numDoc = fc.nroFactura || fc.documentoNumero || fc.id;
-                              const pFc = Number(fc.saldoPendiente ?? fc.saldo_pendiente ?? fc.totalNeto ?? fc.total ?? 0);
-                              const isDs = Boolean(fc.docSoporteDian || fc.cuds || String(numDoc).startsWith('DCS'));
-                              return (
-                                <option key={fc.id} value={fc.id}>
-                                  {numDoc} - {fc.proveedor || fc.tercero} ({isDs ? 'Doc. Soporte' : 'Factura'}, Pend: {fmt(pFc)})
-                                </option>
-                              );
-                            })}
-                          </optgroup>
-                        </>
-                      ) : (
-                        facturasDisponibles.map(fc => {
-                          const numDoc = fc.nroFactura || fc.documentoNumero || fc.id;
-                          const pFc = Number(fc.saldoPendiente ?? fc.saldo_pendiente ?? fc.totalNeto ?? fc.total ?? 0);
-                          const isDs = Boolean(fc.docSoporteDian || fc.cuds || String(numDoc).startsWith('DCS'));
-                          return (
-                            <option key={fc.id} value={fc.id}>
-                              {numDoc} - {fc.proveedor || fc.tercero} ({isDs ? 'Doc. Soporte' : 'Factura'}, Pend: {fmt(pFc)})
-                            </option>
-                          );
-                        })
-                      )}
+                      {facturasDisponibles.map(fc => {
+                        const numDoc = fc.nroFactura || fc.documentoNumero || fc.id;
+                        const pFc = Number(fc.saldoPendiente ?? fc.saldo_pendiente ?? fc.totalNeto ?? fc.total ?? 0);
+                        const isDs = Boolean(fc.docSoporteDian || fc.cuds || String(numDoc).startsWith('DCS'));
+                        return (
+                          <option key={fc.id} value={fc.id}>
+                            {numDoc} - {fc.proveedor || fc.tercero} ({isDs ? 'Doc. Soporte' : 'Factura'}, Pend: {fmt(pFc)})
+                          </option>
+                        );
+                      })}
                     </select>
-
-                    {otrasFacturas.length > 0 && (
-                      <div className="mt-1.5 flex items-center justify-between">
-                        <label className="inline-flex items-center gap-1.5 text-[11px] text-slate-500 hover:text-slate-700 cursor-pointer select-none">
-                          <input
-                            type="checkbox"
-                            checked={mostrarTodasFacturas}
-                            onChange={(e) => setMostrarTodasFacturas(e.target.checked)}
-                            className="rounded text-blue-600 focus:ring-0 cursor-pointer"
-                          />
-                          Mostrar todos los documentos pendientes ({otrasFacturas.length + facturasDelTercero.length})
-                        </label>
-                      </div>
-                    )}
                   </div>
 
                   {/* Valor a vincular */}
