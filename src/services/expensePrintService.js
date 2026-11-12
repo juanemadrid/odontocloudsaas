@@ -181,13 +181,8 @@ export function buildExpensePrint({ pago = {}, fallbackFactura = null, beneficia
     if (!content || itemPayments.some((it) => it.desc.toLowerCase().includes(content))) rawObs = "";
   }
 
-  // Si la observación repite "Pago a Proveedor: ...", limpiarla para evitar redundancia con los datos del tercero y concepto
-  if (/^pago a proveedor:\s*/i.test(rawObs)) {
-    rawObs = "";
-  }
-
   const normClean = (s) => String(s || "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
-  const allRefs = [...new Set([...facturaRefs, numDocFac].filter(Boolean))];
+  const allRefs = [...new Set(facturaRefs.filter(Boolean))];
   const refsText = allRefs.join(", ");
 
   // Deduplicar segmentos repetidos en la observación (ej: "FE - 21255 — FE - 21255")
@@ -198,6 +193,8 @@ export function buildExpensePrint({ pago = {}, fallbackFactura = null, beneficia
   for (const seg of obsSegments) {
     const trimmed = seg.trim();
     if (!trimmed) continue;
+    // Si algún segmento repite "Pago a Proveedor: ...", limpiarlo para evitar redundancia
+    if (/^pago a proveedor:\s*/i.test(trimmed)) continue;
     const n = normClean(trimmed);
     if (!seenNorm.has(n)) {
       seenNorm.add(n);
@@ -205,7 +202,7 @@ export function buildExpensePrint({ pago = {}, fallbackFactura = null, beneficia
     }
   }
 
-  // Si hay referencias a facturas asociadas, verificar si ya están en uniqueSegments antes de agregarlas
+  // Si hay referencias a facturas asociadas en los ítems, verificar si ya están en uniqueSegments antes de agregarlas
   if (allRefs.length > 0) {
     const hasRefAlready = uniqueSegments.some((seg) => {
       const segN = normClean(seg);
