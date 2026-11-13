@@ -203,8 +203,14 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
         let pacienteParsed = getReferenceValue(refParsed, ["Paciente", "Tercero", "Beneficiario", "Proveedor"]);
 
         // Extraer consecutivo explícito si existe
+        const isAnulacionRc = m.tipo === "egreso" && String(m.concepto || "").startsWith("[ANULACION RC]");
         let consecutiveNumber = "";
-        if (m.concepto) {
+        let anulacionRcTarget = "";
+        if (isAnulacionRc) {
+          const rawTarget = String(m.concepto || "").replace(/^\[ANULACION RC\]\s*/i, "").trim();
+          anulacionRcTarget = rawTarget ? (rawTarget.toUpperCase().startsWith("RC-") ? rawTarget.toUpperCase() : `RC-${rawTarget}`) : "RC";
+          consecutiveNumber = `DEVOLUCIÓN ${anulacionRcTarget}`;
+        } else if (m.concepto) {
           const matchCons = m.concepto.match(/\[(EGR-\d+|RC-\d+)\]/i) || m.concepto.match(/\b(EGR-\d+|RC-\d+)\b/i);
           if (matchCons && matchCons[1]) {
             consecutiveNumber = matchCons[1];
@@ -218,8 +224,10 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
         let matchedExpense = null;
         if (m.tipo === "egreso") {
           egrCount += 1;
-          const recordedExpenseNumber = getExpenseNumber(m);
-          if (recordedExpenseNumber) consecutiveNumber = String(recordedExpenseNumber).replace(/^EGR-?/i, "").replace(/^Egreso\s*#?\s*/i, "").trim();
+          if (!isAnulacionRc) {
+            const recordedExpenseNumber = getExpenseNumber(m);
+            if (recordedExpenseNumber) consecutiveNumber = String(recordedExpenseNumber).replace(/^EGR-?/i, "").replace(/^Egreso\s*#?\s*/i, "").trim();
+          }
         } else {
           rcCount += 1;
           const receiptNumber = getReceiptNumber(m);
@@ -274,7 +282,7 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
               egresoNumero = String(matchedExpense.numero || matchedExpense.consecutivo || matchedExpense.nroConsecutivo || "");
             }
           }
-          if (matchedExpense) {
+          if (matchedExpense && !isAnulacionRc) {
             thirdParty = thirdParty || matchedExpense.tercero || matchedExpense.proveedor || matchedExpense.profesional || "";
             egresoNumero = egresoNumero || String(matchedExpense.numero || matchedExpense.consecutivo || matchedExpense.nroConsecutivo || "");
             if (egresoNumero) consecutiveNumber = String(egresoNumero).replace(/^EGR-?/i, "").replace(/^Egreso\s*#?\s*/i, "").trim();
@@ -293,6 +301,8 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
 
         return {
           ...m,
+          isAnulacionRc,
+          anulacionRcTarget,
           rcAnulado: isRcVoided,
           nroConsecutivo: consecutiveNumber,
           consecutivo: consecutiveNumber,
@@ -732,8 +742,13 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
         }
       }
 
-      const egresoNum = mov.egresoNumero || getExpenseNumber(mov) || basePago.numero || basePago.consecutivo || "";
-      const cleanEgresoNum = String(egresoNum).replace(/^EGR-?/i, "").replace(/^Egreso\s*#?\s*/i, "").trim();
+      const isAnulacion = mov.isAnulacionRc || String(mov.concepto || "").startsWith("[ANULACION RC]");
+      const egresoNum = isAnulacion
+        ? (mov.anulacionRcTarget || String(mov.concepto || "").replace(/^\[ANULACION RC\]\s*/i, "").trim())
+        : (mov.egresoNumero || getExpenseNumber(mov) || basePago.numero || basePago.consecutivo || "");
+      const cleanEgresoNum = isAnulacion
+        ? `DEVOLUCIÓN ${egresoNum ? (egresoNum.toUpperCase().startsWith("RC-") ? egresoNum.toUpperCase() : `RC-${egresoNum}`) : "RC"}`
+        : String(egresoNum).replace(/^EGR-?/i, "").replace(/^Egreso\s*#?\s*/i, "").trim();
 
       const pagoObj = {
         ...basePago,
@@ -741,6 +756,7 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
         numero: cleanEgresoNum,
         consecutivo: cleanEgresoNum,
         nroConsecutivo: cleanEgresoNum,
+        documentTitle: isAnulacion ? "Comprobante de Devolución" : undefined,
         tercero: basePago.tercero || basePago.proveedor || mov.pacienteNombre || mov.tercero,
         proveedor: basePago.proveedor || basePago.tercero || mov.tercero || mov.pacienteNombre,
         documentoTercero: basePago.documentoTercero || basePago.documento_tercero || basePago.documento || basePago.nit || mov.terceroDocumento,
@@ -1020,9 +1036,10 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
                   if (m.esTraslado) {
                     docVisible = (m.referencia || m.concepto || "Traslado").replace(/[\[\]]/g, "").trim();
                   } else if (esEgreso) {
-                    if (String(m.concepto || "").startsWith("[ANULACION RC]")) {
-                      const rcTarget = String(m.concepto || "").replace(/^\[ANULACION RC\]\s*/i, "").trim();
-                      docVisible = `Devolución ${rcTarget || "RC"}`;
+                    if (m.isAnulacionRc || String(m.concepto || "").startsWith("[ANULACION RC]")) {
+                      const rcTarget = m.anulacionRcTarget || String(m.concepto || "").replace(/^\[ANULACION RC\]\s*/i, "").trim();
+                      const numTarget = rcTarget ? (rcTarget.toUpperCase().startsWith("RC-") ? rcTarget.toUpperCase() : `RC-${rcTarget}`) : "RC";
+                      docVisible = `DEVOLUCIÓN ${numTarget}`;
                     } else {
                       const egrNum = m.egresoNumero || getExpenseNumber(m) || (m.nroConsecutivo ? String(m.nroConsecutivo).replace(/^EGR-?/i, "") : "");
                       if (egrNum) {
@@ -1174,17 +1191,23 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
 
       {/* Modal Vista Previa del Comprobante Oficial */}
       {selectedMovimiento && (() => {
+        const isAnulacion = selectedMovimiento.isAnulacionRc || String(selectedMovimiento.concepto || "").startsWith("[ANULACION RC]");
         let previewConsecutive = selectedMovimiento.nroConsecutivo || selectedMovimiento.nro_consecutivo || "";
-        if (!previewConsecutive && selectedMovimiento.concepto) {
-          const match = selectedMovimiento.concepto.match(/\[(EGR-\d+|RC-\d+)\]/i) || selectedMovimiento.concepto.match(/\b(EGR-\d+|RC-\d+)\b/i);
-          if (match && match[1]) previewConsecutive = match[1];
-        }
-        if (!previewConsecutive && selectedMovimiento.id) {
-          previewConsecutive = `#${selectedMovimiento.id.slice(0, 6).toUpperCase()}`;
-        }
-        if (selectedMovimiento.tipo === "egreso") {
-          const rawEgresoNum = selectedMovimiento.egresoNumero || getExpenseNumber(selectedMovimiento) || previewConsecutive;
-          previewConsecutive = String(rawEgresoNum).replace(/^EGR-?/i, "").replace(/^Egreso\s*#?\s*/i, "").trim();
+        if (isAnulacion) {
+          const rcTarget = selectedMovimiento.anulacionRcTarget || String(selectedMovimiento.concepto || "").replace(/^\[ANULACION RC\]\s*/i, "").trim();
+          previewConsecutive = `DEVOLUCIÓN ${rcTarget ? (rcTarget.toUpperCase().startsWith("RC-") ? rcTarget.toUpperCase() : `RC-${rcTarget}`) : "RC"}`;
+        } else {
+          if (!previewConsecutive && selectedMovimiento.concepto) {
+            const match = selectedMovimiento.concepto.match(/\[(EGR-\d+|RC-\d+)\]/i) || selectedMovimiento.concepto.match(/\b(EGR-\d+|RC-\d+)\b/i);
+            if (match && match[1]) previewConsecutive = match[1];
+          }
+          if (!previewConsecutive && selectedMovimiento.id) {
+            previewConsecutive = `#${selectedMovimiento.id.slice(0, 6).toUpperCase()}`;
+          }
+          if (selectedMovimiento.tipo === "egreso") {
+            const rawEgresoNum = selectedMovimiento.egresoNumero || getExpenseNumber(selectedMovimiento) || previewConsecutive;
+            previewConsecutive = String(rawEgresoNum).replace(/^EGR-?/i, "").replace(/^Egreso\s*#?\s*/i, "").trim();
+          }
         }
 
         const nombreElaborador = (userProfile?.nombreCompleto && !userProfile.nombreCompleto.includes("@")) 
@@ -1238,7 +1261,7 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
                   </div>
                   <div className="text-right">
                     <span className={`text-[14px] font-bold uppercase block ${esEgresoModal ? "text-rose-600" : "text-blue-600"}`}>
-                      {esEgresoModal ? "Comprobante de Egreso" : "Recibo de Caja"}
+                      {isAnulacion ? "Comprobante de Devolución" : (esEgresoModal ? "Comprobante de Egreso" : "Recibo de Caja")}
                     </span>
                     <span className="text-slate-700 font-bold font-mono">No. {previewConsecutive}</span>
                   </div>

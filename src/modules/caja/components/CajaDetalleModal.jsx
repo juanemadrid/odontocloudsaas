@@ -182,7 +182,11 @@ export default function CajaDetalleModal({ caja, onClose, onNuevoMovimiento }) {
                       <td className="px-8 py-5 align-middle">
                          <div className="flex items-center gap-2">
                             <span className={`w-2 h-2 rounded-full ${m.tipo === 'ingreso' ? 'bg-emerald-500' : 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.4)]'}`} title={m.tipo} />
-                            <div className="text-[13px] font-black text-slate-800 uppercase tracking-tight">{m.concepto}</div>
+                            <div className="text-[13px] font-black text-slate-800 uppercase tracking-tight">
+                              {String(m.concepto || "").startsWith("[ANULACION RC]")
+                                ? String(m.concepto).replace(/^\[ANULACION RC\]\s*/i, "Devolución por anulación de recibo ")
+                                : m.concepto}
+                            </div>
                          </div>
                          {m.descripcion && <div className="text-[11px] text-slate-400 font-medium mt-1 truncate max-w-[200px]">{m.descripcion}</div>}
                       </td>
