@@ -661,34 +661,41 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
                 }
 
                 // Regla B: Verificar si el ítem está Realizado
-                // 1. Verificar primero en las evoluciones clínicas (fuente de verdad clínica directa)
+                // LA LIQUIDACIÓN DEPENDE EXCLUSIVAMENTE DE QUE EL PROCEDIMIENTO ESTÉ PALOMEADO/MARCADO COMO REALIZADO.
+                // NUNCA DEPENDE DE LO QUE EL ESPECIALISTA REDACTE EN EL TEXTO LIBRE DE LA EVOLUCIÓN.
+
+                // 1. Revisar las evoluciones del paciente para este procedimiento específico
                 let evoSaysRealizado = false;
                 let evoSaysNotRealizado = false;
+                let realizingEvolution = null;
 
-                const evoWithItem = parsedEvoluciones.find(evo => {
-                    if (evo.paciente_id !== plan.paciente_id) return false;
+                parsedEvoluciones.forEach(evo => {
+                    if (evo.paciente_id !== plan.paciente_id) return;
                     const pi = evo.plantillaItems?.[itemId] || evo._tData?.plantillaItems?.[itemId];
                     if (pi) {
-                        if (pi.realizado === true) evoSaysRealizado = true;
-                        if (pi.realizado === false) evoSaysNotRealizado = true;
-                        return true;
-                    }
-                    if (
+                        if (pi.realizado === true) {
+                            evoSaysRealizado = true;
+                            if (!realizingEvolution) realizingEvolution = evo;
+                        } else if (pi.realizado === false) {
+                            evoSaysNotRealizado = true;
+                        }
+                    } else if (
                         (Array.isArray(evo.serviciosIds) && evo.serviciosIds.some(id => String(id) === String(itemId))) ||
                         (Array.isArray(evo._tData?.serviciosIds) && evo._tData.serviciosIds.some(id => String(id) === String(itemId)))
                     ) {
-                        return true;
+                        // En evoluciones legacy sin objeto plantillaItems, se tomaba serviciosIds si el plan no dice lo contrario
+                        if (!realizingEvolution) realizingEvolution = evo;
                     }
-                    return false;
                 });
 
-                // Si la evolución explícitamente dice que NO está realizado (o está en progreso) y ninguna dice que sí, descartar de liquidaciones
+                // Si alguna evolución indica explícitamente que el procedimiento NO quedó realizado (solo iniciado)
+                // y ninguna evolución lo palomeó como realizado, se descarta categóricamente de liquidaciones.
                 if (evoSaysNotRealizado && !evoSaysRealizado) {
                     return;
                 }
 
                 // 2. Estado en el propio ítem del plan de tratamiento
-                const isExplicitlyNotRealizado = (
+                const isItemExplicitlyPendingOrInProgress = (
                     item.realizado === false ||
                     item.status === "in_progress" ||
                     item.status === "pending" ||
@@ -696,80 +703,26 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
                     item.estado === "en_progreso"
                 );
 
-                if (isExplicitlyNotRealizado && !evoSaysRealizado) {
+                if (isItemExplicitlyPendingOrInProgress && !evoSaysRealizado) {
                     return;
                 }
 
-                let isRealizado = evoSaysRealizado || (!isExplicitlyNotRealizado && (
-                    item.realizado === true || 
-                    item.realizada === true || 
-                    item.estado === "completado" || 
-                    item.estado === "realizado" ||
-                    item.status === "completed" ||
-                    item.status === "realizado"
-                ));
+                // 3. Determinar si está formalmente realizado
+                const isRealizado = evoSaysRealizado || (
+                    !isItemExplicitlyPendingOrInProgress && (
+                        item.realizado === true || 
+                        item.realizada === true || 
+                        item.estado === "completado" || 
+                        item.estado === "realizado" ||
+                        item.status === "completed" ||
+                        item.status === "realizado"
+                    )
+                );
 
-                // 3. Buscar en evoluciones legacy si este ítem fue efectivamente completado/realizado
-                const itNameLower = String(item.nombre || item.desc || item.prestacion || "").toLowerCase().trim();
-                const planIdStr = String(plan.id || "");
-
-                let matchedEvolution = evoWithItem || parsedEvoluciones.find(evo => {
-                    if (evo.paciente_id !== plan.paciente_id) return false;
-
-                    const pi = evo.plantillaItems?.[itemId] || evo._tData?.plantillaItems?.[itemId];
-
-                    // Si la evolución tiene este ítem pero explícitamente NO realizado, no lo da por completado
-                    if (pi && pi.realizado === false) {
-                        return false;
-                    }
-
-                    // A. Marcado explícito como realizado en la evolución
-                    if (pi && pi.realizado === true) {
-                        return true;
-                    }
-
-                    // Si el ítem del plan ya está marcado como no realizado/en progreso, descartar coincidencias de texto
-                    if (isExplicitlyNotRealizado) {
-                        return false;
-                    }
-
-                    // Para registros antiguos (legacy) donde no existía el flag 'realizado':
-                    if (
-                        (pi && pi.checked === true && pi.realizado === undefined) ||
-                        (Array.isArray(evo.serviciosIds) && evo.serviciosIds.some(id => String(id) === String(itemId))) ||
-                        (Array.isArray(evo._tData?.serviciosIds) && evo._tData.serviciosIds.some(id => String(id) === String(itemId)))
-                    ) {
-                        return true;
-                    }
-
-                    // Coincidencia por planId y texto solo para evoluciones legacy sin plantillaItems
-                    const evoPlanId = String(evo.planId || evo._tData?.planId || "");
-                    const evoText = String(evo._tData?.treatment || evo._tData?.comentario || evo.tratamiento || "").toLowerCase();
-
-                    if (evoPlanId && evoPlanId === planIdStr && (!evo.plantillaItems || Object.keys(evo.plantillaItems).length === 0)) {
-                        if (!itNameLower || evoText.includes(itNameLower) || itNameLower.length < 3) return true;
-                    }
-
-                    if (itNameLower && itNameLower.length >= 4 && evoText.includes(itNameLower) && (!evo.plantillaItems || Object.keys(evo.plantillaItems).length === 0)) {
-                        return true;
-                    }
-
-                    return false;
-                });
-
-                if (matchedEvolution) {
-                    const pi = matchedEvolution.plantillaItems?.[itemId] || matchedEvolution._tData?.plantillaItems?.[itemId];
-                    if (pi?.realizado === true) {
-                        isRealizado = true;
-                    } else if (pi?.realizado === false) {
-                        isRealizado = false;
-                    } else if (!isExplicitlyNotRealizado) {
-                        isRealizado = true;
-                    }
-                }
-
-                // Debe estar realizado para poderse liquidar
+                // Debe estar palomeado como realizado para poderse liquidar
                 if (!isRealizado) return;
+
+                const matchedEvolution = realizingEvolution;
 
                 // Regla C: Identificar profesional que realizó el ítem
                 // Si la evolución clínica tiene un profesional asignado, ese tiene máxima prioridad (el profesional tratante que ejecutó el procedimiento)
