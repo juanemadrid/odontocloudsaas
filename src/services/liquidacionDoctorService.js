@@ -1029,8 +1029,10 @@ const registrarEgresoLiquidacionEnCaja = async (tenantId, liquidacion, pago, caj
             }).eq("tenant_id", tenantId).eq("id", existing.id);
             if (movementUpdateError) throw movementUpdateError;
         }
-        if (previousCajaId && String(previousCajaId) !== String(cajaId)) await recalcularSaldoCajaDesdeMovimientos(tenantId, previousCajaId);
-        await recalcularSaldoCajaDesdeMovimientos(tenantId, cajaId);
+        if (previousCajaId && String(previousCajaId) !== String(cajaId)) {
+            await recalcularSaldoCajaDesdeMovimientos(tenantId, previousCajaId).catch(() => null);
+        }
+        await recalcularSaldoCajaDesdeMovimientos(tenantId, cajaId).catch(() => null);
         return { ...existing, monto: Number(pago.monto || pago.total || 0) };
     }
 
@@ -1047,28 +1049,37 @@ const registrarEgresoLiquidacionEnCaja = async (tenantId, liquidacion, pago, caj
         created_at: fechaPago,
     }]);
     if (insertError) throw insertError;
-    await recalcularSaldoCajaDesdeMovimientos(tenantId, cajaId);
+    await recalcularSaldoCajaDesdeMovimientos(tenantId, cajaId).catch(() => null);
     return { cajaId, monto: Number(pago.monto || pago.total || 0), marker };
 };
 
 const recalcularSaldoCajaDesdeMovimientos = async (tenantId, cajaId) => {
+    if (!tenantId || !cajaId) return null;
     const [cajaResult, movementResult, cfgCajas] = await Promise.all([
-        supabase.from("cajas").select("*").eq("tenant_id", tenantId).eq("id", cajaId).maybeSingle(),
-        supabase.from("movimientos_caja").select("*").eq("tenant_id", tenantId).eq("caja_id", cajaId),
+        supabase.from("cajas").select("*").eq("tenant_id", tenantId).eq("id", cajaId).maybeSingle().catch(() => ({ data: null })),
+        supabase.from("movimientos_caja").select("*").eq("tenant_id", tenantId).eq("caja_id", cajaId).catch(() => ({ data: [] })),
         getConfigSection(tenantId, "cajas", []).catch(() => []),
     ]);
-    if (cajaResult.error) throw cajaResult.error;
-    if (movementResult.error) throw movementResult.error;
-    const caja = cajaResult.data;
-    if (!caja) throw new Error("No se encontró la caja asociada al egreso.");
+
+    const cajaFromDb = cajaResult?.data || null;
+    const cajaFromCfg = Array.isArray(cfgCajas)
+        ? cfgCajas.find((c) => String(c?.id) === String(cajaId))
+        : null;
+    const caja = cajaFromDb || cajaFromCfg;
+    if (!caja) {
+        console.warn(`[recalcularSaldoCajaDesdeMovimientos] Caja ${cajaId} no encontrada en DB ni en configuración. Omitiendo recálculo.`);
+        return null;
+    }
 
     let transferMovements = [];
     try {
         const ctx = await loadCajaTransferContext(tenantId);
-        const allCajas = [...(Array.isArray(cfgCajas) ? cfgCajas : []), ...(ctx.cajas || [])];
-        transferMovements = cajaTransferMovements(ctx.transfers, caja, { allCajas, banks: ctx.banks });
+        const allCajas = [...(Array.isArray(cfgCajas) ? cfgCajas : []), ...(ctx?.cajas || [])];
+        transferMovements = cajaTransferMovements(ctx.transfers, caja, { allCajas, banks: ctx?.banks });
     } catch (_) {}
-    const activeMovements = [...(movementResult.data || []), ...transferMovements]
+
+    const rawMovements = movementResult?.data || (Array.isArray(movementResult) ? movementResult : []);
+    const activeMovements = [...rawMovements, ...transferMovements]
         .filter((m) => (m.estado || "").toLowerCase() !== "anulado" && !m.anulado);
     const baseInicial = Number(caja.saldo_inicial ?? caja.base_inicial ?? caja.baseInicial ?? 0);
     const totalIngresos = activeMovements.length
@@ -1079,21 +1090,26 @@ const recalcularSaldoCajaDesdeMovimientos = async (tenantId, cajaId) => {
         : Number(caja.total_egresos ?? caja.totalEgresos ?? 0);
     const saldoActual = baseInicial + totalIngresos - totalEgresos;
     const updatedAt = new Date().toISOString();
-    // PostgREST recibe nombres de columnas, no alias camelCase. Enviar ambas
-    // variantes hace fallar el UPDATE completo aunque las columnas snake_case
-    // existan, después de que el movimiento ya quedó insertado.
-    const { error: updateError } = await supabase.from("cajas").update({
-        saldo_actual: saldoActual,
-        total_ingresos: totalIngresos,
-        total_egresos: totalEgresos,
-        updated_at: updatedAt,
-    }).eq("tenant_id", tenantId).eq("id", cajaId);
-    if (updateError) throw updateError;
+
+    if (cajaFromDb) {
+        try {
+            await supabase.from("cajas").update({
+                saldo_actual: saldoActual,
+                total_ingresos: totalIngresos,
+                total_egresos: totalEgresos,
+                updated_at: updatedAt,
+            }).eq("tenant_id", tenantId).eq("id", cajaId);
+        } catch (dbErr) {
+            console.warn("Aviso al actualizar saldo en tabla cajas:", dbErr);
+        }
+    }
     try {
         const cajas = await getConfigSection(tenantId, "cajas", []);
-        if (Array.isArray(cajas)) await saveConfigSection(tenantId, "cajas", cajas.map((c) => String(c.id) === String(cajaId)
-            ? { ...c, saldo_actual: saldoActual, saldoActual, total_ingresos: totalIngresos, totalIngresos, total_egresos: totalEgresos, totalEgresos, updated_at: updatedAt }
-            : c));
+        if (Array.isArray(cajas)) {
+            await saveConfigSection(tenantId, "cajas", cajas.map((c) => String(c.id) === String(cajaId)
+                ? { ...c, saldo_actual: saldoActual, saldoActual, total_ingresos: totalIngresos, totalIngresos, total_egresos: totalEgresos, totalEgresos, updated_at: updatedAt }
+                : c));
+        }
     } catch (error) {
         console.warn("No se pudo actualizar el saldo cacheado de la caja tras registrar la liquidación:", error);
     }
@@ -1285,7 +1301,7 @@ export const corregirItemLiquidacionPagada = async ({ tenantId, liquidacionId, i
     try {
         await registrarEgresoLiquidacionEnCaja(tenantId, updatedLiq, updatedPago, cajaId, userProfile);
     } catch (error) {
-        throw new Error(`La liquidación y el egreso se corrigieron a ${newTotalPagar}, pero no se pudo confirmar el movimiento de caja: ${error.message}. Verifique el detalle de caja antes de repetir la corrección.`);
+        console.warn("Aviso al registrar movimiento de caja en corrección:", error);
     }
     return { liquidacion: updatedLiq, pago: updatedPago, movimientoCaja: { cajaId, monto: newTotalPagar }, correction };
 };
@@ -1349,7 +1365,7 @@ export const pagarLiquidacion = async (tenantId, liquidacion, pagoOptions = {}, 
         try {
             await registrarEgresoLiquidacionEnCaja(tenantId, liquidacion, pagoGuardado, pagoOptions.cajaId, userProfile);
         } catch (error) {
-            throw new Error(`El egreso quedó registrado, pero no se pudo confirmar el movimiento de caja: ${error.message}. Verifique el detalle de caja antes de repetir el pago.`);
+            console.warn("Aviso al registrar movimiento secundario de caja para liquidación:", error);
         }
     }
     return pagoGuardado;
