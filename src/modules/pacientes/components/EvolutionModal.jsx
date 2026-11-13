@@ -680,8 +680,8 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                      if (isExplicitlyPassed) {
                          const saved = typeof isExplicitlyPassed === 'object' ? isExplicitlyPassed : {};
                          initDetails[s.id] = { 
-                             checked: saved.checked !== undefined ? saved.checked : true,
-                             realizado: saved.realizado !== undefined ? saved.realizado : true,
+                             checked: saved.checked !== undefined ? Boolean(saved.checked) : true,
+                             realizado: Boolean(saved.realizado),
                              observation: saved.observation || '',
                              desc: saved.desc || s.desc || s.procedimiento || s.nombre || '',
                              dientes: saved.dientes || s.dientes || ''
@@ -969,12 +969,22 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                         const updatedItems = selectedPlan.items.map((it, idx) => {
                             const itId = it.id || `item_${idx}`;
                             const detail = plantillaDetails[itId];
-                            if (detail && (detail.realizado || detail.checked)) {
+                            if (detail && detail.realizado === true) {
                                 return { 
                                     ...it, 
                                     status: 'completed', 
                                     realizado: true, 
                                     fechaRealizado: finalDate ? finalDate.toISOString() : (data.fecha || new Date().toISOString()),
+                                    profesionalId: effectiveDocId || it.profesionalId || null,
+                                    profesional: docName || it.profesional || ""
+                                };
+                            }
+                            if (detail && detail.checked) {
+                                return {
+                                    ...it,
+                                    status: 'in_progress',
+                                    realizado: false,
+                                    fechaIniciado: it.fechaIniciado || (finalDate ? finalDate.toISOString() : (data.fecha || new Date().toISOString())),
                                     profesionalId: effectiveDocId || it.profesionalId || null,
                                     profesional: docName || it.profesional || ""
                                 };
@@ -1246,23 +1256,37 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                                             </div>
                                                         </td>
                                                         <td className="px-4 py-2 align-middle text-center">
-                                                            <div className="flex items-center justify-start md:justify-center" title="Marque cuando este procedimiento quede completamente terminado en esta sesión">
+                                                            <div className="flex items-center justify-start md:justify-center gap-2" title="Marque si este procedimiento quedó terminado hoy; déjelo desmarcado si continúa en próxima cita">
                                                                 <input 
                                                                     type="checkbox"
                                                                     className="w-4 h-4 rounded text-[#8dc63f] border-slate-300 focus:ring-[#8dc63f] cursor-pointer"
-                                                                    checked={plantillaDetails[s.id]?.realizado || false}
+                                                                    checked={Boolean(plantillaDetails[s.id]?.realizado)}
                                                                     onChange={(e) => setPlantillaDetails(prev => ({
                                                                         ...prev,
                                                                         [s.id]: { 
                                                                             ...prev[s.id], 
-                                                                            checked: e.target.checked,
                                                                             realizado: e.target.checked,
                                                                             desc: s.desc || s.procedimiento || s.nombre || '',
                                                                             dientes: s.dientes || ''
                                                                         }
                                                                     }))}
                                                                 />
-                                                                <span className="md:hidden ml-2 text-[10px] font-bold tracking-widest uppercase text-slate-400">Finalizado</span>
+                                                                <span className="md:hidden ml-1 text-[10px] font-bold tracking-widest uppercase text-slate-400">Finalizado</span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setPlantillaDetails(prev => ({
+                                                                        ...prev,
+                                                                        [s.id]: {
+                                                                            ...prev[s.id],
+                                                                            checked: false,
+                                                                            realizado: false
+                                                                        }
+                                                                    }))}
+                                                                    title="Quitar de esta sesión"
+                                                                    className="text-slate-300 hover:text-rose-500 p-1 transition-colors border-0 bg-transparent cursor-pointer"
+                                                                >
+                                                                    <FiTrash2 size={13} />
+                                                                </button>
                                                             </div>
                                                         </td>
                                                     </tr>
@@ -2179,16 +2203,19 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                                             type="checkbox"
                                                             className="w-4 h-4 rounded text-[#8dc63f] border-slate-300 focus:ring-[#8dc63f] cursor-pointer"
                                                             checked={plantillaDetails[s.id]?.checked || false}
-                                                            onChange={(e) => setPlantillaDetails(prev => ({
-                                                                ...prev,
-                                                                [s.id]: { 
-                                                                    ...prev[s.id], 
-                                                                    checked: e.target.checked,
-                                                                    realizado: e.target.checked ? (prev[s.id]?.realizado ?? true) : false,
-                                                                    desc: s.desc || s.procedimiento || s.nombre || '',
-                                                                    dientes: s.dientes || ''
-                                                                }
-                                                            }))}
+                                                            onChange={(e) => {
+                                                                const isChecked = e.target.checked;
+                                                                setPlantillaDetails(prev => ({
+                                                                    ...prev,
+                                                                    [s.id]: { 
+                                                                        ...prev[s.id], 
+                                                                        checked: isChecked,
+                                                                        realizado: isChecked ? (allChecked ? true : Boolean(prev[s.id]?.realizado)) : false,
+                                                                        desc: s.desc || s.procedimiento || s.nombre || '',
+                                                                        dientes: s.dientes || ''
+                                                                    }
+                                                                }));
+                                                            }}
                                                         />
                                                     )}
                                                 </td>
@@ -2209,7 +2236,28 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                                         <div className="flex justify-center text-emerald-600" title="Procedimiento realizado en evolución previa">
                                                             <FiCheck size={18} strokeWidth={3} />
                                                         </div>
-                                                    ) : null}
+                                                    ) : (
+                                                        <div className="flex justify-center" title="Marque si este procedimiento quedó realizado hoy">
+                                                            <input 
+                                                                type="checkbox"
+                                                                className="w-4 h-4 rounded text-[#8dc63f] border-slate-300 focus:ring-[#8dc63f] cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                                                                checked={Boolean(plantillaDetails[s.id]?.realizado)}
+                                                                disabled={!plantillaDetails[s.id]?.checked}
+                                                                onChange={(e) => {
+                                                                    const isRel = e.target.checked;
+                                                                    setPlantillaDetails(prev => ({
+                                                                        ...prev,
+                                                                        [s.id]: {
+                                                                            ...prev[s.id],
+                                                                            realizado: isRel,
+                                                                            desc: s.desc || s.procedimiento || s.nombre || '',
+                                                                            dientes: s.dientes || ''
+                                                                        }
+                                                                    }));
+                                                                }}
+                                                            />
+                                                        </div>
+                                                    )}
                                                 </td>
                                             </tr>
                                         );
