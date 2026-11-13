@@ -186,6 +186,15 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
         .eq("caja_id", caja.id)
         .order("created_at", { ascending: true });
 
+      // Detectar números de recibo que tienen devolución/anulación registrada en la caja
+      const voidedRcSet = new Set();
+      (rawMovs || []).forEach(m => {
+        if (m.tipo === "egreso" && String(m.concepto || "").startsWith("[ANULACION RC]")) {
+          const num = String(m.concepto || "").replace(/^\[ANULACION RC\]\s*RC-?/i, "").trim().replace(/^0+/, "");
+          if (num) voidedRcSet.add(num);
+        }
+      });
+
       let egrCount = 0;
       let rcCount = 0;
 
@@ -277,8 +286,14 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
         const fechaVal = m.created_at || m.fecha || m.fechaISO || m.fecha_apertura;
         const metodoPago = m.metodo_pago || m.metodoPago || "Efectivo";
 
+        const isRcVoided = m.tipo === "ingreso" && (() => {
+          const num = getReceiptNumber(m)?.replace(/^0+/, "");
+          return Boolean(num && voidedRcSet.has(num));
+        })();
+
         return {
           ...m,
+          rcAnulado: isRcVoided,
           nroConsecutivo: consecutiveNumber,
           consecutivo: consecutiveNumber,
           fecha: fechaVal,
@@ -1005,12 +1020,17 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
                   if (m.esTraslado) {
                     docVisible = (m.referencia || m.concepto || "Traslado").replace(/[\[\]]/g, "").trim();
                   } else if (esEgreso) {
-                    const egrNum = m.egresoNumero || getExpenseNumber(m) || (m.nroConsecutivo ? String(m.nroConsecutivo).replace(/^EGR-?/i, "") : "");
-                    if (egrNum) {
-                      docVisible = `Egreso #${egrNum}`;
+                    if (String(m.concepto || "").startsWith("[ANULACION RC]")) {
+                      const rcTarget = String(m.concepto || "").replace(/^\[ANULACION RC\]\s*/i, "").trim();
+                      docVisible = `Devolución ${rcTarget || "RC"}`;
                     } else {
-                      const matchTag = String(m.concepto || "").match(/\[?EGR-(\d+)\]?/i);
-                      docVisible = matchTag ? `Egreso #${matchTag[1]}` : "Egreso";
+                      const egrNum = m.egresoNumero || getExpenseNumber(m) || (m.nroConsecutivo ? String(m.nroConsecutivo).replace(/^EGR-?/i, "") : "");
+                      if (egrNum) {
+                        docVisible = `Egreso #${egrNum}`;
+                      } else {
+                        const matchTag = String(m.concepto || "").match(/\[?EGR-(\d+)\]?/i);
+                        docVisible = matchTag ? `Egreso #${matchTag[1]}` : "Egreso";
+                      }
                     }
                   } else {
                     // Ingreso / Recibo de caja (ej. RC-2124)
@@ -1032,7 +1052,7 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
                           <span className={esAnulado ? "text-slate-400" : "font-semibold text-slate-700"} title={m.concepto || ""}>
                             {docVisible}
                           </span>
-                          {esAnulado && (
+                          {(esAnulado || m.rcAnulado) && (
                             <span className="inline-block px-1.5 py-0.5 bg-rose-100 text-rose-700 font-bold text-[9px] rounded uppercase tracking-wider">
                               ANULADO
                             </span>

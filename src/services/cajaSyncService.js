@@ -17,7 +17,7 @@ export const isUUID = (str) => {
 export const resolveTargetCajaId = async (inquilino, userProfile = null, preferredCajaId = null) => {
   if (!inquilino) return null;
 
-  // 1. Si se pasó preferredCajaId y es UUID, verificar si existe y está abierta en BD
+  // 1. Si se pasó preferredCajaId y es UUID, verificar si existe y está abierta en BD o website_config
   if (preferredCajaId && isUUID(preferredCajaId)) {
     try {
       const { data: cData } = await supabase
@@ -25,9 +25,17 @@ export const resolveTargetCajaId = async (inquilino, userProfile = null, preferr
         .select("id, estado")
         .eq("id", preferredCajaId)
         .maybeSingle();
-      if (cData?.id) {
+      if (cData?.id && (cData.estado || "").toLowerCase() === "abierta") {
         return cData.id;
       }
+    } catch (_) {}
+
+    try {
+      const cfgCajas = await getConfigSection(inquilino, "cajas", []);
+      const matched = (Array.isArray(cfgCajas) ? cfgCajas : []).find(
+        c => c.id === preferredCajaId && (c.estado || "").toLowerCase() === "abierta"
+      );
+      if (matched?.id) return matched.id;
     } catch (_) {}
   }
 
@@ -41,11 +49,21 @@ export const resolveTargetCajaId = async (inquilino, userProfile = null, preferr
     }
   } catch (_) {}
 
-  // 3. Intentar obtener cualquier caja abierta en la clínica
+  // 3. Intentar obtener cualquier caja abierta en la clínica (BD o website_config)
   try {
     const anyCaja = await getActiveCaja(inquilino);
     if (anyCaja?.id && isUUID(anyCaja.id)) {
       return anyCaja.id;
+    }
+  } catch (_) {}
+
+  try {
+    const cfgCajas = await getConfigSection(inquilino, "cajas", []);
+    const anyOpen = (Array.isArray(cfgCajas) ? cfgCajas : []).find(
+      c => (c.estado || "").toLowerCase() === "abierta"
+    );
+    if (anyOpen?.id && isUUID(anyOpen.id)) {
+      return anyOpen.id;
     }
   } catch (_) {}
 
@@ -276,8 +294,27 @@ export const reconcileVoidedReceiptsInCaja = async (inquilino, userProfile = nul
     const [pagosRes, recibosRes, movsRes] = await Promise.all([
       supabase.from("pagos").select("*").eq("tenant_id", inquilino),
       supabase.from("recibos_caja").select("*").eq("tenant_id", inquilino),
-      supabase.from("movimientos_caja").select("id, concepto, tipo").eq("tenant_id", inquilino).eq("tipo", "egreso")
+      supabase.from("movimientos_caja").select("id, concepto, tipo, caja_id").eq("tenant_id", inquilino).eq("tipo", "egreso")
     ]);
+
+    // 0. Reparar movimientos de anulación que tengan caja_id null
+    const orphanMovs = (movsRes?.data || []).filter(m => !m.caja_id && String(m.concepto || "").startsWith("[ANULACION RC]"));
+    if (orphanMovs.length > 0) {
+      try {
+        const targetId = await resolveTargetCajaId(inquilino, userProfile);
+        if (targetId) {
+          for (const om of orphanMovs) {
+            await supabase
+              .from("movimientos_caja")
+              .update({ caja_id: targetId })
+              .eq("id", om.id);
+            om.caja_id = targetId;
+          }
+        }
+      } catch (orphanErr) {
+        console.warn("[reconcileVoidedReceiptsInCaja] Aviso reparando movimientos huérfanos:", orphanErr);
+      }
+    }
 
     const existingEgresoConcepts = new Set(
       (movsRes?.data || []).map(m => String(m.concepto || "").trim().toUpperCase())
