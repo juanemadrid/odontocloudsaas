@@ -661,7 +661,33 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
                 }
 
                 // Regla B: Verificar si el ítem está Realizado
-                // 1. Estado en el propio ítem del plan de tratamiento
+                // 1. Verificar primero en las evoluciones clínicas (fuente de verdad clínica directa)
+                let evoSaysRealizado = false;
+                let evoSaysNotRealizado = false;
+
+                const evoWithItem = parsedEvoluciones.find(evo => {
+                    if (evo.paciente_id !== plan.paciente_id) return false;
+                    const pi = evo.plantillaItems?.[itemId] || evo._tData?.plantillaItems?.[itemId];
+                    if (pi) {
+                        if (pi.realizado === true) evoSaysRealizado = true;
+                        if (pi.realizado === false) evoSaysNotRealizado = true;
+                        return true;
+                    }
+                    if (
+                        (Array.isArray(evo.serviciosIds) && evo.serviciosIds.some(id => String(id) === String(itemId))) ||
+                        (Array.isArray(evo._tData?.serviciosIds) && evo._tData.serviciosIds.some(id => String(id) === String(itemId)))
+                    ) {
+                        return true;
+                    }
+                    return false;
+                });
+
+                // Si la evolución explícitamente dice que NO está realizado (o está en progreso) y ninguna dice que sí, descartar de liquidaciones
+                if (evoSaysNotRealizado && !evoSaysRealizado) {
+                    return;
+                }
+
+                // 2. Estado en el propio ítem del plan de tratamiento
                 const isExplicitlyNotRealizado = (
                     item.realizado === false ||
                     item.status === "in_progress" ||
@@ -670,20 +696,24 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
                     item.estado === "en_progreso"
                 );
 
-                let isRealizado = !isExplicitlyNotRealizado && (
+                if (isExplicitlyNotRealizado && !evoSaysRealizado) {
+                    return;
+                }
+
+                let isRealizado = evoSaysRealizado || (!isExplicitlyNotRealizado && (
                     item.realizado === true || 
                     item.realizada === true || 
                     item.estado === "completado" || 
                     item.estado === "realizado" ||
                     item.status === "completed" ||
                     item.status === "realizado"
-                );
+                ));
 
-                // 2. Buscar en evoluciones si este ítem fue efectivamente completado/realizado
+                // 3. Buscar en evoluciones legacy si este ítem fue efectivamente completado/realizado
                 const itNameLower = String(item.nombre || item.desc || item.prestacion || "").toLowerCase().trim();
                 const planIdStr = String(plan.id || "");
 
-                let matchedEvolution = parsedEvoluciones.find(evo => {
+                let matchedEvolution = evoWithItem || parsedEvoluciones.find(evo => {
                     if (evo.paciente_id !== plan.paciente_id) return false;
 
                     const pi = evo.plantillaItems?.[itemId] || evo._tData?.plantillaItems?.[itemId];
@@ -731,6 +761,8 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
                     const pi = matchedEvolution.plantillaItems?.[itemId] || matchedEvolution._tData?.plantillaItems?.[itemId];
                     if (pi?.realizado === true) {
                         isRealizado = true;
+                    } else if (pi?.realizado === false) {
+                        isRealizado = false;
                     } else if (!isExplicitlyNotRealizado) {
                         isRealizado = true;
                     }

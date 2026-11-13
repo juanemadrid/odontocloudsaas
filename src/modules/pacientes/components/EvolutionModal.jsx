@@ -962,11 +962,13 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
             }
 
             // Si se evolucionaron procedimientos de un plan, actualizar el estado en treatment_plans
-            if (watchPlanId) {
+            const targetPlanId = data.planId || watchPlanId || initialData?.planId;
+            if (targetPlanId) {
                 try {
-                    const selectedPlan = planes.find(p => p.id === watchPlanId);
-                    if (selectedPlan && selectedPlan.items) {
-                        const updatedItems = selectedPlan.items.map((it, idx) => {
+                    const selectedPlan = planes.find(p => String(p.id) === String(targetPlanId));
+                    const planItems = selectedPlan?.items || selectedPlan?.detalles?.items || [];
+                    if (planItems.length > 0) {
+                        const updatedItems = planItems.map((it, idx) => {
                             const itId = it.id || `item_${idx}`;
                             const detail = plantillaDetails[itId];
                             if (detail && detail.realizado === true) {
@@ -984,14 +986,24 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                     ...it,
                                     status: 'in_progress',
                                     realizado: false,
+                                    fechaRealizado: null,
                                     fechaIniciado: it.fechaIniciado || (finalDate ? finalDate.toISOString() : (data.fecha || new Date().toISOString())),
                                     profesionalId: effectiveDocId || it.profesionalId || null,
                                     profesional: docName || it.profesional || ""
                                 };
                             }
+                            // Si el ítem estaba registrado en esta evolución y ahora se desmarcó
+                            if (initialData?.plantillaItems?.[itId] && (!detail || !detail.checked)) {
+                                return {
+                                    ...it,
+                                    status: 'pending',
+                                    realizado: false,
+                                    fechaRealizado: null
+                                };
+                            }
                             return it;
                         });
-                        await updatePlan(watchPlanId, { items: updatedItems });
+                        await updatePlan(targetPlanId, { items: updatedItems });
                     }
                 } catch (planUpdateErr) {
                     console.warn("Could not update plan items in treatment_plans:", planUpdateErr);
@@ -2191,7 +2203,11 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
                                     {servicios.map((s, idx) => {
-                                        const isPastRealized = realizedItemIds.has(s.id) || s.status === 'completed' || s.realizado === true || s.completed === true;
+                                        const isCurrentEvoItem = Boolean(
+                                            initialData?.plantillaItems?.[s.id] ||
+                                            (Array.isArray(initialData?.serviciosIds) && initialData.serviciosIds.some(id => String(id) === String(s.id)))
+                                        );
+                                        const isPastRealized = !isCurrentEvoItem && (realizedItemIds.has(s.id) || s.status === 'completed' || s.realizado === true || s.completed === true);
 
                                         return (
                                             <tr key={s.id} className={`hover:bg-slate-50/50 transition-colors ${isPastRealized ? 'opacity-70 bg-slate-50/40' : ''}`}>
