@@ -661,7 +661,16 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
                 }
 
                 // Regla B: Verificar si el ítem está Realizado
-                let isRealizado = (
+                // 1. Estado en el propio ítem del plan de tratamiento
+                const isExplicitlyNotRealizado = (
+                    item.realizado === false ||
+                    item.status === "in_progress" ||
+                    item.status === "pending" ||
+                    item.estado === "pendiente" ||
+                    item.estado === "en_progreso"
+                );
+
+                let isRealizado = !isExplicitlyNotRealizado && (
                     item.realizado === true || 
                     item.realizada === true || 
                     item.estado === "completado" || 
@@ -670,43 +679,61 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
                     item.status === "realizado"
                 );
 
-                // Buscar en evoluciones si este ítem fue evolucionado
+                // 2. Buscar en evoluciones si este ítem fue efectivamente completado/realizado
                 const itNameLower = String(item.nombre || item.desc || item.prestacion || "").toLowerCase().trim();
                 const planIdStr = String(plan.id || "");
 
                 let matchedEvolution = parsedEvoluciones.find(evo => {
                     if (evo.paciente_id !== plan.paciente_id) return false;
 
-                    // A. Match directo por itemId en plantillaItems o serviciosIds
+                    const pi = evo.plantillaItems?.[itemId] || evo._tData?.plantillaItems?.[itemId];
+
+                    // Si la evolución tiene este ítem pero explícitamente NO realizado, no lo da por completado
+                    if (pi && pi.realizado === false) {
+                        return false;
+                    }
+
+                    // A. Marcado explícito como realizado en la evolución
+                    if (pi && pi.realizado === true) {
+                        return true;
+                    }
+
+                    // Si el ítem del plan ya está marcado como no realizado/en progreso, descartar coincidencias de texto
+                    if (isExplicitlyNotRealizado) {
+                        return false;
+                    }
+
+                    // Para registros antiguos (legacy) donde no existía el flag 'realizado':
                     if (
-                        evo.plantillaItems?.[itemId]?.realizado === true ||
-                        evo.plantillaItems?.[itemId]?.checked === true ||
-                        evo._tData?.plantillaItems?.[itemId]?.realizado === true ||
-                        evo._tData?.plantillaItems?.[itemId]?.checked === true ||
+                        (pi && pi.checked === true && pi.realizado === undefined) ||
                         (Array.isArray(evo.serviciosIds) && evo.serviciosIds.some(id => String(id) === String(itemId))) ||
                         (Array.isArray(evo._tData?.serviciosIds) && evo._tData.serviciosIds.some(id => String(id) === String(itemId)))
                     ) {
                         return true;
                     }
 
-                    // B. Coincidencia por planId y texto del procedimiento / tratamiento
+                    // Coincidencia por planId y texto solo para evoluciones legacy sin plantillaItems
                     const evoPlanId = String(evo.planId || evo._tData?.planId || "");
                     const evoText = String(evo._tData?.treatment || evo._tData?.comentario || evo.tratamiento || "").toLowerCase();
 
-                    if (evoPlanId && evoPlanId === planIdStr) {
+                    if (evoPlanId && evoPlanId === planIdStr && (!evo.plantillaItems || Object.keys(evo.plantillaItems).length === 0)) {
                         if (!itNameLower || evoText.includes(itNameLower) || itNameLower.length < 3) return true;
                     }
 
-                    // C. Coincidencia por nombre de procedimiento en la evolución
-                    if (itNameLower && itNameLower.length >= 4 && evoText.includes(itNameLower)) {
+                    if (itNameLower && itNameLower.length >= 4 && evoText.includes(itNameLower) && (!evo.plantillaItems || Object.keys(evo.plantillaItems).length === 0)) {
                         return true;
                     }
 
                     return false;
                 });
 
-                if (!isRealizado && matchedEvolution) {
-                    isRealizado = true;
+                if (matchedEvolution) {
+                    const pi = matchedEvolution.plantillaItems?.[itemId] || matchedEvolution._tData?.plantillaItems?.[itemId];
+                    if (pi?.realizado === true) {
+                        isRealizado = true;
+                    } else if (!isExplicitlyNotRealizado) {
+                        isRealizado = true;
+                    }
                 }
 
                 // Debe estar realizado para poderse liquidar
