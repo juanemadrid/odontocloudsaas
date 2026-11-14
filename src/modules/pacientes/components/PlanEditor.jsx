@@ -85,10 +85,42 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
     // Refs for auto-saving
     const autoSaveTimeoutRef = useRef(null);
     const pendingSaveDataRef = useRef(null);
+    // Id real del presupuesto/plan y creación en curso. Se usan refs (no el estado) porque el
+    // guardado automático al salir de la pestaña corre con valores viejos y creaba un duplicado.
+    const planIdRef = useRef(initialData?.id || null);
+    const creatingPlanRef = useRef(null);
 
     useEffect(() => {
+        planIdRef.current = initialData?.id || null;
         setCurrentPlanId(initialData?.id || null);
     }, [initialData?.id]);
+
+    useEffect(() => {
+        if (currentPlanId) planIdRef.current = currentPlanId;
+    }, [currentPlanId]);
+
+    /** Crea el registro una sola vez; si ya existe (o se está creando), lo actualiza. Devuelve el id. */
+    const savePlanRecord = async (data) => {
+        if (planIdRef.current) {
+            await updatePlan(planIdRef.current, data);
+            return planIdRef.current;
+        }
+        if (creatingPlanRef.current) {
+            const id = await creatingPlanRef.current;
+            await updatePlan(id, data);
+            return id;
+        }
+        creatingPlanRef.current = createPlan(data).then((saved) => {
+            planIdRef.current = saved.id;
+            setCurrentPlanId(saved.id);
+            return saved.id;
+        });
+        try {
+            return await creatingPlanRef.current;
+        } finally {
+            creatingPlanRef.current = null;
+        }
+    };
 
     // Keep pendingSaveDataRef in sync with the latest values
     useEffect(() => {
@@ -132,19 +164,7 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                 baseListId: baseListId
             };
 
-            let planIdToUse = pendingSaveDataRef.current?.tempPlanId || currentPlanId;
-
-            if (planIdToUse) {
-                await updatePlan(planIdToUse, planData);
-                console.log("Auto-save: updated plan", planIdToUse);
-            } else {
-                const saved = await createPlan(planData);
-                setCurrentPlanId(saved.id);
-                if (pendingSaveDataRef.current) {
-                    pendingSaveDataRef.current.tempPlanId = saved.id;
-                }
-                console.log("Auto-save: created plan", saved.id);
-            }
+            await savePlanRecord(planData);
         } catch (error) {
             console.error("Error in autoSaveSilent:", error);
         }
@@ -1744,24 +1764,14 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                 console.warn("Error incrementing plan consecutivo:", consErr);
             }
 
-            if (currentPlanId) {
-                // Plan ya guardado: actualizar tipo a 'plan'
-                await updatePlan(currentPlanId, {
-                    ...planPayload,
-                    title: title,
-                    nombre: title,
-                    nroConsecutivo: planConsecutivo
-                });
-            } else {
-                // Plan nuevo (sin ID aún): crear directamente como plan de tratamiento
-                const saved = await createPlan({
-                    ...planPayload,
-                    title: title,
-                    nombre: title,
-                    nroConsecutivo: planConsecutivo
-                });
-                setCurrentPlanId(saved.id);
-            }
+            // Si ya existe (o el guardado automático lo está creando) se actualiza; si no, se crea una sola vez.
+            if (autoSaveTimeoutRef.current) clearTimeout(autoSaveTimeoutRef.current);
+            await savePlanRecord({
+                ...planPayload,
+                title: title,
+                nombre: title,
+                nroConsecutivo: planConsecutivo
+            });
 
             toast.success("¡Convertido a Plan de Tratamiento exitosamente!");
             onSaved?.();
@@ -1807,14 +1817,10 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
                 rolCreador: initialData?.rolCreador || userProfile?.rol || userProfile?.cargo || ""
             };
 
-            if (isEditing) {
-                await updatePlan(currentPlanId, planData);
-                toast.success("Presupuesto actualizado");
-            } else {
-                const saved = await createPlan(planData);
-                setCurrentPlanId(saved.id);
-                toast.success("Presupuesto guardado");
-            }
+            if (autoSaveTimeoutRef.current) clearTimeout(autoSaveTimeoutRef.current);
+            const yaExistia = !!(planIdRef.current || creatingPlanRef.current);
+            await savePlanRecord(planData);
+            toast.success(yaExistia ? "Presupuesto actualizado" : "Presupuesto guardado");
             onSaved?.();
         } catch (error) {
             console.error("Error saving plan:", error);
