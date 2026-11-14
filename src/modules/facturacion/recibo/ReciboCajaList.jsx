@@ -705,13 +705,12 @@ export default function ReciboCajaList({ onNew }) {
                 const voidTextNote = `ANULADO - ${reason} (${operator})`;
 
                 // Intentar actualizar en pagos con estado, referencia y notas
+                // Solo columnas reales de "pagos" (motivo, quién y cuándo van dentro de notas).
+                // Antes se enviaban campos que no existen y la actualización completa fallaba.
                 const fullPayload = {
                     estado: "Anulado",
                     referencia: "ANULADO",
-                    notas: JSON.stringify(updatedNotes),
-                    motivoAnulacion: reason,
-                    anuladoPor: operator,
-                    fechaAnulacion: nowIso
+                    notas: JSON.stringify(updatedNotes)
                 };
 
                 const { error: errPago } = await supabase

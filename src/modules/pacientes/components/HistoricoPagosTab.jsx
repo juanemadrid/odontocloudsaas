@@ -442,7 +442,7 @@ export default function HistoricoPagosTab({ patientId }) {
                         </thead>
                         <tbody className="divide-y divide-slate-50">
                             {filtered.map((pago, idx) => {
-                                const isVoided = pago.estado === "Anulado";
+                                const isVoided = pago.estado === "Anulado" || pago.anulado === true || String(pago.referencia || "").toUpperCase() === "ANULADO";
                                 const badge = getMethodBadge(pago.medio || pago.metodo_pago);
                                 const numLabel = getReceiptNumber(pago, idx);
                                 const userLabel = getUserLabel(pago, userProfile);
@@ -513,15 +513,6 @@ export default function HistoricoPagosTab({ patientId }) {
                                                 >
                                                     <FiPrinter size={13} />
                                                 </button>
-                                                {!isVoided && (
-                                                    <button
-                                                        onClick={() => handleDelete(pago)}
-                                                        title="Anular abono"
-                                                        className="w-7 h-7 flex items-center justify-center rounded-lg text-rose-500 hover:bg-rose-50 hover:text-rose-700 transition-colors border border-rose-100"
-                                                    >
-                                                        <FiTrash2 size={13} />
-                                                    </button>
-                                                )}
                                             </div>
                                         </td>
                                     </tr>
@@ -529,6 +520,10 @@ export default function HistoricoPagosTab({ patientId }) {
                             })}
                         </tbody>
                     </table>
+                    {/* Los pagos se anulan solo en Administración → Facturación → Recibos de caja (un solo lugar, con permisos y sin descuadrar la caja). */}
+                    <p className="px-4 py-2 text-[11px] text-slate-400 border-t border-slate-100">
+                        Para anular un pago, hágalo en Administración → Facturación → Recibos de caja. Los pagos anulados se muestran aquí como «Anulado».
+                    </p>
                 </div>
             )}
 
