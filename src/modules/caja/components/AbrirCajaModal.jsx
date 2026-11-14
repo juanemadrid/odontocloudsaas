@@ -1,5 +1,6 @@
 import { formatColombianMoneyInput, parseColombianMoney } from "../../../utils/formatters";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { userDisplayName, resolveUserName } from "../../../utils/userDisplayName";
 import supabase from "../../../lib/supabaseClient";
 import { getConfigSection, saveConfigSection } from "../../../services/configPersistenceService";
 import { FiUser, FiX, FiCheck, FiLayout, FiBriefcase } from "react-icons/fi";
@@ -9,7 +10,7 @@ const fmtPure = (n) => new Intl.NumberFormat("es-CO").format(n);
 export default function AbrirCajaModal({ inquilino, userProfile, onClose, onSuccess }) {
   const [form, setForm] = useState({
     userId: userProfile?.uid || "",
-    userName: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.displayName || userProfile?.email || "Usuario",
+    userName: userDisplayName(userProfile),
     nombreCaja: "Caja Principal",
     baseActual: 0,
     ajustarBase: "",
@@ -18,6 +19,15 @@ export default function AbrirCajaModal({ inquilino, userProfile, onClose, onSucc
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  // Nombre real de quien abre la caja (si el perfil carga después o no trae el nombre, se busca).
+  useEffect(() => {
+    let alive = true;
+    resolveUserName(supabase, userProfile?.uid || userProfile?.id || "", userProfile).then((name) => {
+      if (alive && name) setForm((f) => ({ ...f, userName: name, userId: f.userId || userProfile?.uid || userProfile?.id || "" }));
+    });
+    return () => { alive = false; };
+  }, [userProfile?.uid, userProfile?.id, userProfile?.full_name, userProfile?.nombre, userProfile?.nombreCompleto]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -61,6 +71,7 @@ export default function AbrirCajaModal({ inquilino, userProfile, onClose, onSucc
         return;
       }
 
+      const realName = (await resolveUserName(supabase, uId, userProfile)) || form.userName || "";
       const base = parseColombianMoney(form.ajustarBase);
       const cajaId = crypto.randomUUID ? crypto.randomUUID() : `caja_${Date.now()}`;
       const fechaIso = new Date().toISOString();
@@ -78,14 +89,14 @@ export default function AbrirCajaModal({ inquilino, userProfile, onClose, onSucc
         estado: "abierta",
         observacion: form.observacion.trim(),
         usuario_id: uId,
-        usuario_nombre: form.userName,
+        usuario_nombre: realName,
         fecha_apertura: fechaIso,
         created_at: fechaIso,
         baseInicial: base,
         saldoInicial: base,
         saldoActual: base,
         usuarioId: uId,
-        usuarioNombre: form.userName,
+        usuarioNombre: realName,
         fechaApertura: fechaIso
       };
 

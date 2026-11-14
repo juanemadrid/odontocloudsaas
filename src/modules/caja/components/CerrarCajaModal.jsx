@@ -5,6 +5,7 @@ import { getConfigSection, saveConfigSection, getConfigItems } from "../../../se
 import { bankNames, buildClosingTransfers, saveTransfers, loadCajaTransferContext, cajaTransferMovements } from "../../../services/bankTransferService";
 import { FiX, FiLock, FiAlertTriangle, FiCheckCircle, FiTrendingUp, FiTrendingDown, FiPlus, FiMinus, FiRepeat } from "react-icons/fi";
 
+import { resolveUserName } from "../../../utils/userDisplayName";
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
     style: "currency", currency: "COP", minimumFractionDigits: 0, maximumFractionDigits: 2,
@@ -141,7 +142,7 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
   const handleCerrar = async () => {
     if (!confirmed) { setError("Confirma que has realizado el conteo físico."); return; }
     // Nombre real de quien cierra (antes podía quedar "Usuario" o el correo).
-    const cerradoPor = userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.displayName || userProfile?.email || "Usuario";
+    const cerradoPor = (await resolveUserName(supabase, userProfile?.uid || userProfile?.id || "", userProfile)) || "—";
     // Traslados a bancos: se validan ANTES de cerrar (banco, valor y que no supere lo contado).
     const ahora = new Date();
     let traslados = [];

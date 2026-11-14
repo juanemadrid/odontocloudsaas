@@ -13,6 +13,7 @@ import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { usePermissions } from "../../hooks/usePermissions";
 import { getConfigSection } from "../../services/configPersistenceService";
+import { userDisplayName } from "../../utils/userDisplayName";
 import { loadCajaTransferContext, cajaTransferMovements } from "../../services/bankTransferService";
 import { reconcileVoidedReceiptsInCaja } from "../../services/cajaSyncService";
 
@@ -122,6 +123,17 @@ export default function Caja() {
       } catch (e) {}
 
       const cfgCajas = await getConfigSection(inquilino, "cajas", []);
+
+      // Nombres reales de los usuarios de la clínica (para cajas guardadas como "Usuario").
+      const nombresUsuarios = new Map();
+      try {
+        const cfgUsuarios = await getConfigSection(inquilino, "usuarios", []);
+        (cfgUsuarios || []).forEach(u => { const n = userDisplayName(u); if (u?.id && n) nombresUsuarios.set(String(u.id), n); });
+      } catch (e) {}
+      try {
+        const { data: profs } = await supabase.from("profiles").select("id, full_name, apellido").eq("tenant_id", inquilino);
+        (profs || []).forEach(u => { const n = userDisplayName(u); if (u?.id && n && !nombresUsuarios.has(String(u.id))) nombresUsuarios.set(String(u.id), n); });
+      } catch (e) {}
       let trCtx = { transfers: [], banks: [], cajas: [] };
       try { trCtx = await loadCajaTransferContext(inquilino); } catch (e) {}
 
@@ -160,7 +172,8 @@ export default function Caja() {
             totalIngresos,
             totalEgresos,
             usuarioId: c.usuario_id ?? c.usuarioId ?? "",
-            usuarioNombre: c.usuario_nombre ?? c.usuarioNombre ?? (c.nombre || "Usuario"),
+            usuarioNombre: userDisplayName({ usuarioNombre: c.usuarioNombre, usuario_nombre: c.usuario_nombre })
+              || nombresUsuarios.get(String(c.usuario_id ?? c.usuarioId ?? "")) || c.nombre || "—",
             fechaApertura: c.fecha_apertura ?? c.fechaApertura ?? c.created_at
           });
         }
