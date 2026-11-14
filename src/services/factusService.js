@@ -22,6 +22,7 @@ import { calculateNIT_DV, splitIdentificationForDian } from "../utils/dian/dianH
 import { factusPaymentCode } from "./factusPayment.js";
 import { billingFullName, billingItemDescription } from '../utils/billingPresentation.js';
 
+import { todayBogota } from "../utils/bogotaDate";
 /**
  * factusService.js
  * Robust Factus electronic invoicing service for OdontoCloud.
@@ -615,7 +616,7 @@ export const sendSupportDocument = async (supportDocData) => {
   const paymentMethodCode = mapPaymentMethodCode(supportDocData.medioPago || supportDocData.medio_pago || supportDocData.metodoPago);
 
   // ── Due Date (Obligatorio en Factus V2 payment_details) ──
-  const dueDate = supportDocData.fechaVencimiento || supportDocData.fecha_vencimiento || supportDocData.fecha || new Date().toISOString().split("T")[0];
+  const dueDate = supportDocData.fechaVencimiento || supportDocData.fecha_vencimiento || supportDocData.fecha || todayBogota();
 
   const itemsTotal = factusItems.reduce((sum, item) => {
     const lineTotal = item.price * item.quantity * (1 - (item.discount_rate || 0) / 100);

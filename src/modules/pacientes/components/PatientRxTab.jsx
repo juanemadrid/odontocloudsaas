@@ -7,6 +7,7 @@ import { getDoctorsList } from "../../../services/supabaseServices";
 import { privateFileReference, removePrivateFile, resolvePrivateFileUrl, uploadPrivateFile } from "../../../services/privateStorageService";
 
 
+import { todayBogota } from "../../../utils/bogotaDate";
 export default function PatientRxTab({ patient, onUpdate }) {
     const toast = useToast();
     const { userProfile, user } = useAuth();
@@ -35,7 +36,7 @@ export default function PatientRxTab({ patient, onUpdate }) {
     const [nombreVisible, setNombreVisible] = useState("");
     const [descripcion, setDescripcion] = useState("");
     const [profesionalResp, setProfesionalResp] = useState("");
-    const [fechaAsoc, setFechaAsoc] = useState(new Date().toISOString().split("T")[0]);
+    const [fechaAsoc, setFechaAsoc] = useState(todayBogota());
     const fileInputRef = useRef(null);
 
     // Dynamic Select List for Profesionales
@@ -445,7 +446,7 @@ export default function PatientRxTab({ patient, onUpdate }) {
                                 setNombreVisible("");
                                 setDescripcion("");
                                 setProfesionalResp("");
-                                setFechaAsoc(new Date().toISOString().split("T")[0]);
+                                setFechaAsoc(todayBogota());
                                 setViewMode("form");
                             }}
                             className="px-6 py-2.5 bg-[#8CC63F] hover:bg-[#7bb335] text-white rounded-xl font-black text-[11px] uppercase tracking-widest shadow-lg shadow-[#8CC63F]/20 flex items-center gap-2 transition-all active:scale-95 shrink-0"
@@ -517,7 +518,7 @@ export default function PatientRxTab({ patient, onUpdate }) {
                                                         setNombreVisible(img.title || '');
                                                         setDescripcion(img.descripcion || '');
                                                         setProfesionalResp(img.profesional || '');
-                                                        setFechaAsoc(img.fechaAsocISO || img.uploadedAtISO?.split("T")[0] || new Date().toISOString().split("T")[0]);
+                                                        setFechaAsoc(img.fechaAsocISO || img.uploadedAtISO?.split("T")[0] || todayBogota());
                                                         setViewMode("form");
                                                     }}
                                                     title="Editar"

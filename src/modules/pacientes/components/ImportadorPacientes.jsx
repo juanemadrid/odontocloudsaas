@@ -4,6 +4,7 @@ import { useAuth } from "../../../context/AuthContext";
 import { useToast } from "../../../context/ToastContext";
 import { FiDownload, FiUpload, FiUsers, FiZap, FiCheckCircle, FiFileText, FiInfo, FiEye, FiCheck, FiX, FiColumns, FiList } from "react-icons/fi";
 
+import { todayBogota } from "../../../utils/bogotaDate";
 // Utility to load XLSX library dynamically with local fallback
 async function ensureXLSX() {
     if (typeof window !== "undefined" && window.XLSX) return window.XLSX;
@@ -181,7 +182,7 @@ export default function ImportadorPacientes({ onComplete, onClose }) {
         const proximaCita = String(row["Próxima Cita"] || "").trim();
         const fechaHoraIngreso = String(row["Fecha hora ingreso"] || "").trim();
         const fechaHoraCreacion = String(row["Fecha hora creación"] || "").trim();
-        let fechaIngreso = toIsoDate(fechaHoraIngreso) || new Date().toISOString().slice(0, 10);
+        let fechaIngreso = toIsoDate(fechaHoraIngreso) || todayBogota();
 
         // --- HEURÍSTICA DE REPARACIÓN INTELIGENTE (CASO FILA 44 Y SHIFTS DE COLUMNAS) ---
         if (!email && barrio.includes("@")) {
@@ -512,7 +513,7 @@ export default function ImportadorPacientes({ onComplete, onClose }) {
                         nombres: p.nombres,
                         apellidos: p.apellidos,
                         nro_historia: p.nro_historia || p.documento,
-                        fecha_ingreso: p.fecha_ingreso || new Date().toISOString().slice(0, 10),
+                        fecha_ingreso: p.fecha_ingreso || todayBogota(),
                         fecha_nacimiento: p.fecha_nacimiento || null,
                         genero: p.genero || "Femenino",
                         estado_civil: p.estado_civil || "Soltero(a)",

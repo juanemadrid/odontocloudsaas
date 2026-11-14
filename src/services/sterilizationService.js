@@ -1,5 +1,6 @@
 import supabase from "../lib/supabaseClient";
 
+import { todayBogota } from "../utils/bogotaDate";
 /**
  * Normaliza y extrae los registros de uso de un ciclo de esterilización
  * combinando tanto el arreglo interno `cycle.usos` como las evoluciones
@@ -158,7 +159,7 @@ export async function registerSterilizationUsages(tenantId, usages = []) {
           usuario: usage.usuario || "Usuario",
           paciente: usage.paciente || "Paciente",
           pacienteId: usage.pacienteId || null,
-          fecha: usage.fecha || new Date().toISOString().split("T")[0],
+          fecha: usage.fecha || todayBogota(),
           concepto: usage.concepto,
           cantidad: Number(usage.cantidad) || 1,
           evolutionId: usage.evolutionId || null,

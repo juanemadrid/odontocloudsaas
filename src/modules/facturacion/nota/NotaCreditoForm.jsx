@@ -11,6 +11,7 @@ import { formatTerceroNombre } from "../../../utils/dian/dianHelpers";
 
 import { formatNumberWithDots, parseRawNumber } from "../../../utils/formatters";
 
+import { todayBogota } from "../../../utils/bogotaDate";
 const fmt = (n) => {
   const num = Number(n || 0);
   return num.toLocaleString("es-CO", {
@@ -45,7 +46,7 @@ export default function NotaCreditoForm({ onCancel, onSuccess }) {
     const [success, setSuccess] = useState(false);
 
     // Form State
-    const [fecha, setFecha] = useState(new Date().toISOString().split('T')[0]);
+    const [fecha, setFecha] = useState(todayBogota());
     const [paciente, setPaciente] = useState(null);
     const [patientSearch, setPatientSearch] = useState("");
     const [showPatientDrop, setShowPatientDrop] = useState(false);

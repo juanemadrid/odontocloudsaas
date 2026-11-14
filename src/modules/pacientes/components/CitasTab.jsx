@@ -13,6 +13,7 @@ import * as XLSX from "xlsx";
 import AppointmentModal from "../../agenda/components/AppointmentModal";
 import { openWhatsAppWebDirect, getActiveClinicName } from "../../../services/WhatsAppService";
 
+import { todayBogota } from "../../../utils/bogotaDate";
 export const normalizeStatus = (status) => {
     if (!status) return "programada";
     const s = String(status).toLowerCase().trim().replace(/[\s_-]+/g, "_");
@@ -311,7 +312,7 @@ export default function CitasTab({ patient }) {
             const worksheet = XLSX.utils.json_to_sheet(exportData);
             const workbook = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(workbook, worksheet, "Historial de Citas");
-            const fileName = `CITAS_${(patient?.nombreCompleto || patient?.nombres || "PACIENTE").replace(/\s+/g, '_')}_${new Date().toISOString().slice(0,10)}.xlsx`;
+            const fileName = `CITAS_${(patient?.nombreCompleto || patient?.nombres || "PACIENTE").replace(/\s+/g, '_')}_${todayBogota()}.xlsx`;
             XLSX.writeFile(workbook, fileName);
         } catch (e) {
             console.error("Error exporting excel:", e);

@@ -12,6 +12,7 @@ import {
 } from "react-icons/fi";
 import { toast } from "sonner";
 
+import { todayBogota, formatDateCO, invoiceCalendarDate } from "../../../utils/bogotaDate";
 const fmt = (n) => {
   const num = Number(n || 0);
   return num.toLocaleString("es-CO", {
@@ -22,17 +23,8 @@ const fmt = (n) => {
   });
 };
 
-const formatDateOnly = (dObj) => {
-  if (!dObj) return "—";
-  try {
-    const d = dObj.toDate ? dObj.toDate() : new Date(dObj);
-    return d.toLocaleDateString("es-CO", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric"
-    });
-  } catch { return String(dObj); }
-};
+// Fecha en hora de Colombia («2026-11-13» se muestra 13/11, no 12/11).
+const formatDateOnly = (dObj) => formatDateCO(dObj);
 
 export default function Liquidaciones() {
     const { userProfile } = useAuth();
@@ -59,9 +51,9 @@ export default function Liquidaciones() {
     // Filters for "pagadas" tab
     const [filtroDocPagadas, setFiltroDocPagadas] = useState("");
     const [filtroFechaDesde, setFiltroFechaDesde] = useState(() => {
-        const d = new Date(); d.setDate(d.getDate() - 60); return d.toISOString().split("T")[0];
+        const d = new Date(); d.setDate(d.getDate() - 60); return todayBogota(d);
     });
-    const [filtroFechaHasta, setFiltroFechaHasta] = useState(new Date().toISOString().split("T")[0]);
+    const [filtroFechaHasta, setFiltroFechaHasta] = useState(todayBogota());
     const [doctoresCatalog, setDoctoresCatalog] = useState([]);
 
     const loadLiquidaciones = async () => {
@@ -170,10 +162,9 @@ export default function Liquidaciones() {
 
         // Filtro por fecha
         if (filtroFechaDesde && filtroFechaHasta) {
-            const fTarget = new Date(l.fechaPago || l.created_at).getTime();
-            const fIni = new Date(filtroFechaDesde + "T00:00:00").getTime();
-            const fFin = new Date(filtroFechaHasta + "T23:59:59").getTime();
-            if (fTarget < fIni || fTarget > fFin) return false;
+            // Se compara el día en hora de Colombia («2026-11-13» no debe caer en el 12).
+            const fTarget = invoiceCalendarDate(l.fechaPago || l.created_at);
+            if (!fTarget || fTarget < filtroFechaDesde || fTarget > filtroFechaHasta) return false;
         }
 
         return true;

@@ -18,6 +18,7 @@ import { usePermissions } from "../../../hooks/usePermissions";
 import supabase from "../../../lib/supabaseClient";
 import { assertAppointmentAvailability, generateAvailableSlots, loadSchedules } from "../../../services/agendaAvailabilityService";
 
+import { todayBogota } from "../../../utils/bogotaDate";
 // Basic schema for appointment info
 const baseSchema = z.object({
     id: z.string().optional(),
@@ -543,7 +544,7 @@ export default function AppointmentModal({
             return;
         }
         let isMounted = true;
-        const anchor = new Date(`${watchedDate || new Date().toISOString().split("T")[0]}T00:00:00`);
+        const anchor = new Date(`${watchedDate || todayBogota()}T00:00:00`);
         const rangeStart = new Date(anchor);
         const day = rangeStart.getDay();
         rangeStart.setDate(rangeStart.getDate() + (day === 0 ? -6 : 1 - day));
@@ -712,7 +713,7 @@ export default function AppointmentModal({
     };
 
     const changeWeek = (days) => {
-        const currentFecha = watch("fecha") || new Date().toISOString().split('T')[0];
+        const currentFecha = watch("fecha") || todayBogota();
         const d = new Date(currentFecha + "T00:00:00");
         d.setDate(d.getDate() + days);
         setValue("fecha", d.toISOString().split('T')[0]);
@@ -1172,14 +1173,14 @@ export default function AppointmentModal({
                                     ▶
                                 </button>
                             </div>
-                            <button type="button" onClick={() => setValue("fecha", new Date().toISOString().split('T')[0])} className="px-6 py-2.5 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-[0.1em] hover:bg-blue-700 shadow-lg shadow-blue-500/20 transition-all active:scale-95">Ir a Hoy</button>
+                            <button type="button" onClick={() => setValue("fecha", todayBogota())} className="px-6 py-2.5 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-[0.1em] hover:bg-blue-700 shadow-lg shadow-blue-500/20 transition-all active:scale-95">Ir a Hoy</button>
                         </div>
 
                         {/* Weekly Grid (Premium display) */}
                         <div className="grid grid-cols-7 gap-px bg-slate-100 border border-slate-100 rounded-[24px] overflow-hidden shadow-sm">
                             {['LUN', 'MAR', 'MIE', 'JUE', 'VIE', 'SAB', 'DOM'].map((day, idx) => {
                                 // Calculate the specific date for this column
-                                const f = watch("fecha") || new Date().toISOString().split('T')[0];
+                                const f = watch("fecha") || todayBogota();
                                 const baseDate = new Date(f + "T00:00:00");
                                 
                                 // Ensure baseDate is valid

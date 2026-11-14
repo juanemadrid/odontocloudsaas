@@ -32,6 +32,7 @@ import {
 import { creditAdjustment, fiscalInvoiceNumber, invoiceDisplayNumber, isDiscardedInvoice, paginate, sortInvoicesByConsecutive } from "../../../utils/invoiceNumbering.js";
 import { canDiscardInvoice, discardBlockReason, discardRejectedInvoice } from "../../../services/invoiceDiscardService.js";
 
+import { todayBogota, formatDateCO } from "../../../utils/bogotaDate";
 // Código DIAN del documento del adquiriente según la respuesta validada de Factus.
 const billedDocumentCode = (det) => {
   const customer = det?.factusResponse?.data?.bill?.customer || det?.factusResponse?.bill?.customer || det?.factusResponse?.data?.customer;
@@ -48,11 +49,8 @@ const fmt = (n) => {
   });
 };
 
-const fmtDate = (ts) => {
-  if (!ts) return "—";
-  const d = ts?.toDate ? ts.toDate() : new Date(ts);
-  return d.toLocaleDateString("es-CO", { day: "2-digit", month: "2-digit", year: "numeric" });
-};
+// Fecha en hora de Colombia («2026-11-13» se muestra 13/11, no 12/11).
+const fmtDate = (ts) => formatDateCO(ts);
 
 const PAYMENT_LABELS = {
   "10": "Efectivo",
@@ -74,7 +72,7 @@ export default function FacturaElectronicaModule() {
   const today = new Date();
   const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1)
     .toISOString().split("T")[0];
-  const todayStr = today.toISOString().split("T")[0];
+  const todayStr = todayBogota(today);
 
   const [facturas, setFacturas] = useState([]);
   const [loading, setLoading] = useState(true);

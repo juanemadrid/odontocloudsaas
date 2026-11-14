@@ -1,6 +1,7 @@
 import React from "react";
 import { FiX, FiPrinter, FiCheckCircle, FiClock, FiFileText, FiUser, FiCalendar, FiDollarSign } from "react-icons/fi";
 
+import { formatDateCO } from "../../../utils/bogotaDate";
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
     style: "currency",
@@ -8,19 +9,8 @@ const fmt = (n) =>
     maximumFractionDigits: 0,
   });
 
-const formatDate = (dateStr) => {
-  if (!dateStr) return "—";
-  try {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString("es-CO", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric"
-    });
-  } catch {
-    return dateStr;
-  }
-};
+// Fecha en hora de Colombia («2026-11-13» se muestra 13/11, no 12/11).
+const formatDate = (dateStr) => formatDateCO(dateStr);
 
 export default function LiquidacionViewerModal({ liquidacion, onClose, onPagar, onAnular }) {
   if (!liquidacion) return null;

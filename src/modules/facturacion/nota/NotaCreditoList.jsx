@@ -3,6 +3,7 @@ import { FiPlus, FiCalendar, FiSearch, FiPrinter, FiEye, FiTrash2, FiX } from "r
 import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 
+import { todayBogota, formatDateCO } from "../../../utils/bogotaDate";
 const fmt = (n) => {
   const num = Number(n || 0);
   return num.toLocaleString("es-CO", {
@@ -13,15 +14,8 @@ const fmt = (n) => {
   });
 };
 
-const fmtDate = (ts) => {
-  if (!ts) return "—";
-  const d = ts.toDate ? ts.toDate() : new Date(ts);
-  return d.toLocaleDateString("es-CO", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric"
-  });
-};
+// Fecha en hora de Colombia («2026-11-13» se muestra 13/11, no 12/11).
+const fmtDate = (ts) => formatDateCO(ts);
 
 export default function NotaCreditoList({ onNew }) {
     const { userProfile } = useAuth();
@@ -37,9 +31,9 @@ export default function NotaCreditoList({ onNew }) {
     const [fechaInicio, setFechaInicio] = useState(() => {
         const d = new Date();
         d.setDate(d.getDate() - 30);
-        return d.toISOString().split('T')[0];
+        return todayBogota(d);
     });
-    const [fechaFin, setFechaFin] = useState(new Date().toISOString().split('T')[0]);
+    const [fechaFin, setFechaFin] = useState(todayBogota());
 
     // View Modal
     const [viewModal, setViewModal] = useState({ open: false, nota: null });

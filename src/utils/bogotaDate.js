@@ -26,3 +26,20 @@ export function invoiceCalendarDate(value) {
   const d = new Date(s);
   return Number.isNaN(d.getTime()) ? s.slice(0, 10) : todayBogota(d);
 }
+
+/**
+ * Fecha para mostrar en pantalla (DD/MM/AAAA) en hora de Colombia.
+ * «2026-11-13» (fecha sin hora) se muestra 13/11/2026; un instante se muestra con el día de Colombia.
+ */
+export function formatDateCO(value) {
+  if (value === null || value === undefined || value === "") return "—";
+  let v = value;
+  if (v && typeof v.toDate === "function") v = v.toDate();
+  if (v instanceof Date) {
+    if (Number.isNaN(v.getTime())) return "—";
+    v = todayBogota(v);
+  }
+  const s = invoiceCalendarDate(v);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : (s || "—");
+}

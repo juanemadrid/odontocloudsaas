@@ -4,6 +4,7 @@ import supabase from "../../../lib/supabaseClient";
 import { useAuth } from "../../../context/AuthContext";
 import { toast } from "sonner";
 
+import { todayBogota } from "../../../utils/bogotaDate";
 export default function RecepcionProducto({ items, onLoadRequired }) {
   const { userProfile } = useAuth();
   const inquilino = userProfile?.inquilino || "";
@@ -19,8 +20,8 @@ export default function RecepcionProducto({ items, onLoadRequired }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [showDropdown, setShowDropdown] = useState(false);
 
-  const [fecha, setFecha] = useState(new Date().toISOString().split("T")[0]);
-  const [fechaRecepcion, setFechaRecepcion] = useState(new Date().toISOString().split("T")[0]);
+  const [fecha, setFecha] = useState(todayBogota());
+  const [fechaRecepcion, setFechaRecepcion] = useState(todayBogota());
   const [cantidad, setCantidad] = useState("");
   const [lote, setLote] = useState("");
   const [vencimiento, setVencimiento] = useState("");

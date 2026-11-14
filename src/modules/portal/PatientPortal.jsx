@@ -14,6 +14,7 @@ import { FiArrowLeft, FiLogOut, FiCalendar, FiDollarSign, FiActivity, FiMessageC
 import { toast } from "sonner";
 import { isAccessBlocked } from "../../utils/subscriptionHelper";
 
+import { todayBogota } from "../../utils/bogotaDate";
 // ── Modal genérico del portal ─────────────────────────────────────────────────
 function PortalModal({ title, icon: Icon, color, onClose, maxWidth = "max-w-md", children }) {
     return (
@@ -434,7 +435,7 @@ export default function PatientPortal() {
         );
         setTodasCitas(citasArr);
 
-        const today = new Date().toISOString().slice(0, 10);
+        const today = todayBogota();
         setNextAppt(citasArr.find(appointment =>
             appointment.fecha >= today &&
             !["cancelada", "no asistio"].includes((appointment.estado || "").toLowerCase())
@@ -1721,7 +1722,7 @@ export default function PatientPortal() {
                             <form onSubmit={handleSolicitarCita} className="space-y-3">
                                 <div>
                                     <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">Fecha preferida</label>
-                                    <input type="date" min={new Date().toISOString().slice(0,10)} max="9999-12-31" required value={nuevaCitaForm.fecha} onChange={e => setNuevaCitaForm(f => ({...f, fecha: e.target.value}))} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-400 font-semibold text-sm text-slate-800" />
+                                    <input type="date" min={todayBogota()} max="9999-12-31" required value={nuevaCitaForm.fecha} onChange={e => setNuevaCitaForm(f => ({...f, fecha: e.target.value}))} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-400 font-semibold text-sm text-slate-800" />
                                 </div>
                                 <div>
                                     <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">Motivo de consulta</label>

@@ -5,6 +5,7 @@ import { formatColombianMoneyInput, parseColombianMoney } from "../../../utils/f
 import React, { useState, useEffect, useRef } from "react";
 import supabase from "../../../lib/supabaseClient";
 
+import { todayBogota } from "../../../utils/bogotaDate";
 const CONCEPTOS = {
   ingreso: [
     "Pago de tratamiento",
@@ -391,7 +392,7 @@ export default function MovimientoModal({ caja, inquilino, userProfile, onClose,
         const egresoRecord = {
           id: `pago_${Date.now()}`,
           tenant_id: inquilino,
-          fecha: new Date().toISOString().split("T")[0],
+          fecha: todayBogota(),
           numero: finalConsStr,
           consecutivo: finalConsStr,
           nroConsecutivo: finalConsStr,

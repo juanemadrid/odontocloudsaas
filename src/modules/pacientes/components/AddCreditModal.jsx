@@ -11,6 +11,7 @@ import { formatCurrency } from '../../../utils/formatters';
 import { isDoctorUser } from '../../../utils/doctorHelpers';
 import { getConfigSection } from '../../../services/configPersistenceService';
 
+import { todayBogota } from "../../../utils/bogotaDate";
 export default function AddCreditModal({ isOpen, onClose, patient, onUpdate }) {
     const { userProfile } = useAuth();
     const toast = useToast();
@@ -20,7 +21,7 @@ export default function AddCreditModal({ isOpen, onClose, patient, onUpdate }) {
     
     const { register, handleSubmit, watch, formState: { errors }, reset, setValue } = useForm({
         defaultValues: {
-            fecha: new Date().toISOString().split('T')[0],
+            fecha: todayBogota(),
             valor: "",
             valorDisplay: "",
             medio: "Efectivo",

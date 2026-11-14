@@ -5,6 +5,7 @@ import { FiCheckCircle, FiDownload, FiPrinter, FiEdit3, FiShield, FiAlertCircle,
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 
+import { todayBogota } from "../utils/bogotaDate";
 export default function DigitalSignaturePublicPage() {
     // Estado del flujo seguro de verificación
     const [rawToken, setRawToken] = useState(null);
@@ -359,7 +360,7 @@ export default function DigitalSignaturePublicPage() {
             const printableHeight = (canvas.height * printableWidth) / canvas.width;
 
             pdf.addImage(imgData, "PNG", marginX, marginY, printableWidth, printableHeight, undefined, "FAST");
-            pdf.save(`Evolucion_${(patientDisplayName || "Paciente").replace(/\s+/g, "_")}_${new Date().toISOString().slice(0, 10)}.pdf`);
+            pdf.save(`Evolucion_${(patientDisplayName || "Paciente").replace(/\s+/g, "_")}_${todayBogota()}.pdf`);
         } catch (error) {
             console.error("Error al descargar PDF:", error);
             handlePrint();

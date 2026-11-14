@@ -2,6 +2,7 @@ import React, { useState, useMemo } from "react";
 import { FiClock, FiAlertTriangle, FiZap, FiX, FiCheckCircle } from "react-icons/fi";
 import { FaWhatsapp } from "react-icons/fa";
 
+import { todayBogota } from "../utils/bogotaDate";
 export default function SubscriptionBanner({ userProfile, onOpenRenewalModal }) {
     const [dismissed, setDismissed] = useState(() => {
         try {
@@ -10,7 +11,7 @@ export default function SubscriptionBanner({ userProfile, onOpenRenewalModal }) 
             const dismissedDate = sessionStorage.getItem(`odc_sub_banner_dismissed_${tenantId}`);
             if (!dismissedDate) return false;
             // Si lo cerró hoy, no volver a molestarlo durante la sesión
-            return dismissedDate === new Date().toISOString().slice(0, 10);
+            return dismissedDate === todayBogota();
         } catch {
             return false;
         }
@@ -72,7 +73,7 @@ export default function SubscriptionBanner({ userProfile, onOpenRenewalModal }) 
         try {
             const tenantId = userProfile?.inquilino || userProfile?.tenant?.id;
             if (tenantId) {
-                sessionStorage.setItem(`odc_sub_banner_dismissed_${tenantId}`, new Date().toISOString().slice(0, 10));
+                sessionStorage.setItem(`odc_sub_banner_dismissed_${tenantId}`, todayBogota());
             }
         } catch (_) {}
         setDismissed(true);

@@ -10,6 +10,7 @@ import { consumeNextConsecutivo, CONSECUTIVO_TYPES } from "../../../services/con
 import { getConfigItems, saveConfigItem, getConfigSection, saveConfigSection } from "../../../services/configPersistenceService";
 import { toast } from "sonner";
 
+import { formatDateCO } from "../../../utils/bogotaDate";
 const fmt = (n) => {
   const num = Number(n || 0);
   return num.toLocaleString("es-CO", {
@@ -20,24 +21,8 @@ const fmt = (n) => {
   });
 };
 
-const formatDateOnly = (dObj) => {
-  if (!dObj) return "—";
-  try {
-    if (typeof dObj === 'string') {
-      const match = dObj.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
-      if (match && (!dObj.includes('T') || dObj.includes('T00:00:00') || dObj.includes('T05:00:00'))) {
-        const [, y, m, d] = match;
-        return `${d}/${m}/${y}`;
-      }
-    }
-    const d = dObj.toDate ? dObj.toDate() : new Date(dObj);
-    return d.toLocaleDateString("es-CO", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric"
-    });
-  } catch { return "—"; }
-};
+// Fecha en hora de Colombia («2026-11-13» se muestra 13/11, no 12/11).
+const formatDateOnly = (dObj) => formatDateCO(dObj);
 
 export const printHTMLInHiddenIframe = (html) => {
     let iframe = document.getElementById("oc-print-iframe");

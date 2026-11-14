@@ -19,6 +19,7 @@ import { printDocumentoSoporte } from "../../../utils/electronicInvoiceTemplate"
 import { ReceiptPrintService } from "../../../services/ReceiptPrintService";
 import { prepareExpensePrint } from "../../../services/expensePrintService";
 
+import { todayBogota, formatDateCO } from "../../../utils/bogotaDate";
 const fmt = (n) => {
   const num = Number(n || 0);
   return num.toLocaleString("es-CO", {
@@ -29,11 +30,8 @@ const fmt = (n) => {
   });
 };
 
-const fmtDate = (ts) => {
-  if (!ts) return "—";
-  const d = ts.toDate ? ts.toDate() : new Date(ts);
-  return d.toLocaleDateString("es-CO", { day: "2-digit", month: "2-digit", year: "numeric" });
-};
+// Fecha en hora de Colombia («2026-11-13» se muestra 13/11, no 12/11).
+const fmtDate = (ts) => formatDateCO(ts);
 
 const printHTMLInHiddenIframe = (html) => {
   let iframe = document.getElementById("oc-print-factura-iframe");
@@ -95,9 +93,9 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
   const [fechaInicio, setFechaInicio] = useState(() => {
     const d = new Date(); 
     d.setDate(1); // Primer día del mes actual
-    return d.toISOString().split("T")[0];
+    return todayBogota(d);
   });
-  const [fechaFin, setFechaFin] = useState(() => new Date().toISOString().split("T")[0]);
+  const [fechaFin, setFechaFin] = useState(() => todayBogota());
 
   // Selección de facturas con checkbox
   const [selectedFacturaId, setSelectedFacturaId] = useState(null);
@@ -757,7 +755,7 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
     setAnulando(true);
     try {
       const motivoObj = MOTIVOS_AJUSTE_DOCUMENTO_SOPORTE.find(m => m.id === motivoAnulacionId) || MOTIVOS_AJUSTE_DOCUMENTO_SOPORTE[1];
-      const fechaHoy = new Date().toISOString().split("T")[0];
+      const fechaHoy = todayBogota();
       const ahoraISO = new Date().toISOString();
       const userName = userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email || "Usuario";
 

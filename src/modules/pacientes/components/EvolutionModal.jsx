@@ -11,6 +11,7 @@ import CIE10Search from './CIE10Search';
 import ClinicalAIAssistant from './ClinicalAIAssistant';
 import { computeCycleAvailability, registerSterilizationUsages } from '../../../services/sterilizationService';
 
+import { todayBogota } from "../../../utils/bogotaDate";
 // Lista oficial de anestésicos dentales existentes en Colombia (1:1 OralDrive)
 export const ANESTESICOS_COLOMBIA = [
     "Clorhidrato de Procaina al 1%",
@@ -1020,7 +1021,7 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                         usuario: creatorName || docName || "Usuario",
                         paciente: patient?.nombreCompleto || patient?.nombre || "Paciente",
                         pacienteId: patient?.id,
-                        fecha: data.fecha || new Date().toISOString().split("T")[0],
+                        fecha: data.fecha || todayBogota(),
                         evolutionId: isEditing ? initialData.id : null
                     }));
                     await registerSterilizationUsages(

@@ -5,6 +5,7 @@ import supabase from "../lib/supabaseClient";
 import { getConfigSection, saveConfigSection } from "./configPersistenceService";
 import { isDoctorUser } from "../utils/doctorHelpers";
 
+import { todayBogota } from "../utils/bogotaDate";
 // ===============================================================
 // 1. RECIBOS DE CAJA
 // ===============================================================
@@ -30,7 +31,7 @@ export const recibosCajaService = {
     const payload = {
       tenant_id: tenantId,
       nro_consecutivo: consecutivo.toString().padStart(6, '0'),
-      fecha: reciboData.fecha || new Date().toISOString().split('T')[0],
+      fecha: reciboData.fecha || todayBogota(),
       profesional_id: reciboData.profesionalId,
       profesional_nombre: reciboData.profesionalNombre,
       paciente_id: reciboData.pacienteId,
@@ -514,7 +515,7 @@ export const documentosClinicosService = {
       tipo_documento: documentoData.tipoDocumento,
       contenido: documentoData.contenido,
       creado_por: documentoData.creadoPor,
-      fecha_documento: documentoData.fechaDocumento || new Date().toISOString().split('T')[0]
+      fecha_documento: documentoData.fechaDocumento || todayBogota()
     };
 
     const { data, error } = await supabase

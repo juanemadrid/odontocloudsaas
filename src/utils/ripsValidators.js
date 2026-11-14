@@ -1,3 +1,5 @@
+import { todayBogota } from "./bogotaDate";
+
 /**
  * Utilidades para validación y generación de RIPS (Resolución 2275 de 2023 - JSON)
  * Cumple con la especificación técnica oficial del Ministerio de Salud y la DIAN.
@@ -169,7 +171,7 @@ export const buildUsuarioJSON = (paciente = {}, tipoUsuario = '04') => {
 export const buildConsultaJSON = (datos = {}, consecutivo = 1) => {
     return {
         codPrestador: String(datos.codPrestador || "000000000001").trim(),
-        fechaInicioAtencion: String(datos.fechaInicio || new Date().toISOString().substring(0, 10)).substring(0, 16),
+        fechaInicioAtencion: String(datos.fechaInicio || todayBogota()).substring(0, 16),
         numAutorizacion: datos.numAutorizacion || null,
         codConsulta: String(datos.codConsulta || "890203").toUpperCase(),
         modalidadGrupoServicio: "01", // Intramural
@@ -195,7 +197,7 @@ export const buildConsultaJSON = (datos = {}, consecutivo = 1) => {
 export const buildProcedimientoJSON = (datos = {}, consecutivo = 1) => {
     return {
         codPrestador: String(datos.codPrestador || "000000000001").trim(),
-        fechaProcedimiento: String(datos.fechaProcedimiento || new Date().toISOString().substring(0, 10)).substring(0, 16),
+        fechaProcedimiento: String(datos.fechaProcedimiento || todayBogota()).substring(0, 16),
         idMIPRES: null,
         numAutorizacion: datos.numAutorizacion || null,
         codProcedimiento: String(datos.codProcedimiento || "230101").toUpperCase(),

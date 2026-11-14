@@ -4,6 +4,7 @@ import Input from '../../../components/ui/Input';
 import { addTransaction } from '../../../services/financialService';
 import { useToast } from '../../../context/ToastContext';
 
+import { todayBogota } from "../../../utils/bogotaDate";
 export default function TransactionForm({ onClose, onSaved }) {
     const toast = useToast();
     const [loading, setLoading] = useState(false);
@@ -13,7 +14,7 @@ export default function TransactionForm({ onClose, onSaved }) {
         amount: '',
         description: '',
         category: 'General',
-        date: new Date().toISOString().split('T')[0],
+        date: todayBogota(),
         method: 'Efectivo'
     });
 

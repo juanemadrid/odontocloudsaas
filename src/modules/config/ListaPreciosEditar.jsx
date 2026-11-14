@@ -10,6 +10,7 @@ import { useAuth } from "../../context/AuthContext";
 import { CUPS_ODONTOLOGIA } from "../../data/cupsOdontologia";
 import ModalProducto from "./ModalProducto";
 
+import { todayBogota } from "../../utils/bogotaDate";
 // Helper: parse items stored as JSON string in descripcion field
 const parseItems = (descripcion) => {
     try {
@@ -320,7 +321,7 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
             XLSX.utils.book_append_sheet(workbook, worksheet, "Lista de Precios");
             
             // Generate filename
-            const fileName = `LISTA_${listData?.nombre || 'PRECIOS'}_${new Date().toISOString().split('T')[0]}.xlsx`;
+            const fileName = `LISTA_${listData?.nombre || 'PRECIOS'}_${todayBogota()}.xlsx`;
             XLSX.writeFile(workbook, fileName);
         } catch (error) {
             console.error("Error exporting:", error);

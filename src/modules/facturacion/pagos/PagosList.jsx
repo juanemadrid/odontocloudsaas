@@ -10,6 +10,7 @@ import { ReceiptPrintService } from "../../../services/ReceiptPrintService";
 import { formatEgresoConcepto, prepareExpensePrint } from "../../../services/expensePrintService";
 import { printDocumentoSoporte } from "../../../utils/electronicInvoiceTemplate";
 
+import { todayBogota, formatDateCO } from "../../../utils/bogotaDate";
 const fmt = (n) => {
   const num = Number(n || 0);
   return num.toLocaleString("es-CO", {
@@ -20,19 +21,8 @@ const fmt = (n) => {
   });
 };
 
-const fmtDate = (ts) => {
-  if (!ts) return "—";
-  if (typeof ts === 'string') {
-    const match = ts.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (match && (!ts.includes('T') || ts.includes('T00:00:00') || ts.includes('T05:00:00'))) {
-      const [, y, m, d] = match;
-      return `${d}/${m}/${y}`;
-    }
-  }
-  const d = ts?.toDate ? ts.toDate() : new Date(ts);
-  if (isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("es-CO", { day: "2-digit", month: "2-digit", year: "numeric" });
-};
+// Fecha en hora de Colombia («2026-11-13» se muestra 13/11, no 12/11).
+const fmtDate = (ts) => formatDateCO(ts);
 
 export { formatEgresoConcepto } from "../../../services/expensePrintService";
 
@@ -45,9 +35,9 @@ export default function PagosList({ onNew }) {
   const [clinic, setClinic] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [fechaInicio, setFechaInicio] = useState(() => {
-    const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().split("T")[0];
+    const d = new Date(); d.setDate(d.getDate() - 30); return todayBogota(d);
   });
-  const [fechaFin, setFechaFin] = useState(new Date().toISOString().split("T")[0]);
+  const [fechaFin, setFechaFin] = useState(todayBogota());
 
   // Paginación (10 items por página 1:1 OralDrive)
   const [currentPage, setCurrentPage] = useState(1);

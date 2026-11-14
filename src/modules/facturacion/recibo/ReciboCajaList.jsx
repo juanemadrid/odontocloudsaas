@@ -19,7 +19,7 @@ import { getFactusCredentialsForTenant } from "../../../services/factusAdminServ
 import { createReceiptInvoiceDraft } from "../../../services/receiptInvoiceDraftService";
 import { receiptConceptAmounts, paymentConcepts, invoiceLineCode } from "../../../services/receiptInvoiceItems.js";
 import { queryOptionalBillingTable } from "../../../services/optionalBillingTables.js";
-import { todayBogota } from "../../../utils/bogotaDate.js";
+import { todayBogota, formatDateCO } from "../../../utils/bogotaDate";
 import { syncVoidReceiptInCaja, reconcileVoidedReceiptsInCaja } from "../../../services/cajaSyncService.js";
 
 const fmt = (n) => {
@@ -32,23 +32,8 @@ const fmt = (n) => {
   });
 };
 
-const fmtDate = (ts) => {
-  if (!ts) return "—";
-  if (typeof ts === 'string') {
-    const match = ts.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (match && (!ts.includes('T') || ts.includes('T00:00:00') || ts.includes('T05:00:00'))) {
-      const [, y, m, d] = match;
-      return `${d}/${m}/${y}`;
-    }
-  }
-  const d = ts?.toDate ? ts.toDate() : new Date(ts);
-  if (isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString("es-CO", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric"
-  });
-};
+// Fecha en hora de Colombia («2026-11-13» se muestra 13/11, no 12/11).
+const fmtDate = (ts) => formatDateCO(ts);
 
 export default function ReciboCajaList({ onNew }) {
     const navigate = useNavigate();

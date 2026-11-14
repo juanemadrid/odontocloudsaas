@@ -13,6 +13,7 @@ import { isDoctorUser } from "../../../utils/doctorHelpers";
 import { toast } from "sonner";
 import { formatNumberWithDots, parseRawNumber } from "../../../utils/formatters";
 
+import { todayBogota } from "../../../utils/bogotaDate";
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
     style: "currency",
@@ -31,7 +32,7 @@ export default function PagosForm({ onCancel, onSuccess, initialFacturaId = null
 
     // Form fields - Card 1: Información empresa
     const pagadorEmail = userProfile?.email || user?.email || userProfile?.tenant?.email || "atmcentrodeldolor@gmail.com";
-    const [fecha, setFecha] = useState(() => new Date().toISOString().split("T")[0]);
+    const [fecha, setFecha] = useState(() => todayBogota());
     const [profesionalId, setProfesionalId] = useState("");
     const [bancoCaja, setBancoCaja] = useState("");
 

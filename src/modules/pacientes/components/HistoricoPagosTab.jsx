@@ -15,6 +15,7 @@ import {
     FiCheckCircle, FiAlertCircle, FiInfo, FiUser, FiArrowRight
 } from 'react-icons/fi';
 
+import { formatDateCO } from "../../../utils/bogotaDate";
 const PAYMENT_METHOD_BADGES = {
     'efectivo': { bg: 'bg-emerald-50 text-emerald-700 border-emerald-100', label: 'Efectivo' },
     'nequi': { bg: 'bg-purple-50 text-purple-700 border-purple-100', label: 'Nequi' },
@@ -36,23 +37,8 @@ const getMethodBadge = (m) => {
     return PAYMENT_METHOD_BADGES[key] || { bg: 'bg-slate-100 text-slate-700 border-slate-200', label: m || 'Efectivo' };
 };
 
-const formatDate = (iso) => {
-    if (!iso) return '—';
-    try {
-        if (typeof iso === 'string') {
-            const match = iso.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
-            if (match && (!iso.includes('T') || iso.includes('T00:00:00') || iso.includes('T05:00:00'))) {
-                const [, y, m, d] = match;
-                return `${d}/${m}/${y}`;
-            }
-        }
-        const d = iso?.toDate ? iso.toDate() : new Date(iso);
-        if (isNaN(d.getTime())) return '—';
-        return d.toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    } catch {
-        return '—';
-    }
-};
+// Fecha en hora de Colombia («2026-11-13» se muestra 13/11, no 12/11).
+const formatDate = (iso) => formatDateCO(iso);
 
 const getReceiptNumber = (pago, index) => {
     if (pago.nroConsecutivo && !isNaN(Number(pago.nroConsecutivo))) return `${pago.nroConsecutivo}`;

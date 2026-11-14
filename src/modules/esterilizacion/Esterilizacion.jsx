@@ -6,11 +6,12 @@ import { toast } from "sonner";
 import { resolvePrivateFileUrl, uploadPrivateFile } from "../../services/privateStorageService";
 import { computeCycleAvailability } from "../../services/sterilizationService";
 
+import { todayBogota } from "../../utils/bogotaDate";
 // Helper para calcular el siguiente número de lote: DDMMYYYY-1, DDMMYYYY-2...
 export const computeNextLote = (dateStr, allCycles = [], currentId = null) => {
   if (!dateStr) {
     const d = new Date();
-    dateStr = d.toISOString().split("T")[0];
+    dateStr = todayBogota(d);
   }
   const parts = dateStr.split("-");
   if (parts.length < 3) return "1";
@@ -85,12 +86,12 @@ export default function Esterilizacion() {
   // Date filters
   const [dateRange, setDateRange] = useState({
     start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0],
-    end: new Date().toISOString().split("T")[0]
+    end: todayBogota()
   });
   const [appliedRange, setAppliedRange] = useState({ ...dateRange });
 
   // Form states
-  const [fechaEsterilizacion, setFechaEsterilizacion] = useState(new Date().toISOString().split("T")[0]);
+  const [fechaEsterilizacion, setFechaEsterilizacion] = useState(todayBogota());
   const [nroLote, setNroLote] = useState("");
   const [conceptoCarga, setConceptoCarga] = useState("");
   const [cantidadCarga, setCantidadCarga] = useState(1);
@@ -247,7 +248,7 @@ export default function Esterilizacion() {
   // Al crear nuevo ciclo, auto-generar número de lote basado en la fecha
   const handleStartNew = () => {
     setEditingCycle(null);
-    const today = new Date().toISOString().split("T")[0];
+    const today = todayBogota();
     setFechaEsterilizacion(today);
     setNroLote(computeNextLote(today, cycles));
     setCargaItems([]);
@@ -268,7 +269,7 @@ export default function Esterilizacion() {
   // Al editar ciclo existente
   const handleStartEdit = (cycle) => {
     setEditingCycle(cycle);
-    setFechaEsterilizacion(cycle.fechaEsterilizacion || new Date().toISOString().split("T")[0]);
+    setFechaEsterilizacion(cycle.fechaEsterilizacion || todayBogota());
     setNroLote(cycle.nroLote || computeNextLote(cycle.fechaEsterilizacion, cycles, cycle.id));
     setCargaItems(Array.isArray(cycle.cargaItems) ? [...cycle.cargaItems] : []);
     setNroPaquetes(cycle.nroPaquetes || 1);

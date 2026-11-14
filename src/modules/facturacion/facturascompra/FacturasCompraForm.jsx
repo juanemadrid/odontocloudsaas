@@ -14,6 +14,7 @@ import factusService from "../../../services/factusService";
 
 import { formatNumberWithDots, parseRawNumber } from "../../../utils/formatters";
 
+import { todayBogota } from "../../../utils/bogotaDate";
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
     style: "currency",
@@ -42,7 +43,7 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
 
     // Form fields - Card 1: Información empresa
     const pagadorEmail = userProfile?.email || user?.email || userProfile?.tenant?.email || "atmcentrodeldolor@gmail.com";
-    const [fecha, setFecha] = useState(() => new Date().toISOString().split("T")[0]);
+    const [fecha, setFecha] = useState(() => todayBogota());
     const [profesionalId, setProfesionalId] = useState("");
     const [docSoporteDian, setDocSoporteDian] = useState(false);
     const [prefijo, setPrefijo] = useState("FC");

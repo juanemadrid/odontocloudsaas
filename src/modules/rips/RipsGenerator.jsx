@@ -56,6 +56,7 @@ import { useNavigate } from "react-router-dom";
 import { buildDashboardPath } from "../../utils/dashboardBasePath";
 import { resolveCodServicio, alertaConsultaServicio } from "./v003/ripsServicioReps";
 
+import { todayBogota } from "../../utils/bogotaDate";
 /**
  * Validador de cruce obligatorio JSON ↔ XML AttachedDocument
  * Verifica que el XML provisto pertenezca a la misma factura electrónica (numFactura).
@@ -804,7 +805,7 @@ export default function RipsGenerator() {
                 return `${y}-${m}-${day} ${h}:${min}`;
             }
         } catch (_) {}
-        return `${new Date().toISOString().substring(0, 10)} 08:00`;
+        return `${todayBogota()} 08:00`;
     };
 
     // El RIPS debe llevar el documento real del profesional que atendió. Si no se encontró, antes se
@@ -1163,7 +1164,7 @@ export default function RipsGenerator() {
 
                 const patientDoc = pacienteData?.nroDocumento || pacienteData?.cedula || pacienteData?.documento || pacienteData?.numDoc || pacCedula || (pacId ? null : "0");
                 const invoiceId = normalizedDoc.documentNumber;
-                const fechaDoc = normalizeFecha(normalizedDoc.fecha) || new Date().toISOString().substring(0, 10);
+                const fechaDoc = normalizeFecha(normalizedDoc.fecha) || todayBogota();
 
                 const invoiceErrors = [];
                 if (!pacienteData) invoiceErrors.push("Paciente no encontrado en base de datos oficial");

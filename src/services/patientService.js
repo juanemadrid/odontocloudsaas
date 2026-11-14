@@ -10,6 +10,7 @@ import {
     addToSyncQueue
 } from "./offlineStorageService";
 
+import { todayBogota } from "../utils/bogotaDate";
 // Utils
 const normalize = (s) =>
     (s || "")
@@ -290,7 +291,7 @@ export const createOrUpdatePatient = async (tenantId, patientData, isNew = false
         nombres: patientData.nombres || patientData.nombreCompleto?.split(" ")[0] || "",
         apellidos: patientData.apellidos || patientData.nombreCompleto?.split(" ").slice(1).join(" ") || "",
         nro_historia: patientData.nroHistoria || documento,
-        fecha_ingreso: patientData.fechaIngreso || new Date().toISOString().slice(0, 10),
+        fecha_ingreso: patientData.fechaIngreso || todayBogota(),
         fecha_nacimiento: patientData.fechaNacimiento || patientData.fecha_nacimiento || null,
         genero: patientData.genero || patientData.sexo || "No especificado",
         estado_civil: patientData.estadoCivil || patientData.estado_civil || "",
