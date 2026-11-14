@@ -9,6 +9,7 @@ import { readValidatedCreditNote } from '../src/services/factusCreditNoteRespons
 import { resolveInvoiceCustomer } from '../src/services/invoiceCustomerResolver.js';
 import * as invoiceNumbering from '../src/utils/invoiceNumbering.js';
 import * as dianHelpers from '../src/utils/dian/dianHelpers.js';
+import { todayBogota } from '../src/utils/bogotaDate.js';
 const { fiscalInvoiceNumber } = invoiceNumbering;
 
 const validatedNote = {number:'NC1',cude:'a'.repeat(96),reference_code:'NC-OC-TEST',is_validated:true,
@@ -144,6 +145,7 @@ const invoiceService = await moduleFrom('../src/services/factusService.js', {
   '../utils/dian/dianHelpers.js': dianHelpers,
   './factusPayment.js': {factusPaymentCode},
   '../utils/billingPresentation.js': {billingFullName,billingItemDescription},
+  '../utils/bogotaDate': {todayBogota},
 });
 const pdfPayload=Buffer.from('%PDF-1.4\n% regression payload\n%%EOF');
 for(const raw of [pdfPayload,Buffer.from(JSON.stringify({data:{pdf_base_64_encoded:pdfPayload.toString('base64')}}))]) {
