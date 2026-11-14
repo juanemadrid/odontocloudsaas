@@ -72,7 +72,8 @@ export default function ConfigRecursosFisicos() {
             setFormData({ 
                 nombre: "", 
                 descripcion: "", 
-                sucursalId: branches?.[0]?.id || "" 
+                // Solo se preselecciona si la clínica tiene una única sede; si no, queda "Seleccione...".
+                sucursalId: (branches?.length === 1 ? branches[0].id : "") 
             });
         }
         setModalOpen(true);
@@ -88,6 +89,11 @@ export default function ConfigRecursosFisicos() {
         e.preventDefault();
         if (!formData.nombre.trim()) {
             if (toast?.warning) toast.warning("El nombre es obligatorio");
+            return;
+        }
+        // La sede es obligatoria: sin sede el consultorio no aparece en la agenda de ninguna sede.
+        if (!formData.sucursalId) {
+            if (toast?.warning) toast.warning("Seleccione la sede del consultorio");
             return;
         }
 
@@ -131,7 +137,7 @@ export default function ConfigRecursosFisicos() {
     };
 
     const getBranchName = (sucursalId) => {
-        if (!sucursalId) return "Todas las Sedes";
+        if (!sucursalId) return "Sin sede asignada";
         const b = (branches || []).find(branch => String(branch.id) === String(sucursalId));
         return b?.nombre || "Sede Asignada";
     };
@@ -285,7 +291,7 @@ export default function ConfigRecursosFisicos() {
                                     value={formData.sucursalId}
                                     onChange={e => setFormData({ ...formData, sucursalId: e.target.value })}
                                 >
-                                    <option value="">TODAS LAS SEDES (GLOBAL)</option>
+                                    <option value="" disabled>Seleccione...</option>
                                     {branches.map(b => (
                                         <option key={b.id} value={b.id}>{b.nombre}</option>
                                     ))}

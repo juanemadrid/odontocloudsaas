@@ -46,8 +46,9 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
     const [fecha, setFecha] = useState(() => todayBogota());
     const [profesionalId, setProfesionalId] = useState("");
     const [docSoporteDian, setDocSoporteDian] = useState(false);
-    const [prefijo, setPrefijo] = useState("FC");
-    const [nroFactura, setNroFactura] = useState("0");
+    // Prefijo y número en blanco: se digitan los de la factura del proveedor (antes "FC" y "1" se guardaban por olvido).
+    const [prefijo, setPrefijo] = useState("");
+    const [nroFactura, setNroFactura] = useState("");
 
     // Form fields - Card 2: Datos tercero
     const [terceroId, setTerceroId] = useState("");
@@ -260,15 +261,6 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                 setMediosPagoList(mpList);
 
 
-                // Calcular consecutivo sugerido
-                try {
-                    const { data: fcCount } = await supabase
-                        .from("facturas_compra")
-                        .select("id", { count: "exact" })
-                        .eq("tenant_id", inquilino);
-                    const nextNum = (fcCount?.length || 0) + 1;
-                    setNroFactura(String(nextNum));
-                } catch (e) {}
 
             } catch (err) {
                 console.error("Error loading FacturasCompraForm data:", err);
@@ -468,7 +460,7 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
             toast.error("La fecha es requerida");
             return;
         }
-        if (!docSoporteDian && (!nroFactura || nroFactura.trim() === "")) {
+        if (!docSoporteDian && (!nroFactura || nroFactura.trim() === "" || /^0+$/.test(nroFactura.trim()))) {
             toast.error("El número de factura es obligatorio");
             return;
         }
