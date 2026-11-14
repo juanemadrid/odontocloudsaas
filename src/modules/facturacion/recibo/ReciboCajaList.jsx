@@ -665,6 +665,16 @@ export default function ReciboCajaList({ onNew }) {
             alert("El motivo de la anulación es obligatorio");
             return;
         }
+        const reciboActual = voidModal.recibo;
+        const yaAnulado = reciboActual?.anulado || String(reciboActual?.estado || "").toLowerCase() === "anulado"
+            || String(reciboActual?.referencia || "").toUpperCase() === "ANULADO";
+        if (yaAnulado) {
+            // Anular dos veces registraba otra devolución de dinero en la caja.
+            alert("Este recibo ya está anulado.");
+            setVoidModal({ open: false, recibo: null });
+            return;
+        }
+        if (voiding) return;
         setVoiding(true);
         try {
             const recibo = voidModal.recibo;

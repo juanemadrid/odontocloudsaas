@@ -155,14 +155,19 @@ export const syncVoidReceiptInCaja = async ({
   const formattedRc = rawNum ? `RC-${rawNum.padStart(4, "0")}` : "RC-S/N";
   const reversalConcept = `[ANULACION RC] ${formattedRc}`;
 
-  // 1. Evitar duplicar el egreso si ya existe un movimiento de anulación para este recibo
+  // 1. Evitar duplicar el egreso si ya existe un movimiento de anulación para este recibo.
+  //    Si el recibo tiene id real se busca por ese id (el número puede repetirse si se reinicia el consecutivo).
   try {
-    const { data: existingMovs } = await supabase
+    const voidReciboId = receipt.isPago ? null : receipt.id;
+    let dupQuery = supabase
       .from("movimientos_caja")
       .select("id, concepto, tipo")
       .eq("tenant_id", inquilino)
-      .eq("tipo", "egreso")
-      .ilike("concepto", `[ANULACION RC] ${formattedRc}%`);
+      .eq("tipo", "egreso");
+    dupQuery = isUUID(voidReciboId)
+      ? dupQuery.eq("recibo_id", voidReciboId)
+      : dupQuery.ilike("concepto", `[ANULACION RC] ${formattedRc}%`);
+    const { data: existingMovs } = await dupQuery;
 
     if (existingMovs && existingMovs.length > 0) {
       console.log(`[cajaSyncService] Ya existe movimiento de anulación para ${formattedRc}. Omitiendo inserción duplicada.`);
