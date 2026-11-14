@@ -490,7 +490,8 @@ export default function DashboardLayout({ children, title, subtitle, basePath = 
             {/* Content Area */}
             <div className={`flex-1 flex flex-col min-w-0 min-h-screen relative z-1 transition-all duration-500 ${collapsedDesktop ? 'lg:pl-20' : 'lg:pl-64'}`}>
                 {/* Top Header Bar - Multi-Sede & User Controls (Oral Drive Style) */}
-                <header className="bg-white/95 backdrop-blur-sm border-b border-slate-200/80 sticky top-0 z-30 shadow-xs px-3 sm:px-6 h-14 flex items-center justify-between gap-2">
+                {/* Con el menú del usuario abierto, la barra sube por encima de cualquier ventana de la página (si no, "Cerrar sesión" quedaba detrás). */}
+                <header className={`bg-white/95 backdrop-blur-sm border-b border-slate-200/80 sticky top-0 ${userMenuOpen ? "z-[10000]" : "z-30"} shadow-xs px-3 sm:px-6 h-14 flex items-center justify-between gap-2`}>
                     {/* Left: Mobile Menu Toggle & Sede Selector */}
                     <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                         <button
