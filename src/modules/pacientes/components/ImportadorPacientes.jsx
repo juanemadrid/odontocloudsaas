@@ -80,6 +80,9 @@ const toIsoDate = (val) => {
 export default function ImportadorPacientes({ onComplete, onClose }) {
     const { userProfile } = useAuth();
     const inquilino = userProfile?.inquilino || userProfile?.tenant_id || userProfile?.tenantId;
+    // El archivo de demostración (110 pacientes) solo se ofrece al superadministrador, para demos.
+    // En las clínicas reales no aparece, para no mezclar pacientes de ejemplo con los reales.
+    const canLoadDemo = ["superadmin", "super_admin"].includes(String(userProfile?.role || userProfile?.rol || "").trim().toLowerCase());
     const toast = useToast();
 
     const [fileData, setFileData] = useState([]);
@@ -652,9 +655,10 @@ export default function ImportadorPacientes({ onComplete, onClose }) {
                     </div>
 
                     {/* Botones de acción principales */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                    <div className={`grid grid-cols-1 ${canLoadDemo ? "md:grid-cols-2" : ""} gap-3.5`}>
                         
-                        {/* Botón 1: Carga directa automática del archivo que dejó en Descargas */}
+                        {/* Botón 1: archivo de demostración (solo superadministrador) */}
+                        {canLoadDemo && (
                         <button 
                             type="button"
                             onClick={handleLoadPresetATM} 
@@ -672,6 +676,7 @@ export default function ImportadorPacientes({ onComplete, onClose }) {
                             </div>
                             <span className="text-xs bg-white/20 px-3 py-1 rounded-lg font-bold">Cargar</span>
                         </button>
+                        )}
 
                         {/* Botón 2: Selector de cualquier archivo Excel */}
                         <div className="relative">
