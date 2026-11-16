@@ -970,12 +970,35 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
         ).join("\n");
     };
 
+    // Variables del "Diccionario dinámico" de las plantillas (Configuración → Plantillas Doc. Clínicos).
+    // Se reemplazan con los datos del paciente, el profesional y la fecha al llenar e imprimir el documento.
+    // Las variables de firma se quitan del texto: las firmas salen en su propio espacio del documento.
+    const fillTemplateVars = (text) => {
+        if (typeof text !== 'string' || !text.includes('[')) return text;
+        const p = patient || {};
+        const nombre = p.nombreCompleto || p.nombre_completo || [p.nombres, p.apellidos].filter(Boolean).join(' ') || p.nombre || '';
+        const map = {
+            NombrePaciente: nombre,
+            TipoDocumento: p.tipoDocumento || p.tipo_documento || '',
+            Documento: p.nroDocumento || p.numeroDocumento || p.documento || '',
+            Doctor: profesional || userProfile?.nombreCompleto || '',
+            Telefono: p.celular || p.telefono || '',
+            Ciudad: p.ciudadDomicilio || p.ciudad_domicilio || p.ciudad || '',
+            Fecha: new Date().toLocaleDateString('es-CO'),
+            FirmaPaciente: '', FirmaDoctor: '', TerceraFirma: '',
+        };
+        return text
+            .replace(/\[(NombrePaciente|TipoDocumento|Documento|Doctor|Telefono|Ciudad|Fecha|FirmaPaciente|FirmaDoctor|TerceraFirma)\]/g, (_, k) => map[k] ?? '')
+            .replace(/[ \t]{2,}/g, ' ')
+            .trim();
+    };
+
     // Generate a human-readable text summary from filled template fields
     const generateTemplateSummary = (campos, valores) => {
         const lines = [];
         (campos || []).forEach(field => {
             if (field.visible === false) return; // Skip hidden fields configured by tenant
-            const fLabel = field.fullLabel || field.label || field.editLabel || field.viewLabel || field.id;
+            const fLabel = fillTemplateVars(field.fullLabel || field.label || field.editLabel || field.viewLabel || field.id);
             const val = valores?.[field.id] ?? valores?.[field.key];
             if (field.type === 'section') {
                 lines.push(`\n── ${fLabel} ──`);
@@ -1674,7 +1697,7 @@ export default function DocClinicoModal({ isOpen, onClose, patient, docType, ini
                             <div className="space-y-5">
                                 {selectedTemplate.campos.filter(f => f.visible !== false).map(field => {
                                     const fieldKey = field.id || field.key;
-                                    const labelText = field.fullLabel || field.label || field.editLabel || field.viewLabel || fieldKey;
+                                    const labelText = fillTemplateVars(field.fullLabel || field.label || field.editLabel || field.viewLabel || fieldKey);
 
                                     if (field.type === 'section') {
                                         return (
