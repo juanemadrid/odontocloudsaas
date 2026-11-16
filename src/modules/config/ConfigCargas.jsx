@@ -87,7 +87,7 @@ export default function ConfigCargas() {
                     <ul className="list-disc list-inside space-y-0.5 text-slate-500">
                         <li>Usa la plantilla de Excel (.xlsx) de cada importador.</li>
                         <li>Verifica que las columnas no tengan celdas combinadas ni fórmulas.</li>
-                        <li>Los documentos de identidad deben ser únicos: el importador avisa si un paciente ya existe.</li>
+                        <li>Los documentos de identidad deben ser únicos: el importador no duplica pacientes que ya existen.</li>
                     </ul>
                 </div>
             </div>
