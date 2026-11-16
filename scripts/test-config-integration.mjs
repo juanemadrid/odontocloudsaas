@@ -45,12 +45,12 @@ assert.match(persistence, /\.eq\("tenant_id", tenantId\)/);
 assert.match(persistence, /\.upsert\(\[tablePayload\], \{ onConflict: "id" \}\)/);
 assert.doesNotMatch(persistence, /TABLES_WITH_CREATED_AT/);
 
+// Cargas usa los importadores que alimentan el sistema (pacientes y listas de precios).
 const uploads = read("src/modules/config/ConfigCargas.jsx");
-assert.match(uploads, /import\("xlsx"\)/);
+assert.match(uploads, /ImportadorPacientes/);
+assert.match(uploads, /config\/listas-precios/);
+assert.doesNotMatch(uploads, /catalogo_procedimientos/);
 assert.doesNotMatch(uploads, /cdn\.sheetjs\.com|unpkg\.com/);
-assert.match(uploads, /catalogo_procedimientos/);
-assert.match(uploads, /precio_costo/);
-assert.match(uploads, /codigo_cups/);
 
 const company = read("src/modules/config/ConfigEmpresa.jsx");
 assert.match(company, /uploadOptimizedPublicFile/);

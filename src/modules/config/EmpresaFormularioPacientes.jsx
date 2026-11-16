@@ -26,9 +26,7 @@ const SECTIONS = [
         fields: [
             { key: "paisNacimiento", label: "País de nacimiento", norma: true },
             { key: "ciudadNacimiento", label: "Ciudad de nacimiento", norma: true },
-            { key: "numeroDentadura", label: "Número dentadura" },
             { key: "sexo", label: "Sexo / Género", norma: true },
-            { key: "rh", label: "Factor RH" },
             { key: "estadoCivil", label: "Estado civil", norma: true },
             { key: "fechaIngreso", label: "Fecha de ingreso", norma: true },
             { key: "fechaNacimiento", label: "Fecha de nacimiento", norma: true },
@@ -40,14 +38,6 @@ const SECTIONS = [
             { key: "zonaResidencial", label: "Zona residencial" },
             { key: "esExtranjero", label: "Es extranjero" },
             { key: "permitePublicidad", label: "Permite recibir publicidad" },
-            { key: "orientacionSexual", label: "Orientación sexual" },
-            { key: "lugarExpedicion", label: "Lugar de expedición del documento" },
-        ]
-    },
-    {
-        title: "Datos de Facturación",
-        fields: [
-            { key: "multiplesResponsables", label: "Múltiples Responsables de Factura" }
         ]
     },
     {
@@ -84,15 +74,12 @@ const SECTIONS = [
             { key: "tipoVinculacion", label: "Tipo de vinculación a EPS", norma: true },
             { key: "nombreEps", label: "Nombre de la entidad EPS", norma: true },
             { key: "polizaSalud", label: "Póliza de salud privada" },
-            { key: "soat", label: "Aseguradora SOAT" },
             { key: "tipoPaciente", label: "Tipo de paciente" }
         ]
     },
     {
         title: "Mercadeo y Remisión",
         fields: [
-            { key: "convenioBeneficio", label: "Convenio beneficio" },
-            { key: "convenioPago", label: "Convenio de pago" },
             { key: "comoNosConocio", label: "Cómo nos conoció" },
             { key: "campana", label: "Campaña publicitaria" },
             { key: "remitidoPor", label: "Remitido por" },

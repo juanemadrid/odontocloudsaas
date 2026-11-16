@@ -166,6 +166,7 @@ export default function PatientForm({
             respCorreo: "emailResponsable",
             acompNombre: "nombreAcompanante",
             acompTelefono: "telefonoAcompanante",
+            tipoPaciente: "tipoPaciente",
             convenioBeneficio: "convenioBeneficio",
             convenioPago: "convenioPago",
             comoNosConocio: "comoConocio",
@@ -1491,9 +1492,11 @@ export default function PatientForm({
                                             <input {...register("sgsss")} className="form-input text-sm w-full" placeholder="Sistema General de Seguridad Social en Salud" />
                                         </FormRow>
 
-                                        <FormRow label="Tipo de paciente">
-                                            <input {...register("tipoPaciente")} className="form-input text-sm w-full" placeholder="Particular, Convenio, EPS" />
-                                        </FormRow>
+                                        {isVisible("tipoPaciente") && (
+                                            <FormRow label="Tipo de paciente" required={isRequired("tipoPaciente")} error={errors.tipoPaciente}>
+                                                <input {...register("tipoPaciente")} className="form-input text-sm w-full" placeholder="Particular, Convenio, EPS" />
+                                            </FormRow>
+                                        )}
                                     </div></div>
                             )}
 
