@@ -46,7 +46,6 @@ import {
   FEV_OPERATION,
 } from "../../../services/factusRetryService";
 import { formatNumberWithDots, parseRawNumber } from "../../../utils/formatters";
-import { esCondicionCredito, diasPlazoCondicion, sumarDiasFecha } from "../../../utils/paymentTerms";
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
@@ -841,10 +840,11 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
         return factusPaymentCode(mp);
       };
 
-      // Contado (1) o crédito (2) según "Permite venta a crédito" de la condición configurada.
       const mapCondicionPagoCode = (cp) => {
         if (cp === "1" || cp === "2") return cp;
-        return esCondicionCredito(condicionesPagoList, cp) ? "2" : "1";
+        const s = String(cp || "").toLowerCase();
+        if (s.includes("crédito") || s.includes("credito")) return "2";
+        return "1";
       };
 
       const medioPagoCode = mapMedioPagoCode(medioPago);
@@ -902,10 +902,6 @@ export default function FacturaElectronicaForm({ onCancel, onSuccess, initialFac
         retenciones: retencionesSeleccionadas,
         condicionPago: condicionPagoCode,
         condicionPagoNombre: condicionPago,
-        // Crédito: vence en "Días de plazo" de la condición (Factus lo exige para pago a crédito).
-        ...(condicionPagoCode === "2"
-          ? { fechaVencimiento: sumarDiasFecha(fecha, diasPlazoCondicion(condicionesPagoList, condicionPago)) }
-          : {}),
         medioPago: medioPagoCode,
         medioPagoNombre: medioPago,
         observaciones,

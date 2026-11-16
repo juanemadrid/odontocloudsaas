@@ -395,8 +395,6 @@ export const sendInvoice = async (invoiceData, patientData, tenantCredentials) =
         payment_form: paymentForm,
         payment_method_code: paymentMethodCode,
         amount: totalAmount,
-        // Pago a crédito: fecha de vencimiento (fecha de la factura + días de plazo de la condición).
-        ...(paymentForm === "2" ? { due_date: String(invoiceData.fechaVencimiento || invoiceData.fecha || todayBogota()).slice(0, 10) } : {}),
       },
     ],
     customer: {
