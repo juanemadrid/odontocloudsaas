@@ -517,7 +517,9 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
     if (!factura.fecha) return 0;
     const cond = factura.condicionPago || "";
     let diasPlazo = 0;
-    if (cond.includes("8")) diasPlazo = 8;
+    const savedDias = factura.diasPlazo ?? factura.detalles?.diasPlazo;
+    if (savedDias !== undefined && savedDias !== null && savedDias !== "" && !Number.isNaN(Number(savedDias))) diasPlazo = Number(savedDias);
+    else if (cond.includes("8")) diasPlazo = 8;
     else if (cond.includes("15")) diasPlazo = 15;
     else if (cond.includes("30")) diasPlazo = 30;
     else if (cond.includes("45")) diasPlazo = 45;

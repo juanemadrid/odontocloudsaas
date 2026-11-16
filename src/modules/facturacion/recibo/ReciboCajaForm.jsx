@@ -12,6 +12,7 @@ import { getActiveCaja, getDoctorsList, ensureActiveCaja } from "../../../servic
 import { getConfigItems, saveConfigItem, getConfigSection } from "../../../services/configPersistenceService";
 import { isDoctorUser } from "../../../utils/doctorHelpers";
 import { formatNumberWithDots, parseRawNumber } from "../../../utils/formatters";
+import { findMetodoPago } from "../../../utils/paymentTerms";
 
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
@@ -80,6 +81,8 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
     const [medioPago, setMedioPago] = useState("Efectivo");
     const [conceptos, setConceptos] = useState([]);
     const [observaciones, setObservaciones] = useState("");
+    const [metodosConfig, setMetodosConfig] = useState([]);
+    const [referenciaPago, setReferenciaPago] = useState("");
 
     // Modal state for New Concept
     const [showNewConceptModal, setShowNewConceptModal] = useState(false);
@@ -221,6 +224,7 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
                 { id: "5", nombre: "Bici-B", activo: true }
             ]);
 
+            setMetodosConfig(Array.isArray(rawMetodos) ? rawMetodos.filter(m => m && typeof m === "object") : []);
             const activeMetodos = rawMetodos.filter(m => m.activo !== false).map(m => m.nombre || m);
             if (activeMetodos.length > 0) {
                 setPaymentMethods(activeMetodos);
@@ -430,6 +434,16 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
         if (!paciente) return setError("Debes seleccionar un tercero / paciente.");
         if (conceptos.length === 0) return setError("Debes agregar al menos un concepto.");
         if (conceptos.some(c => !c.concepto || c.precioUnitario <= 0)) return setError("Revisa los conceptos y precios.");
+        // Métodos con "Requiere número de referencia" (Configuración → Métodos de pago)
+        const metodoSel = findMetodoPago(metodosConfig, medioPago);
+        if (metodoSel?.requiereReferencia === true && !referenciaPago.trim()) {
+            return setError(`El medio de pago «${medioPago}» exige el número de referencia o comprobante.`);
+        }
+        const observacionesFinal = [
+            String(observaciones || "").trim(),
+            referenciaPago.trim() ? `Ref. pago: ${referenciaPago.trim()}` : "",
+            metodoSel?.bancoNombre ? `Banco: ${metodoSel.bancoNombre}` : "",
+        ].filter(Boolean).join(" · ");
         // Caja se asegura/abre automáticamente al registrar el recibo
         let currentActiveCaja = null;
         try {
@@ -504,7 +518,7 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
                 descuento_total: totals.descuento,
                 descuentoTotal: totals.descuento,
                 total: totals.total,
-                observaciones,
+                observaciones: observacionesFinal,
                 caja_id: validCajaId,
                 cajaId: validCajaId,
                 creado_por: `${userProfile?.nombre || userProfile?.email} - ${userProfile?.profileName || "Administrativo"}`,
@@ -796,6 +810,18 @@ export default function ReciboCajaForm({ onCancel, onSuccess }) {
                                     ))}
                                 </select>
                             </div>
+                            {findMetodoPago(metodosConfig, medioPago)?.requiereReferencia === true && (
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Referencia / comprobante <span className="text-rose-500">*</span></label>
+                                    <input
+                                        type="text"
+                                        className="w-full h-9 px-3 bg-amber-50 border border-amber-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:bg-white focus:border-amber-400 transition-all placeholder:text-slate-400 placeholder:font-normal"
+                                        placeholder="Ej. número de la transferencia o voucher"
+                                        value={referenciaPago}
+                                        onChange={e => setReferenciaPago(e.target.value)}
+                                    />
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

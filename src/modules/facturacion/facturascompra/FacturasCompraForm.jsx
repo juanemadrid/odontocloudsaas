@@ -15,6 +15,7 @@ import factusService from "../../../services/factusService";
 import { formatNumberWithDots, parseRawNumber } from "../../../utils/formatters";
 
 import { todayBogota } from "../../../utils/bogotaDate";
+import { diasPlazoCondicion } from "../../../utils/paymentTerms";
 const fmt = (n) =>
   Number(n || 0).toLocaleString("es-CO", {
     style: "currency",
@@ -547,6 +548,8 @@ export default function FacturasCompraForm({ onCancel, onSuccess }) {
                 ciudadProveedor: selectedTercero?.ciudad || selectedTercero?.ciudadDomicilio || "Sincelejo",
                 telefono: selectedTercero?.telefono || selectedTercero?.celular || "",
                 condicionPago,
+                // Días de plazo configurados en la condición (para calcular el vencimiento)
+                diasPlazo: diasPlazoCondicion(condicionesPagoList, condicionPago),
                 medioPago,
                 items: validItems,
                 anticipos: [],

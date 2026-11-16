@@ -25,6 +25,7 @@ import { formatCurrency } from '../../../utils/formatters';
 import { getPlansByPatient } from '../../../services/planService';
 import { getDoctorsList, getActiveCaja, ensureActiveCaja } from '../../../services/supabaseServices';
 import { getConfigSection, saveConfigSection } from '../../../services/configPersistenceService';
+import { findMetodoPago } from "../../../utils/paymentTerms";
 
 // Módulo de Realizar Pago y Saldo a Favor del Paciente - OdontoCloud
 export default function PagoTab({ patient }) {
@@ -199,7 +200,10 @@ export default function PagoTab({ patient }) {
 
     // Payment methods that require a reference number
     const METHODS_REQUIRING_REFERENCE = ["Transferencia", "Cheque", "Consignación", "Nequi", "Daviplata", "PSE"];
-    const requiresReference = METHODS_REQUIRING_REFERENCE.some(m => 
+    const [metodosConfig, setMetodosConfig] = useState([]);
+    const metodoConfigSel = findMetodoPago(metodosConfig, method);
+    // Se exige si el método lo tiene marcado en Configuración → Métodos de pago, o si es uno de los de la lista.
+    const requiresReference = metodoConfigSel?.requiereReferencia === true || METHODS_REQUIRING_REFERENCE.some(m => 
         method?.toLowerCase().includes(m.toLowerCase())
     );
 
@@ -246,6 +250,7 @@ export default function PagoTab({ patient }) {
                     { id: "3", nombre: "Transferencia", activo: true }
                 ]);
 
+                setMetodosConfig(Array.isArray(rawMetodos) ? rawMetodos.filter(m => m && typeof m === "object") : []);
                 const metodosList = rawMetodos
                     .filter(m => m.activo !== false)
                     .map(m => m.nombre || m);
@@ -559,7 +564,8 @@ export default function PagoTab({ patient }) {
                 patientNombre: patientName,
                 registradoPor: userProfile?.nombreCompleto || userProfile?.nombre || "Sistema",
                 cajaId: activeCaja ? activeCaja.id : null,
-                observaciones: notes || ""
+                observaciones: notes || "",
+                ...(metodoConfigSel?.bancoNombre ? { bancoDestino: metodoConfigSel.bancoNombre } : {})
             };
 
             const pagoPayload = {
