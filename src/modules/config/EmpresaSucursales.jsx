@@ -379,7 +379,7 @@ function SucursalEditor({ item, onBack, inquilino, initialConsecutivos = [], ini
                                 value={form.piePersonalizado}
                                 placeholder="Si lo dejas vacío, salen los datos de la sede: nombre, dirección, ciudad, teléfonos y correo."
                                 onChange={e => handleChange("piePersonalizado", e.target.value)}
-                                className="w-full p-3 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all"
+                                className="placeholder:text-slate-400 placeholder:font-normal w-full p-3 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all"
                             />
                         </div>
                     )}
