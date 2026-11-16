@@ -113,13 +113,8 @@ function SucursalEditor({ item, onBack, inquilino, initialConsecutivos = [], ini
         listaPrecioId: item?.listaPrecioId || "",
         mostrarPie: item?.mostrarPie ?? false,
         piePersonalizado: item?.piePersonalizado || "",
-        codigoPrestador: item?.codigoPrestador || "",
-        entidadExtranjeras: item?.entidadExtranjeras || "",
-        entidadNacionales: item?.entidadNacionales || "",
-        centroCostos: item?.centroCostos || "",
-        usuarioSoporte: item?.usuarioSoporte || "Ninguno",
-        codigoPrestadorPropio: item?.codigoPrestadorPropio ?? false,
-        codigoPrestadorDetalle: item?.codigoPrestadorDetalle || "",
+        // Un solo código de prestador por sede (antes había dos campos)
+        codigoPrestador: item?.codigoPrestador || item?.codigoPrestadorDetalle || "",
     });
 
     const [consecutivos, setConsecutivos] = useState(initialConsecutivos);
@@ -204,8 +199,16 @@ function SucursalEditor({ item, onBack, inquilino, initialConsecutivos = [], ini
 
         setIsSaving(true);
         try {
+            const codigo = String(form.codigoPrestador || "").trim();
+            const {
+                entidadExtranjeras, entidadNacionales, centroCostos, usuarioSoporte,
+                codigoPrestadorPropio, ...previo
+            } = item || {};
             await saveConfigItem(inquilino, "sucursales", "sucursales", {
+                ...previo,
                 ...form,
+                codigoPrestador: codigo,
+                codigoPrestadorDetalle: codigo,
                 ...(item?.id ? { id: item.id } : {})
             });
 
@@ -327,28 +330,12 @@ function SucursalEditor({ item, onBack, inquilino, initialConsecutivos = [], ini
                         />
                     </div>
 
-                    {/* Consecutivo */}
-                    <div className="space-y-1">
-                        <label className="text-[11px] font-bold text-slate-600">Consecutivo *</label>
-                        <select
-                            value={
-                                combinedConsecutivos.find(c => String(c.id) === String(form.consecutivoId) || c.nombre === form.consecutivoId)?.id ||
-                                combinedConsecutivos.find(c => String(c.id) === String(form.consecutivoId) || c.nombre === form.consecutivoId)?.nombre ||
-                                form.consecutivoId
-                            }
-                            onChange={e => handleChange("consecutivoId", e.target.value)}
-                            className="w-full h-9 px-3 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all"
-                        >
-                            <option value="">Seleccione consecutivo...</option>
-                            {combinedConsecutivos.map(c => (
-                                <option key={c.id || c.nombre} value={c.id || c.nombre}>{c.nombre}</option>
-                            ))}
-                        </select>
-                    </div>
-
                     {/* Lista de precios */}
                     <div className="space-y-1">
-                        <label className="text-[11px] font-bold text-slate-600">Lista de precios *</label>
+                        <div className="flex items-center gap-1">
+                            <label className="text-[11px] font-bold text-slate-600">Lista de precios</label>
+                            <FiHelpCircle className="text-slate-400 cursor-help" size={13} title="Lista de precios de la sede. Se usa para relacionar la sede con los convenios." />
+                        </div>
                         <select
                             value={
                                 combinedListasPrecios.find(l => String(l.id) === String(form.listaPrecioId) || l.nombre === form.listaPrecioId)?.id ||
@@ -370,8 +357,8 @@ function SucursalEditor({ item, onBack, inquilino, initialConsecutivos = [], ini
                     {/* Toggle: Datos de sucursal en pie de página */}
                     <div className="md:col-span-2 py-3 px-4 bg-slate-50/80 rounded-xl border border-slate-200/80 flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                            <span className="text-xs font-semibold text-slate-700">Datos de sucursal en pie de pág. doc. clínicos</span>
-                            <FiHelpCircle className="text-slate-400 cursor-help" size={14} title="Imprime el pie de página de la sucursal en documentos clínicos" />
+                            <span className="text-xs font-semibold text-slate-700">Pie de página en documentos clínicos</span>
+                            <FiHelpCircle className="text-slate-400 cursor-help" size={14} title="Al imprimir o descargar en PDF la historia clínica, las consultas, las evoluciones y el odontograma, sale un pie de página con los datos de esta sede o con tu texto personalizado." />
                         </div>
                         <label className="relative inline-flex items-center cursor-pointer select-none">
                             <input
@@ -386,10 +373,11 @@ function SucursalEditor({ item, onBack, inquilino, initialConsecutivos = [], ini
 
                     {form.mostrarPie && (
                         <div className="space-y-1 md:col-span-2">
-                            <label className="text-[11px] font-bold text-slate-600">Pie de página personalizado</label>
+                            <label className="text-[11px] font-bold text-slate-600">Pie de página personalizado (opcional)</label>
                             <textarea
                                 rows={2}
                                 value={form.piePersonalizado}
+                                placeholder="Si lo dejas vacío, salen los datos de la sede: nombre, dirección, ciudad, teléfonos y correo."
                                 onChange={e => handleChange("piePersonalizado", e.target.value)}
                                 className="w-full p-3 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all"
                             />
@@ -398,105 +386,19 @@ function SucursalEditor({ item, onBack, inquilino, initialConsecutivos = [], ini
 
                     {/* Código del prestador de servicio */}
                     <div className="space-y-1 md:col-span-2">
-                        <label className="text-[11px] font-bold text-slate-600">Código del prestador de servicio</label>
+                        <div className="flex items-center gap-1">
+                            <label className="text-[11px] font-bold text-slate-600">Código de prestador (REPS) de la sede</label>
+                            <FiHelpCircle className="text-slate-400 cursor-help" size={13} title="Solo si esta sede tiene su propio código de habilitación. Se usa en la factura electrónica del sector salud de la sede. Si lo dejas vacío, se usa el de Datos básicos." />
+                        </div>
                         <input
                             autoComplete="off"
+                            placeholder="Opcional: código de habilitación propio de esta sede"
                             className="w-full h-9 px-3.5 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
                             value={form.codigoPrestador}
                             onChange={e => handleChange("codigoPrestador", e.target.value)}
                         />
                     </div>
 
-                    {/* Entidad Administradora extranjeras */}
-                    <div className="space-y-1 md:col-span-2">
-                        <div className="flex items-center gap-1">
-                            <label className="text-[11px] font-bold text-slate-600">Entidad Administradora extranjeras</label>
-                            <FiHelpCircle className="text-slate-400 cursor-help" size={13} title="Código o datos de entidad extranjera prestadora" />
-                        </div>
-                        <input
-                            autoComplete="off"
-                            className="w-full h-9 px-3.5 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
-                            value={form.entidadExtranjeras}
-                            onChange={e => handleChange("entidadExtranjeras", e.target.value)}
-                        />
-                    </div>
-
-                    {/* Entidad Administradora Nacionales */}
-                    <div className="space-y-1 md:col-span-2">
-                        <div className="flex items-center gap-1">
-                            <label className="text-[11px] font-bold text-slate-600">Entidad Administradora Nacionales</label>
-                            <FiHelpCircle className="text-slate-400 cursor-help" size={13} title="Código o datos de entidad nacional prestadora" />
-                        </div>
-                        <input
-                            autoComplete="off"
-                            className="w-full h-9 px-3.5 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
-                            value={form.entidadNacionales}
-                            onChange={e => handleChange("entidadNacionales", e.target.value)}
-                        />
-                    </div>
-
-                    {/* Centro de costos */}
-                    <div className="space-y-1 md:col-span-2">
-                        <label className="text-[11px] font-bold text-slate-600">Centro de costos</label>
-                        <input
-                            autoComplete="off"
-                            className="w-full h-9 px-3.5 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
-                            value={form.centroCostos}
-                            onChange={e => handleChange("centroCostos", e.target.value)}
-                        />
-                    </div>
-
-                    {/* Usuario para soporte */}
-                    <div className="space-y-1 md:col-span-2">
-                        <div className="flex items-center gap-1">
-                            <label className="text-[11px] font-bold text-slate-600">Usuario para soporte</label>
-                            <FiHelpCircle className="text-slate-400 cursor-help" size={13} title="Usuario asignado para soporte de esta sucursal" />
-                        </div>
-                        <select
-                            value={form.usuarioSoporte}
-                            onChange={e => handleChange("usuarioSoporte", e.target.value)}
-                            className="w-full h-9 px-3 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-700 outline-none focus:border-blue-500 transition-all"
-                        >
-                            <option value="Ninguno">Ninguno</option>
-                            {usuarios.map(u => (
-                                <option key={u.id} value={u.name}>{u.name}</option>
-                            ))}
-                        </select>
-                    </div>
-
-                    {/* Toggle: Código de prestador propio */}
-                    <div className="md:col-span-2 py-3 px-4 bg-slate-50/80 rounded-xl border border-slate-200/80 flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-semibold text-slate-700">Código de prestador propio</span>
-                            <FiHelpCircle className="text-slate-400 cursor-help" size={14} title="Habilita un código de prestador específico para esta sucursal" />
-                        </div>
-                        <label className="relative inline-flex items-center cursor-pointer select-none">
-                            <input
-                                type="checkbox"
-                                className="sr-only peer"
-                                checked={form.codigoPrestadorPropio}
-                                onChange={(e) => handleChange("codigoPrestadorPropio", e.target.checked)}
-                            />
-                            <div className="w-10 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-5 peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600 shadow-inner"></div>
-                        </label>
-                    </div>
-
-                    {/* Campo condicional: Código de prestador */}
-                    {form.codigoPrestadorPropio && (
-                        <div className="space-y-1 md:col-span-2 animate-fadeIn">
-                            <div className="flex items-center gap-1">
-                                <label className="text-[11px] font-bold text-slate-600">Código de prestador</label>
-                                <FiHelpCircle className="text-slate-400 cursor-help" size={13} title="Ingrese el código de prestador específico para esta sucursal" />
-                            </div>
-                            <input
-                                type="text"
-                                autoComplete="off"
-                                className="w-full h-9 px-3.5 bg-white border border-slate-200 rounded-xl text-[13px] font-semibold text-slate-800 outline-none focus:border-blue-500 transition-colors"
-                                value={form.codigoPrestadorDetalle}
-                                onChange={e => handleChange("codigoPrestadorDetalle", e.target.value)}
-                            />
-                        </div>
-                    )}
 
                 </div>
 

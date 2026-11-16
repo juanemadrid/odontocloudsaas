@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
+import { setActiveSedeForPrint } from "../utils/sedePrintFooter";
 import { useAuth } from "./AuthContext";
 import { getConfigItems } from "../services/configPersistenceService";
 import supabase from "../lib/supabaseClient";
@@ -68,7 +69,12 @@ export const SedeProvider = ({ children }) => {
                         nombre: name.toUpperCase(),
                         direccion: s.direccion || s.dir || "",
                         telefono: s.telefono || s.telCelular || "",
+                        celular: s.celular || "",
+                        email: s.email || "",
                         ciudad: s.ciudad || "",
+                        mostrarPie: !!s.mostrarPie,
+                        piePersonalizado: s.piePersonalizado || "",
+                        codigoPrestador: s.codigoPrestador || s.codigoPrestadorDetalle || "",
                         esPrincipal: !!s.esPrincipal || idx === 0,
                         almacenes: s.almacenes || [],
                         sillones: s.sillones || [],
@@ -145,6 +151,11 @@ export const SedeProvider = ({ children }) => {
         const found = sedesList.find(s => String(s.id) === String(activeSedeId));
         return found || sedesList[0];
     }, [sedesList, activeSedeId, defaultPrincipalName]);
+
+    // Los documentos clínicos impresos usan la sede activa para su pie de página
+    useEffect(() => {
+        setActiveSedeForPrint(activeSede);
+    }, [activeSede]);
 
     const handleSetActiveSede = useCallback((sedeOrId) => {
         const targetId = typeof sedeOrId === "object" ? sedeOrId.id : sedeOrId;

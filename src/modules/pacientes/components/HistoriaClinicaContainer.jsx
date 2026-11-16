@@ -18,9 +18,12 @@ import { useToast } from "../../../context/ToastContext";
 import { useAuth } from "../../../context/AuthContext";
 import { getAnamnesis } from "../../../services/clinicalService";
 import { getDoctorSignatureAndData, validateDoctorCanSign } from "../../../services/doctorSignatureService";
+import { applySedeFooter } from "../../../utils/sedePrintFooter";
 const DocClinicoModal = lazyWithRetry(() => import("./DocClinicoModal"));
 
-const printHTMLInHiddenIframe = (htmlContent) => {
+const printHTMLInHiddenIframe = (rawHtml) => {
+    // Pie de página de la sede (Configuración → Sucursales)
+    const htmlContent = applySedeFooter(rawHtml);
     let iframe = document.getElementById("oc-print-iframe");
     if (!iframe) {
         iframe = document.createElement("iframe");

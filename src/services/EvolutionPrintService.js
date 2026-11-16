@@ -2,8 +2,11 @@ import supabase from "../lib/supabaseClient";
 import { toast } from "sonner";
 import { getDoctorSignatureAndData } from "./doctorSignatureService";
 import { getEvolutionAddendaBatch } from "./evolutionService";
+import { applySedeFooter } from "../utils/sedePrintFooter";
 
-const printHTMLInHiddenIframe = (htmlContent) => {
+const printHTMLInHiddenIframe = (rawHtml) => {
+    // Pie de página de la sede (Configuración → Sucursales)
+    const htmlContent = applySedeFooter(rawHtml);
     let iframe = document.getElementById("oc-print-iframe");
     if (iframe) {
         try { document.body.removeChild(iframe); } catch {}

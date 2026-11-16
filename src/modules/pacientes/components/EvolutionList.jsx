@@ -8,6 +8,7 @@ import { getDoctorSignatureAndData, validateDoctorCanSign } from '../../../servi
 import { closeEvolution, createEvolutionAddendum, getEvolutionAddendaBatch } from '../../../services/evolutionService';
 import { isDoctorUser } from '../../../utils/doctorHelpers';
 import { ihceClientService } from '../../../services/ihce/ihceClientService';
+import { applySedeFooter } from "../../../utils/sedePrintFooter";
 
 
 // SVG de Huella digital codificado para simulador
@@ -28,7 +29,9 @@ const getSelectedProcedures = (plantillaItems, planItemsLookup = {}) => {
         .filter(p => p.desc);
 };
 
-const printHTMLInHiddenIframe = (htmlContent) => {
+const printHTMLInHiddenIframe = (rawHtml) => {
+    // Pie de página de la sede (Configuración → Sucursales)
+    const htmlContent = applySedeFooter(rawHtml);
     let iframe = document.getElementById("oc-print-iframe");
     if (iframe) {
         try { document.body.removeChild(iframe); } catch {}

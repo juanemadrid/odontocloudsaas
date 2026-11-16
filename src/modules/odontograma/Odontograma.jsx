@@ -30,7 +30,10 @@ import { generateOralDriveOdontogramaPrintHTML } from "./utils/odontogramaPrintS
 import { isDoctorUser } from "../../utils/doctorHelpers";
 import { getDoctorsList } from "../../services/supabaseServices";
 import { getDoctorSignatureAndData } from "../../services/doctorSignatureService";
-const printHTMLInHiddenIframe = (htmlContent) => {
+import { applySedeFooter } from "../../utils/sedePrintFooter";
+const printHTMLInHiddenIframe = (rawHtml) => {
+    // Pie de página de la sede (Configuración → Sucursales)
+    const htmlContent = applySedeFooter(rawHtml);
     let iframe = document.getElementById("oc-print-iframe");
     if (!iframe) {
         iframe = document.createElement("iframe");

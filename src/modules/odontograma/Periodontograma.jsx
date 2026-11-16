@@ -4,6 +4,7 @@ import Button from "../../components/ui/Button";
 import { FiActivity, FiSave, FiAlertCircle, FiDroplet, FiSun, FiLayers, FiPrinter, FiCheckCircle, FiRefreshCw, FiTrash2 } from "react-icons/fi";
 import { useToast } from "../../context/ToastContext";
 import { useAuth } from "../../context/AuthContext";
+import { applySedeFooter } from "../../utils/sedePrintFooter";
 
 // Tooth numbers (FDI standards)
 const TEETH_UPPER = [18, 17, 16, 15, 14, 13, 12, 11, 21, 22, 23, 24, 25, 26, 27, 28];
@@ -16,7 +17,9 @@ const INITIAL_TOOTH_DATA = {
     furcation: 0
 };
 
-const printHTMLInHiddenIframe = (htmlContent) => {
+const printHTMLInHiddenIframe = (rawHtml) => {
+    // Pie de página de la sede (Configuración → Sucursales)
+    const htmlContent = applySedeFooter(rawHtml);
     let iframe = document.getElementById("oc-print-iframe");
     if (!iframe) {
         iframe = document.createElement("iframe");
