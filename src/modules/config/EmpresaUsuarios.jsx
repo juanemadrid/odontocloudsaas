@@ -974,12 +974,6 @@ export default function EmpresaUsuarios() {
                                                 <p className="text-[10px] text-slate-400">Datos personales de identificación</p>
                                             </div>
                                         </div>
-                                        <div className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-lg border border-slate-100">
-                                            <label className="text-[11px] font-medium text-slate-500">¿Es laboratorio o centro diagnóstico?</label>
-                                            <button type="button" onClick={() => setFormData({ ...formData, esLaboratory: !formData.esLaboratory })} className={`w-10 h-5 rounded-full transition-all duration-300 relative shrink-0 ${formData.esLaboratory ? "bg-blue-600" : "bg-slate-200"}`}>
-                                                <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all duration-300 shadow-sm ${formData.esLaboratory ? "left-6" : "left-1"}`} />
-                                            </button>
-                                        </div>
                                     </div>
 
                                     {/* Fila 1: Nombre y Apellido */}
@@ -1167,7 +1161,7 @@ export default function EmpresaUsuarios() {
                                             {/* Columna Izquierda: Prestaciones y Documentación Clínica */}
                                             <div className="space-y-3">
                                                 <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 transition-all">
-                                                    <span className="text-[12px] font-medium text-slate-700">Puede ver todo lo de otros doctores</span>
+                                                    <span className="text-[12px] font-medium text-slate-700">Puede ver la agenda de los otros doctores</span>
                                                     <button type="button" onClick={() => setFormData({ ...formData, seeOtherDoctorsData: !formData.seeOtherDoctorsData })} className={`w-10 h-5 rounded-full transition-all duration-300 relative ${formData.seeOtherDoctorsData ? "bg-blue-600" : "bg-slate-300"}`}>
                                                         <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all duration-300 ${formData.seeOtherDoctorsData ? "left-6" : "left-1"}`} />
                                                     </button>

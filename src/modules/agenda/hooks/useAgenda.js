@@ -190,7 +190,9 @@ export function useAgenda() {
     const isDoctor = userProfile?.esDoctor === true || 
                      ["doctor", "odontologo", "especialista"].includes(rolActual) || 
                      (typeof userProfile?.profileName === 'string' && userProfile.profileName.toLowerCase().includes('octor'));
-    const isDoctorOnly = isDoctor && !isAdmin;
+    // "Puede ver todo lo de otros doctores" (Configuración → Usuarios) permite ver las agendas de los demás profesionales
+    const canSeeOtherDoctors = userProfile?.raw?.seeOtherDoctorsData === true || userProfile?.seeOtherDoctorsData === true;
+    const isDoctorOnly = isDoctor && !isAdmin && !canSeeOtherDoctors;
 
     const currentUserId = userProfile?.uid || userProfile?.id;
     const currentDoctorObj = useMemo(() => {

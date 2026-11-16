@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
-import { setActiveSedeForPrint } from "../utils/sedePrintFooter";
+import { setActiveSedeForPrint, setPrintUserPrefs } from "../utils/sedePrintFooter";
 import { useAuth } from "./AuthContext";
 import { getConfigItems } from "../services/configPersistenceService";
 import supabase from "../lib/supabaseClient";
@@ -156,6 +156,11 @@ export const SedeProvider = ({ children }) => {
     useEffect(() => {
         setActiveSedeForPrint(activeSede);
     }, [activeSede]);
+
+    // Preferencias de impresión del profesional conectado (logo y cabecera, en Configuración → Usuarios)
+    useEffect(() => {
+        setPrintUserPrefs(userProfile ? { ...(userProfile.raw || {}), esDoctor: userProfile.esDoctor === true } : null);
+    }, [userProfile]);
 
     const handleSetActiveSede = useCallback((sedeOrId) => {
         const targetId = typeof sedeOrId === "object" ? sedeOrId.id : sedeOrId;

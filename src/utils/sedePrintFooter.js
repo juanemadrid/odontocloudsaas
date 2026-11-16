@@ -8,8 +8,18 @@
 //   - encendido con "Pie de página personalizado" -> sale solo ese texto.
 //
 // SedeContext publica aquí la sede activa; las funciones de impresión llaman a applySedeFooter.
+//
+// También aplica las preferencias del profesional que imprime (Configuración → Usuarios):
+//   - "¿Documentos clínicos se imprimen con logo?" apagado -> se quita el logo de la cabecera.
+//   - "Cabecera documentos clínicos" = Personalizado con texto -> ese texto reemplaza los datos
+//     de la clínica en la cabecera. Con "Sucursal" se deja la cabecera normal.
 
 let activeSede = null;
+let printUserPrefs = null;
+
+export const setPrintUserPrefs = (prefs) => {
+    printUserPrefs = prefs && typeof prefs === "object" ? prefs : null;
+};
 
 export const setActiveSedeForPrint = (sede) => {
     activeSede = sede && typeof sede === "object" ? sede : null;
@@ -35,8 +45,42 @@ export const buildSedeFooterText = (sede = activeSede) => {
     ].filter(Boolean).join("  ·  ");
 };
 
-export const applySedeFooter = (html, sede = activeSede) => {
-    if (typeof html !== "string" || html.includes("oc-sede-footer")) return html;
+const LOGO_SELECTORS = "img.clinic-logo, .header-left img, .logo-area img, .logo-container > img";
+
+export const applyDoctorPrintPrefs = (html, prefs = printUserPrefs) => {
+    if (typeof html !== "string" || !prefs || prefs.esDoctor !== true) return html;
+    const sinLogo = prefs.clinicalDocsWithLogo === false;
+    const custom = prefs.clinicalDocsHeader === "personalizado" ? String(prefs.encabezadoPersonalizado || "").trim() : "";
+    if (!sinLogo && !custom) return html;
+    if (typeof DOMParser === "undefined") return html;
+    try {
+        const doc = new DOMParser().parseFromString(html, "text/html");
+        if (!doc.body) return html;
+        if (sinLogo) doc.querySelectorAll(LOGO_SELECTORS).forEach(img => img.remove());
+        if (custom) {
+            const block = `<div class="oc-doc-header" style="white-space:pre-line;font-weight:700;font-size:12px;line-height:1.4;color:#0f172a;">${escapeHtml(custom)}</div>`;
+            const center = doc.querySelector(".header-center");
+            const titleBox = doc.querySelector(".clinic-title")?.parentElement;
+            const logoArea = doc.querySelector(".logo-area");
+            if (center) center.innerHTML = block;
+            else if (titleBox) titleBox.innerHTML = block;
+            else if (logoArea) {
+                logoArea.querySelectorAll(".logo-text").forEach(el => el.remove());
+                logoArea.insertAdjacentHTML("beforeend", block);
+            } else {
+                doc.body.insertAdjacentHTML("afterbegin", `<div style="margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid #cbd5e1;">${block}</div>`);
+            }
+        }
+        const doctype = /^\s*<!doctype/i.test(html) ? "<!DOCTYPE html>\n" : "";
+        return doctype + doc.documentElement.outerHTML;
+    } catch (_) {
+        return html;
+    }
+};
+
+export const applySedeFooter = (rawHtml, sede = activeSede) => {
+    if (typeof rawHtml !== "string" || rawHtml.includes("oc-sede-footer")) return rawHtml;
+    const html = applyDoctorPrintPrefs(rawHtml);
     const text = buildSedeFooterText(sede);
     if (!text) return html;
     const block = `
