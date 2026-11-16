@@ -58,17 +58,27 @@ export const applyDoctorPrintPrefs = (html, prefs = printUserPrefs) => {
         if (!doc.body) return html;
         if (sinLogo) doc.querySelectorAll(LOGO_SELECTORS).forEach(img => img.remove());
         if (custom) {
-            const block = `<div class="oc-doc-header" style="white-space:pre-line;font-weight:700;font-size:12px;line-height:1.4;color:#0f172a;">${escapeHtml(custom)}</div>`;
+            // Se arma con nodos y textContent (sin innerHTML): el texto del usuario nunca se interpreta como HTML.
+            const makeBlock = () => {
+                const el = doc.createElement("div");
+                el.className = "oc-doc-header";
+                el.setAttribute("style", "white-space:pre-line;font-weight:700;font-size:12px;line-height:1.4;color:#0f172a;");
+                el.textContent = custom;
+                return el;
+            };
             const center = doc.querySelector(".header-center");
             const titleBox = doc.querySelector(".clinic-title")?.parentElement;
             const logoArea = doc.querySelector(".logo-area");
-            if (center) center.innerHTML = block;
-            else if (titleBox) titleBox.innerHTML = block;
+            if (center) center.replaceChildren(makeBlock());
+            else if (titleBox) titleBox.replaceChildren(makeBlock());
             else if (logoArea) {
                 logoArea.querySelectorAll(".logo-text").forEach(el => el.remove());
-                logoArea.insertAdjacentHTML("beforeend", block);
+                logoArea.appendChild(makeBlock());
             } else {
-                doc.body.insertAdjacentHTML("afterbegin", `<div style="margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid #cbd5e1;">${block}</div>`);
+                const wrap = doc.createElement("div");
+                wrap.setAttribute("style", "margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid #cbd5e1;");
+                wrap.appendChild(makeBlock());
+                doc.body.prepend(wrap);
             }
         }
         const doctype = /^\s*<!doctype/i.test(html) ? "<!DOCTYPE html>\n" : "";
