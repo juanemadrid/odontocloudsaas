@@ -27,8 +27,7 @@ const MENU_ITEMS = [
     { label: "Recursos físicos", slug: "recursos-fisicos", icon: FiMonitor },
     { label: "Plantillas Doc. Clínicos", slug: "plantillas-clinicas", icon: FiClipboard },
     { label: "Cargas", slug: "cargas", icon: FiUploadCloud },
-    { label: "Impuestos", slug: "impuestos", icon: FiPercent },
-    { label: "Catálogo de cuentas", slug: "catalogo-cuentas", icon: FiBook },
+    // «Impuestos» y «Catálogo de cuentas» se ocultan: ningún módulo usa todavía esos datos (sin contabilidad).
     { label: "Facturación electrónica", slug: "facturacion-electronica", icon: FiFileText },
     { label: "Interoperabilidad IHCE (MinSalud)", slug: "ihce", icon: FiShield },
     { label: "Suscripción", slug: "suscripcion", icon: FiStar },
@@ -88,7 +87,7 @@ export default function ConfigLayout({ children }) {
         });
         if (!manejaCopagos) return filtered;
         const items = [...filtered];
-        const impIndex = items.findIndex(i => i.slug === "impuestos");
+        const impIndex = items.findIndex(i => i.slug === "cargas");
         if (impIndex !== -1 && can("Configuración", "Lista precios", "consultar")) {
             items.splice(impIndex + 1, 0, {
                 label: "Tarifas Copago",

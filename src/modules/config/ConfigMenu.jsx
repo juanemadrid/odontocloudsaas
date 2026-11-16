@@ -30,8 +30,6 @@ const CONFIG_ITEMS = [
     { label: "Recursos físicos", slug: "recursos-fisicos", icon: FiServer, perm: "Recursos físicos" },
     { label: "Plantillas Doc. Clínicos", slug: "plantillas-clinicas", icon: FiFileText, perm: "Plantillas" },
     { label: "Cargas", slug: "cargas", icon: FiSettings, perm: "Cargas" },
-    { label: "Impuestos", slug: "impuestos", icon: FiCreditCard, perm: "Impuesto" },
-    { label: "Catálogo de cuentas", slug: "catalogo-cuentas", icon: FiList, perm: "Catálogo de cuentas" },
     { label: "Suscripción", slug: "suscripcion", icon: FiAward, perm: "Suscripcion" },
 ];
 
