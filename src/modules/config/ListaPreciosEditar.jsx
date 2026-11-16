@@ -9,6 +9,8 @@ import supabase from "../../lib/supabaseClient";
 import { useAuth } from "../../context/AuthContext";
 import { CUPS_ODONTOLOGIA } from "../../data/cupsOdontologia";
 import ModalProducto from "./ModalProducto";
+import { useToast } from "../../context/ToastContext";
+import { getConfigSection, saveConfigSection } from "../../services/configPersistenceService";
 
 import { todayBogota } from "../../utils/bogotaDate";
 // Helper: parse items stored as JSON string in descripcion field
@@ -19,12 +21,23 @@ const parseItems = (descripcion) => {
     } catch { return []; }
 };
 
+// Las categorías vacías se guardan en la configuración de la clínica: { [listaId]: ["CATEGORÍA", ...] }
+const CATEGORIAS_KEY = "listas_precios_categorias";
+
 // Helper: generate a simple UUID for new items
 const genId = () => crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
 
 export default function ListaPreciosEditar({ listaId, onBack }) {
     const { userProfile } = useAuth();
     const inquilino = userProfile?.inquilino;
+    const toast = useToast();
+
+    // Ajuste global de precios (aumentar o disminuir un % a toda la lista)
+    const [showAjusteModal, setShowAjusteModal] = useState(false);
+    const [ajusteTipo, setAjusteTipo] = useState("aumentar");
+    const [ajustePct, setAjustePct] = useState("");
+    const [ajusteRedondeo, setAjusteRedondeo] = useState("100");
+    const [ajusteSaving, setAjusteSaving] = useState(false);
 
     const [listData, setListData] = useState(null);
     const [items, setItems] = useState([]);
@@ -57,12 +70,7 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
         max_descuento_porcentaje: "",
         max_descuento_valor: "",
         genera_rips: false,
-        es_consulta: false,
-        ver_en_agenda: false,
-        nombre_agenda: "",
-        tiempo: 30,
-        identificador_agenda: "",
-        ver_en_agenda_online: false
+        es_consulta: false
     };
 
     const [formData, setFormData] = useState(initialItemState);
@@ -137,6 +145,27 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
         fetchListInfo();
     }, [listaId]);
 
+    // Categorías creadas sin ítems (guardadas en la configuración de la clínica)
+    useEffect(() => {
+        if (!inquilino || !listaId) return;
+        let alive = true;
+        getConfigSection(inquilino, CATEGORIAS_KEY, {})
+            .then(map => {
+                const list = map && typeof map === "object" && Array.isArray(map[listaId]) ? map[listaId] : [];
+                if (alive) setCustomCategories(list.map(c => String(c).toUpperCase()).filter(Boolean));
+            })
+            .catch(e => console.error("Error cargando categorías de la lista:", e));
+        return () => { alive = false; };
+    }, [inquilino, listaId]);
+
+    const persistCustomCategories = async (nextList) => {
+        const current = await getConfigSection(inquilino, CATEGORIAS_KEY, {});
+        const map = current && typeof current === "object" && !Array.isArray(current) ? { ...current } : {};
+        if (nextList.length > 0) map[listaId] = nextList;
+        else delete map[listaId];
+        await saveConfigSection(inquilino, CATEGORIAS_KEY, map);
+    };
+
     // Group items by category
     const groupedData = useMemo(() => {
         const groups = items.reduce((acc, item) => {
@@ -153,17 +182,85 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
         return Array.from(setOfCats).filter(Boolean).sort();
     }, [groupedData, customCategories]);
 
-    const handleSaveCategory = (e) => {
+    const handleSaveCategory = async (e) => {
         if (e) e.preventDefault();
         const trimmed = newCategoryName.trim().toUpperCase();
         if (!trimmed) return;
 
         if (!categories.includes(trimmed)) {
-            setCustomCategories(prev => [...prev, trimmed]);
+            const nextList = Array.from(new Set([...customCategories, trimmed]));
+            try {
+                await persistCustomCategories(nextList);
+                setCustomCategories(nextList);
+            } catch (err) {
+                console.error("Error guardando la categoría:", err);
+                toast?.error?.("No se pudo guardar la categoría: " + (err.message || "Error de conexión"));
+                return;
+            }
         }
         setExpandedCats(prev => new Set([...prev, trimmed]));
         setNewCategoryName("");
         setShowCategoryModal(false);
+        toast?.success?.(`Categoría ${trimmed} guardada`);
+    };
+
+    const handleDeleteCategory = async (cat) => {
+        if (!window.confirm(`¿Seguro que deseas eliminar la categoría "${cat}" y todos sus ítems de esta lista?`)) return;
+        try {
+            const updatedItems = items.filter(item => (item.categoria || "GENERAL") !== cat);
+            if (updatedItems.length !== items.length) await saveItemsToSupabase(updatedItems);
+            if (customCategories.includes(cat)) {
+                const nextList = customCategories.filter(c => c !== cat);
+                await persistCustomCategories(nextList);
+                setCustomCategories(nextList);
+            }
+        } catch (err) {
+            console.error("Error eliminando la categoría:", err);
+            toast?.error?.("No se pudo eliminar la categoría: " + (err.message || "Error de conexión"));
+        }
+    };
+
+    // ---- Ajuste global de precios ----
+    const ajusteNum = Number(String(ajustePct).replace(",", "."));
+    const ajusteValido = Number.isFinite(ajusteNum) && ajusteNum > 0 && (ajusteTipo === "aumentar" || ajusteNum < 100);
+    const ajustarPrecio = (precio) => {
+        const base = Number(precio) || 0;
+        if (!ajusteValido || base <= 0) return base;
+        const factor = ajusteTipo === "aumentar" ? 1 + ajusteNum / 100 : 1 - ajusteNum / 100;
+        const paso = Number(ajusteRedondeo) || 1;
+        return Math.max(0, Math.round((base * factor) / paso) * paso);
+    };
+    const ajusteEjemplo = items.find(it => Number(it.precio) > 0);
+
+    const handleAplicarAjuste = async () => {
+        if (!ajusteValido) return;
+        const conPrecio = items.filter(it => Number(it.precio) > 0).length;
+        if (!conPrecio) { toast?.error?.("La lista no tiene tratamientos con precio."); return; }
+        setAjusteSaving(true);
+        try {
+            const ahora = new Date().toISOString();
+            const updatedItems = items.map(it => {
+                if (!(Number(it.precio) > 0)) return it;
+                const precio = ajustarPrecio(it.precio);
+                const pct = Number(it.max_descuento_porcentaje) || 0;
+                return {
+                    ...it,
+                    precio,
+                    // el descuento máximo en pesos sigue el mismo porcentaje sobre el nuevo precio
+                    max_descuento_valor: pct > 0 ? Math.round((pct / 100) * precio) : (Number(it.max_descuento_valor) || 0),
+                    actualizado: ahora
+                };
+            });
+            await saveItemsToSupabase(updatedItems);
+            setShowAjusteModal(false);
+            setAjustePct("");
+            toast?.success?.(`Precios ${ajusteTipo === "aumentar" ? "aumentados" : "disminuidos"} ${ajusteNum}% en ${conPrecio} tratamientos`);
+        } catch (err) {
+            console.error("Error en el ajuste global:", err);
+            toast?.error?.("No se pudo aplicar el ajuste: " + (err.message || "Error de conexión"));
+        } finally {
+            setAjusteSaving(false);
+        }
     };
 
     const toggleCat = (cat) => {
@@ -311,9 +408,7 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
                 MAX_DESC_PORC: it.max_descuento_porcentaje || 0,
                 MAX_DESC_VAL: it.max_descuento_valor || 0,
                 GENERA_RIPS: it.genera_rips ? "SÍ" : "NO",
-                ES_CONSULTA: it.es_consulta ? "SÍ" : "NO",
-                VER_AGENDA: it.ver_en_agenda ? "SÍ" : "NO",
-                TIEMPO_MIN: it.tiempo || 30
+                ES_CONSULTA: it.es_consulta ? "SÍ" : "NO"
             }));
 
             const worksheet = XLSX.utils.json_to_sheet(exportData);
@@ -384,7 +479,12 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
                     </div>
 
                     <div className="flex items-center gap-2">
-                        <button className="px-3 py-1.5 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-[12px] font-bold flex items-center gap-1.5 cursor-pointer shadow-sm border-0">
+                        <button
+                            type="button"
+                            onClick={() => { setAjusteTipo("aumentar"); setAjustePct(""); setShowAjusteModal(true); }}
+                            disabled={items.length === 0}
+                            title={items.length === 0 ? "La lista no tiene tratamientos" : "Aumentar o disminuir todos los precios en un porcentaje"}
+                            className="px-3 py-1.5 bg-sky-500 hover:bg-sky-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-[12px] font-bold flex items-center gap-1.5 cursor-pointer shadow-sm border-0">
                             <FiPercent size={14} /> <span>Ajuste global %</span>
                         </button>
                         <button 
@@ -433,13 +533,7 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
                                                 <FiPlus size={14} />
                                             </button>
                                             <button 
-                                                onClick={() => {
-                                                    if (window.confirm(`¿Seguro que deseas eliminar la categoría "${cat}" y todos sus ítems de esta lista?`)) {
-                                                        const updatedItems = items.filter(item => (item.categoria || "GENERAL") !== cat);
-                                                        saveItemsToSupabase(updatedItems);
-                                                        setCustomCategories(prev => prev.filter(c => c !== cat));
-                                                    }
-                                                }} 
+                                                onClick={() => handleDeleteCategory(cat)} 
                                                 className="w-7 h-7 rounded-md bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center shadow-sm border-0 cursor-pointer transition-colors" 
                                                 title="Eliminar categoría"
                                             >
@@ -746,62 +840,6 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
                                 )}
                             </div>
 
-                            {/* Section: Agenda Logic */}
-                            <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-4">
-                                <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-                                     <div className="flex items-center gap-3">
-                                        <span className="text-xs font-semibold text-slate-700">Ver en agenda</span>
-                                        <button
-                                            type="button"
-                                            onClick={() => setFormData({...formData, ver_en_agenda: !formData.ver_en_agenda})}
-                                            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${formData.ver_en_agenda ? 'bg-blue-600' : 'bg-slate-300'}`}
-                                        >
-                                            <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${formData.ver_en_agenda ? 'translate-x-4' : 'translate-x-0'}`} />
-                                        </button>
-                                     </div>
-                                     <label htmlFor="vOnline" className="flex items-center gap-2 cursor-pointer">
-                                        <input 
-                                            type="checkbox" 
-                                            id="vOnline" 
-                                            checked={formData.ver_en_agenda_online} 
-                                            onChange={e => setFormData({...formData, ver_en_agenda_online: e.target.checked})} 
-                                            className="w-4 h-4 rounded text-blue-600 border-slate-300 focus:ring-blue-500" 
-                                        />
-                                        <span className="text-xs font-medium text-slate-600 select-none">Ver en agenda online</span>
-                                     </label>
-                                </div>
-
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                    <div className="space-y-1.5">
-                                        <label className="text-xs font-semibold text-slate-700">Nombre Agenda</label>
-                                        <input 
-                                            className="w-full h-10 px-3.5 bg-white border border-slate-300 rounded-lg text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
-                                            value={formData.nombre_agenda}
-                                            onChange={e => setFormData({...formData, nombre_agenda: e.target.value})}
-                                            placeholder="Nombre corto..."
-                                        />
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label className="text-xs font-semibold text-slate-700">Tiempo (Min)</label>
-                                        <select 
-                                            className="w-full h-10 px-3 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-800 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
-                                            value={formData.tiempo}
-                                            onChange={e => setFormData({...formData, tiempo: Number(e.target.value)})}
-                                        >
-                                            {[5, 10, 15, 20, 30, 45, 60, 90, 120].map(t => <option key={t} value={t}>{t} Minutos</option>)}
-                                        </select>
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label className="text-xs font-semibold text-slate-700">Identificador</label>
-                                        <input 
-                                            className="w-full h-10 px-3.5 bg-white border border-slate-300 rounded-lg text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
-                                            value={formData.identificador_agenda}
-                                            onChange={e => setFormData({...formData, identificador_agenda: e.target.value})}
-                                            placeholder="Identificador..."
-                                        />
-                                    </div>
-                                </div>
-                            </div>
                         </div>
 
                         {/* Modal Footer */}
@@ -886,6 +924,103 @@ export default function ListaPreciosEditar({ listaId, onBack }) {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+            {showAjusteModal && (
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-[1100] flex items-center justify-center p-4 animate-in fade-in duration-150">
+                    <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden border border-slate-200 flex flex-col">
+                        <div className="px-6 py-4 border-b border-slate-200 bg-slate-50/80 flex justify-between items-center">
+                            <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 rounded-lg bg-sky-100 text-sky-600 flex items-center justify-center font-bold">
+                                    <FiPercent size={18} />
+                                </div>
+                                <div>
+                                    <h3 className="text-base font-bold text-slate-800">Ajuste global de precios</h3>
+                                    <p className="text-xs text-slate-500 font-medium">Cambia todos los precios de esta lista en un porcentaje</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowAjusteModal(false)}
+                                className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 border-0 bg-transparent cursor-pointer"
+                            >
+                                <FiX size={18} />
+                            </button>
+                        </div>
+
+                        <div className="p-4 sm:p-6 space-y-4">
+                            <div className="grid grid-cols-2 gap-2">
+                                {[["aumentar", "Aumentar"], ["disminuir", "Disminuir"]].map(([val, label]) => (
+                                    <button
+                                        key={val}
+                                        type="button"
+                                        onClick={() => setAjusteTipo(val)}
+                                        className={`h-10 rounded-lg text-sm font-semibold border cursor-pointer transition-colors ${ajusteTipo === val ? (val === "aumentar" ? "bg-emerald-600 border-emerald-600 text-white" : "bg-rose-600 border-rose-600 text-white") : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50"}`}
+                                    >
+                                        {label}
+                                    </button>
+                                ))}
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-semibold text-slate-700">Porcentaje *</label>
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            inputMode="decimal"
+                                            autoFocus
+                                            className="w-full h-10 pl-3.5 pr-8 bg-white border border-slate-300 rounded-lg text-sm font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500"
+                                            value={ajustePct}
+                                            onChange={e => setAjustePct(e.target.value.replace(/[^0-9.,]/g, ""))}
+                                            placeholder="Ej. 5"
+                                        />
+                                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">%</span>
+                                    </div>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-semibold text-slate-700">Redondear precios</label>
+                                    <select
+                                        className="w-full h-10 px-3 bg-white border border-slate-300 rounded-lg text-sm font-medium text-slate-800 focus:outline-none focus:border-blue-500"
+                                        value={ajusteRedondeo}
+                                        onChange={e => setAjusteRedondeo(e.target.value)}
+                                    >
+                                        <option value="1">Sin redondear</option>
+                                        <option value="100">A la centena ($100)</option>
+                                        <option value="1000">Al mil ($1.000)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1">
+                                <p>Se cambiará el precio de <strong>{items.filter(it => Number(it.precio) > 0).length}</strong> tratamientos de esta lista.</p>
+                                {ajusteValido && ajusteEjemplo && (
+                                    <p>Ejemplo: {ajusteEjemplo.nombre}: <strong>${formatCOP(ajusteEjemplo.precio)}</strong> → <strong className={ajusteTipo === "aumentar" ? "text-emerald-700" : "text-rose-700"}>${formatCOP(ajustarPrecio(ajusteEjemplo.precio))}</strong></p>
+                                )}
+                                {ajusteTipo === "disminuir" && Number.isFinite(ajusteNum) && ajusteNum >= 100 && (
+                                    <p className="text-rose-600 font-semibold">Para disminuir, el porcentaje debe ser menor a 100%.</p>
+                                )}
+                                <p className="text-slate-400">Los presupuestos y planes que ya están hechos no cambian.</p>
+                            </div>
+
+                            <div className="flex justify-end gap-3 pt-1">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAjusteModal(false)}
+                                    className="px-4 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-sm font-medium cursor-pointer"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleAplicarAjuste}
+                                    disabled={!ajusteValido || ajusteSaving}
+                                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-semibold flex items-center gap-1.5 border-0 cursor-pointer"
+                                >
+                                    <FiCheck size={16} /> {ajusteSaving ? "Aplicando..." : "Aplicar ajuste"}
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}
