@@ -51,7 +51,8 @@ export default function EmpresaListaPrecios() {
     const TABS = [
         { id: "clinicos", label: "Lista de precios clínicos" },
         { id: "productos", label: "Lista de precios productos" },
-        { id: "servicios", label: "Lista de precios servicios" },
+        // La pestaña "servicios" se quitó: los servicios no se cobraban desde aquí.
+        // Lo que ya esté marcado como servicio sigue en el módulo Inventario.
     ];
 
     // Fetch data on tab change

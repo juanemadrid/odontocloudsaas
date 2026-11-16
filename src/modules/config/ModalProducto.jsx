@@ -275,15 +275,6 @@ export default function ModalProducto({ item = null, categoria = "", onClose, on
                                     </select>
                                 </div>
 
-                                <div className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-200">
-                                    <span className="text-xs font-bold text-slate-700">¿Es un Servicio?</span>
-                                    <input 
-                                        type="checkbox"
-                                        checked={!!formData.es_servicio}
-                                        onChange={e => setFormData({...formData, es_servicio: e.target.checked})}
-                                        className="w-4 h-4 text-blue-600 rounded"
-                                    />
-                                </div>
                             </div>
                         </div>
                     )}
