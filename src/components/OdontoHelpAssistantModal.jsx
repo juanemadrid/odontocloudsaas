@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
     FiX, FiSend, FiSearch, FiBookOpen, FiCheckCircle, FiCornerDownRight, 
     FiMessageSquare, FiRefreshCw, FiMinimize2, FiMaximize2, FiHelpCircle, FiChevronRight, FiPlayCircle, FiArrowLeft 
@@ -8,7 +9,7 @@ import { screenContextFromLocation } from '../../supabase/functions/_shared/help
 import { askHelp } from '../services/helpAssistantService';
 import { helpFallbackMessage } from '../../supabase/functions/_shared/helpFeedback.mjs';
 import { HELP_GUIDES, formatGuide, normalize, searchGuides } from '../../supabase/functions/_shared/helpKnowledge.mjs';
-import { HELP_VIDEO_SERIES, videosDisponibles, videoParaGuias, videoParaPregunta, youtubeEmbedUrl, youtubeThumb } from '../data/helpVideos';
+import { HELP_VIDEO_SERIES, videosDisponibles, videoParaGuias, videoParaPregunta, youtubeEmbedUrl, youtubeThumb, youtubeThumbHd } from '../data/helpVideos';
 
 function FormattedMessage({ text }) {
     if (!text) return null;
@@ -203,10 +204,10 @@ function HelpPanel({ onClose }) {
         inputRef.current?.focus();
     };
 
-    const abrirVideo = video => {
-        setVideoActual(video);
-        setActiveTab('videos');
-    };
+    const abrirVideo = video => setVideoActual(video);
+    const reproductor = videoActual
+        ? <VideoFlotante video={videoActual} onClose={() => setVideoActual(null)} />
+        : null;
 
     const showGuide = guide => {
         generation.current += 1; activeRequest.current?.abort();
@@ -267,6 +268,8 @@ function detectScreenContext() {
     // Si está minimizado, mostrar píldora flotante compacta en la esquina inferior derecha
     if (isMinimized) {
         return (
+            <>
+            {reproductor}
             <div 
                 onClick={() => setIsMinimized(false)}
                 className="fixed bottom-4 right-4 z-[999] bg-slate-900 text-white pl-4 pr-3 py-2.5 rounded-full shadow-2xl border border-slate-700/80 flex items-center gap-3 cursor-pointer hover:bg-slate-800 transition-all animate-in slide-in-from-bottom-2 select-none"
@@ -296,11 +299,14 @@ function detectScreenContext() {
                     </button>
                 </div>
             </div>
+            </>
         );
     }
 
     // Ventana interactiva flotante (sin bloquear la pantalla de fondo)
     return (
+        <>
+        {reproductor}
         <aside
             ref={dialogRef}
             role="complementary"
@@ -563,39 +569,149 @@ function detectScreenContext() {
                     </div>
                 </div>
             )}
-            {/* Contenido: Tab Videos tutoriales */}
+            {/* Contenido: Tab Videos tutoriales (el video se abre en una ventana flotante) */}
             {activeTab === 'videos' && (
                 <div className="flex flex-col flex-1 min-h-0 bg-slate-50">
-                    {videoActual ? (
-                        <div className="flex flex-col flex-1 min-h-0">
-                            <div className="bg-black shrink-0">
-                                <iframe
-                                    key={videoActual.id}
-                                    src={youtubeEmbedUrl(videoActual.youtube)}
-                                    title={videoActual.titulo}
-                                    className="w-full aspect-video block"
-                                    allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
-                                    allowFullScreen
-                                    referrerPolicy="strict-origin-when-cross-origin"
-                                />
-                            </div>
-                            <div className="p-3 bg-white border-b border-slate-200 flex items-center gap-2 shrink-0">
-                                <button type="button" onClick={() => setVideoActual(null)} className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer" title="Volver a la lista">
-                                    <FiArrowLeft size={14} />
-                                </button>
-                                <div className="min-w-0">
-                                    <span className="block text-[9px] uppercase tracking-wider font-extrabold text-rose-600">{videoActual.serie} · Video {videoActual.orden}</span>
-                                    <span className="block text-xs font-bold text-slate-800 truncate">{videoActual.titulo}</span>
-                                </div>
-                            </div>
-                            <ListaVideos videos={videos} actual={videoActual} onSelect={setVideoActual} />
-                        </div>
-                    ) : (
-                        <ListaVideos videos={videos} actual={null} onSelect={setVideoActual} />
-                    )}
+                    <p className="px-3 pt-2.5 text-[10px] text-slate-500">Toca un video: se abre en una ventana flotante que puedes mover y agrandar.</p>
+                    <ListaVideos videos={videos} actual={videoActual} onSelect={abrirVideo} />
                 </div>
             )}
         </aside>
+        </>
+    );
+}
+
+const TAMANOS = [
+    { id: 'S', label: 'Pequeño', w: 420 },
+    { id: 'M', label: 'Mediano', w: 720 },
+    { id: 'L', label: 'Grande', w: 1040 },
+];
+const BARRA = 44;
+
+// Reproductor flotante: se mueve arrastrando la barra y se agranda con la esquina inferior derecha o con los botones de tamaño.
+function VideoFlotante({ video, onClose }) {
+    const limitar = (x, y, w) => {
+        const h = Math.round(w * 9 / 16) + BARRA;
+        return {
+            x: Math.min(Math.max(8, x), Math.max(8, window.innerWidth - w - 8)),
+            y: Math.min(Math.max(8, y), Math.max(8, window.innerHeight - h - 8)),
+        };
+    };
+    const anchoInicial = Math.min(720, window.innerWidth - 16);
+    const [w, setW] = useState(anchoInicial);
+    const [pos, setPos] = useState(() => limitar(window.innerWidth - anchoInicial - 480, 80, anchoInicial));
+    const [cargando, setCargando] = useState(true);
+    const [moviendo, setMoviendo] = useState(false);
+    const accion = useRef(null);
+
+    useEffect(() => { setCargando(true); }, [video.id]);
+    useEffect(() => {
+        const alCambiar = () => setPos(p => limitar(p.x, p.y, Math.min(w, window.innerWidth - 16)));
+        window.addEventListener('resize', alCambiar);
+        return () => window.removeEventListener('resize', alCambiar);
+    }, [w]);
+    useEffect(() => {
+        const tecla = e => { if (e.key === 'Escape') onClose(); };
+        window.addEventListener('keydown', tecla);
+        return () => window.removeEventListener('keydown', tecla);
+    }, [onClose]);
+
+    const empezar = (tipo) => (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+        accion.current = { tipo, x0: e.clientX, y0: e.clientY, pos0: pos, w0: w };
+        setMoviendo(true);
+    };
+    const mover = (e) => {
+        const a = accion.current;
+        if (!a) return;
+        if (a.tipo === 'mover') {
+            setPos(limitar(a.pos0.x + e.clientX - a.x0, a.pos0.y + e.clientY - a.y0, w));
+        } else {
+            const maxW = Math.min(window.innerWidth - a.pos0.x - 8, (window.innerHeight - a.pos0.y - BARRA - 8) * 16 / 9);
+            setW(Math.round(Math.min(Math.max(320, a.w0 + e.clientX - a.x0), maxW)));
+        }
+    };
+    const terminar = () => { accion.current = null; setMoviendo(false); };
+
+    const elegirTamano = (ancho) => {
+        const nuevo = Math.min(ancho, window.innerWidth - 16, (window.innerHeight - BARRA - 16) * 16 / 9);
+        setW(Math.round(nuevo));
+        setPos(p => limitar(p.x, p.y, nuevo));
+    };
+
+    const alto = Math.round(w * 9 / 16);
+    return createPortal(
+        <div
+            role="dialog"
+            aria-label={`Video: ${video.titulo}`}
+            className="fixed z-[1000] bg-slate-900 rounded-2xl shadow-2xl border border-slate-700 overflow-hidden select-none"
+            style={{ left: pos.x, top: pos.y, width: w, boxShadow: '0 25px 60px -10px rgba(15, 23, 42, 0.55)' }}
+        >
+            <div
+                onPointerDown={empezar('mover')}
+                onPointerMove={mover}
+                onPointerUp={terminar}
+                onPointerCancel={terminar}
+                className="flex items-center gap-2 px-3 text-white cursor-move touch-none"
+                style={{ height: BARRA }}
+                title="Arrastra para mover"
+            >
+                <FiPlayCircle className="text-rose-400 shrink-0" size={15} />
+                <div className="min-w-0 flex-1">
+                    <span className="block text-[9px] uppercase tracking-wider font-extrabold text-rose-300 leading-tight">{video.serie} · Video {video.orden}</span>
+                    <span className="block text-xs font-bold truncate leading-tight">{video.titulo}</span>
+                </div>
+                <div className="flex items-center gap-0.5 shrink-0" onPointerDown={e => e.stopPropagation()}>
+                    {TAMANOS.map(t => (
+                        <button key={t.id} type="button" onClick={() => elegirTamano(t.w)} title={t.label}
+                            className="w-7 h-7 rounded-lg text-[10px] font-extrabold text-slate-300 hover:bg-white/10 hover:text-white cursor-pointer">
+                            {t.id}
+                        </button>
+                    ))}
+                    <button type="button" onClick={onClose} title="Cerrar video" aria-label="Cerrar video"
+                        className="w-7 h-7 rounded-lg text-slate-300 hover:bg-white/10 hover:text-rose-400 flex items-center justify-center cursor-pointer">
+                        <FiX size={16} />
+                    </button>
+                </div>
+            </div>
+            <div className="relative bg-black" style={{ height: alto }}>
+                {cargando && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-cover bg-center"
+                        style={{ backgroundImage: `url(${youtubeThumbHd(video.youtube)})` }}>
+                        <div className="absolute inset-0 bg-slate-900/40" />
+                        <div className="relative flex flex-col items-center gap-2 text-white">
+                            <div className="w-10 h-10 border-4 border-white/80 border-t-transparent rounded-full animate-spin" />
+                            <span className="text-[11px] font-bold drop-shadow">Cargando video…</span>
+                        </div>
+                    </div>
+                )}
+                <iframe
+                    key={video.id}
+                    src={youtubeEmbedUrl(video.youtube)}
+                    title={video.titulo}
+                    onLoad={() => setCargando(false)}
+                    className="absolute inset-0 w-full h-full"
+                    style={{ opacity: cargando ? 0 : 1, transition: 'opacity .2s' }}
+                    allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+                    allowFullScreen
+                    referrerPolicy="strict-origin-when-cross-origin"
+                />
+                {/* Mientras se arrastra, una capa evita que el video "robe" el mouse */}
+                {moviendo && <div className="absolute inset-0" />}
+                <div
+                    onPointerDown={empezar('tamano')}
+                    onPointerMove={mover}
+                    onPointerUp={terminar}
+                    onPointerCancel={terminar}
+                    className="absolute right-0 bottom-0 w-5 h-5 cursor-nwse-resize touch-none"
+                    style={{ background: 'linear-gradient(135deg, transparent 50%, rgba(255,255,255,.55) 50%)' }}
+                    title="Arrastra para agrandar o achicar"
+                />
+            </div>
+        </div>,
+        document.body
     );
 }
 

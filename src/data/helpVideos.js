@@ -57,5 +57,6 @@ export function videoParaPregunta(texto) {
   return mejor;
 }
 
-export const youtubeEmbedUrl = (codigo) => `https://www.youtube-nocookie.com/embed/${encodeURIComponent(codigo)}?rel=0&modestbranding=1&playsinline=1&autoplay=1`;
+export const youtubeEmbedUrl = (codigo) => `https://www.youtube.com/embed/${encodeURIComponent(codigo)}?rel=0&modestbranding=1&playsinline=1&autoplay=1`;
 export const youtubeThumb = (codigo) => `https://i.ytimg.com/vi/${encodeURIComponent(codigo)}/mqdefault.jpg`;
+export const youtubeThumbHd = (codigo) => `https://i.ytimg.com/vi/${encodeURIComponent(codigo)}/hqdefault.jpg`;
