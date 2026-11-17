@@ -1035,6 +1035,8 @@ export const updateTenantPlan = async (tenantId, planId, planDuration = "monthly
 
         // 2. Sincronizar en tabla 'tenants' de PostgreSQL
         const currentParams = (dbTenant?.parametros && typeof dbTenant.parametros === "object") ? dbTenant.parametros : {};
+        // Módulos por defecto del plan nuevo (misma regla que "Sincronizar con plan" en el panel).
+        const newDisabled = getPlanDefaultDisabledModules(planId);
         const updatedParams = {
             ...currentParams,
             plan: planId,
