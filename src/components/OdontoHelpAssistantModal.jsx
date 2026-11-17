@@ -1,13 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
     FiX, FiSend, FiSearch, FiBookOpen, FiCheckCircle, FiCornerDownRight, 
-    FiMessageSquare, FiRefreshCw, FiMinimize2, FiMaximize2, FiHelpCircle, FiChevronRight 
+    FiMessageSquare, FiRefreshCw, FiMinimize2, FiMaximize2, FiHelpCircle, FiChevronRight, FiPlayCircle, FiArrowLeft 
 } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
 import { screenContextFromLocation } from '../../supabase/functions/_shared/helpConversation.mjs';
 import { askHelp } from '../services/helpAssistantService';
 import { helpFallbackMessage } from '../../supabase/functions/_shared/helpFeedback.mjs';
 import { HELP_GUIDES, formatGuide, normalize, searchGuides } from '../../supabase/functions/_shared/helpKnowledge.mjs';
+import { HELP_VIDEO_SERIES, videosDisponibles, videoParaGuias, videoParaPregunta, youtubeEmbedUrl, youtubeThumb } from '../data/helpVideos';
 
 function FormattedMessage({ text }) {
     if (!text) return null;
@@ -145,7 +146,9 @@ function HelpPanel({ onClose }) {
     const [search, setSearch] = useState('');
     const [category, setCategory] = useState('Todos');
     const [isTyping, setIsTyping] = useState(false);
-    const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'library'
+    const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'library' | 'videos'
+    const [videoActual, setVideoActual] = useState(null);
+    const videos = videosDisponibles();
     const [isMinimized, setIsMinimized] = useState(false);
     const [previousIds, setPreviousIds] = useState([]);
     
@@ -200,6 +203,11 @@ function HelpPanel({ onClose }) {
         inputRef.current?.focus();
     };
 
+    const abrirVideo = video => {
+        setVideoActual(video);
+        setActiveTab('videos');
+    };
+
     const showGuide = guide => {
         generation.current += 1; activeRequest.current?.abort();
         pending.current = false;
@@ -207,7 +215,7 @@ function HelpPanel({ onClose }) {
         const guideMsgId = 'guide-' + Date.now();
         setMessages(prev => [
             ...prev, 
-            { id: guideMsgId, sender: 'bot', text: formatGuide(guide), provider: 'manual', sources: [] }
+            { id: guideMsgId, sender: 'bot', text: formatGuide(guide), provider: 'manual', sources: [], video: videoParaGuias([guide.id]) }
         ]);
         setPreviousIds([guide.id]);
         shouldScrollToTop.current = guideMsgId;
@@ -241,7 +249,8 @@ function detectScreenContext() {
         });
         if (requestId !== generation.current) return;
         const sources = (result.sources || []).filter(s => s && HELP_GUIDES.some(g => g.id === s.id));
-        setMessages(prev => prev.map(m => m.id === replyId ? { sender: 'bot', text: result.answer, provider: result.provider, model: result.model, reason: result.reason, diagnostic: result.diagnostic, sources } : m));
+        const video = (result.reason === 'cancelled' || result.reason === 'conversation') ? null : (videoParaGuias(sources.map(s => s.id)) || videoParaPregunta(question));
+        setMessages(prev => prev.map(m => m.id === replyId ? { sender: 'bot', text: result.answer, provider: result.provider, model: result.model, reason: result.reason, diagnostic: result.diagnostic, sources, video } : m));
         if (sources.length && result.reason !== 'conversation' && result.reason !== 'cancelled') setPreviousIds(sources.map(s => s.id));
         pending.current = false;
         setIsTyping(false);
@@ -374,6 +383,20 @@ function detectScreenContext() {
                     <FiBookOpen size={13} />
                     <span>Biblioteca ({HELP_GUIDES.length})</span>
                 </button>
+                {videos.length > 0 && (
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab('videos')}
+                        className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                            activeTab === 'videos'
+                                ? 'bg-white text-blue-600 shadow-xs border border-slate-200'
+                                : 'text-slate-500 hover:text-slate-700'
+                        }`}
+                    >
+                        <FiPlayCircle size={13} />
+                        <span>Videos ({videos.length})</span>
+                    </button>
+                )}
             </div>
 
             {/* Contenido: Tab Chat Paso a Paso */}
@@ -403,6 +426,19 @@ function detectScreenContext() {
                                             </p>
                                         )}
                                         <FormattedMessage text={message.text || (message.pending ? "Revisando tu pregunta…" : "")} />
+                                        {message.video && !message.pending && (
+                                            <button
+                                                type="button"
+                                                onClick={() => abrirVideo(message.video)}
+                                                className="mt-3 w-full flex items-center gap-2.5 p-2 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-100 text-left transition-colors cursor-pointer"
+                                            >
+                                                <img src={youtubeThumb(message.video.youtube)} alt="" className="w-16 h-9 rounded-md object-cover shrink-0" loading="lazy" />
+                                                <span className="min-w-0">
+                                                    <span className="flex items-center gap-1 text-[11px] font-extrabold text-rose-700"><FiPlayCircle size={13} /> Ver video</span>
+                                                    <span className="block text-[11px] font-semibold text-slate-700 truncate">{message.video.serie} {message.video.orden} · {message.video.titulo}</span>
+                                                </span>
+                                            </button>
+                                        )}
                                         {message.sources?.length > 0 && (
                                             <div className="mt-3 pt-2 border-t border-slate-200/70">
                                                 <p className="text-[10px] font-bold text-slate-400 mb-1">Guías relacionadas:</p>
@@ -527,7 +563,74 @@ function detectScreenContext() {
                     </div>
                 </div>
             )}
+            {/* Contenido: Tab Videos tutoriales */}
+            {activeTab === 'videos' && (
+                <div className="flex flex-col flex-1 min-h-0 bg-slate-50">
+                    {videoActual ? (
+                        <div className="flex flex-col flex-1 min-h-0">
+                            <div className="bg-black shrink-0">
+                                <iframe
+                                    key={videoActual.id}
+                                    src={youtubeEmbedUrl(videoActual.youtube)}
+                                    title={videoActual.titulo}
+                                    className="w-full aspect-video block"
+                                    allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+                                    allowFullScreen
+                                    referrerPolicy="strict-origin-when-cross-origin"
+                                />
+                            </div>
+                            <div className="p-3 bg-white border-b border-slate-200 flex items-center gap-2 shrink-0">
+                                <button type="button" onClick={() => setVideoActual(null)} className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 cursor-pointer" title="Volver a la lista">
+                                    <FiArrowLeft size={14} />
+                                </button>
+                                <div className="min-w-0">
+                                    <span className="block text-[9px] uppercase tracking-wider font-extrabold text-rose-600">{videoActual.serie} · Video {videoActual.orden}</span>
+                                    <span className="block text-xs font-bold text-slate-800 truncate">{videoActual.titulo}</span>
+                                </div>
+                            </div>
+                            <ListaVideos videos={videos} actual={videoActual} onSelect={setVideoActual} />
+                        </div>
+                    ) : (
+                        <ListaVideos videos={videos} actual={null} onSelect={setVideoActual} />
+                    )}
+                </div>
+            )}
         </aside>
+    );
+}
+
+function ListaVideos({ videos, actual, onSelect }) {
+    return (
+        <div className="overflow-y-auto p-2.5 flex-1 space-y-3">
+            {HELP_VIDEO_SERIES.map(serie => {
+                const lista = videos.filter(v => v.serie === serie);
+                if (!lista.length) return null;
+                return (
+                    <div key={serie}>
+                        <p className="px-1 pb-1.5 text-[10px] uppercase tracking-wider font-extrabold text-slate-400">{serie}</p>
+                        <div className="space-y-1">
+                            {lista.map(v => (
+                                <button
+                                    type="button"
+                                    key={v.id}
+                                    onClick={() => onSelect(v)}
+                                    className={`w-full text-left p-2 rounded-xl flex items-center gap-2.5 transition-all cursor-pointer ${actual?.id === v.id ? 'bg-blue-50 border border-blue-200' : 'hover:bg-white hover:shadow-xs border border-transparent'}`}
+                                >
+                                    <span className="relative shrink-0">
+                                        <img src={youtubeThumb(v.youtube)} alt="" className="w-20 h-11 rounded-lg object-cover bg-slate-200" loading="lazy" />
+                                        <FiPlayCircle className="absolute inset-0 m-auto text-white drop-shadow" size={18} />
+                                    </span>
+                                    <span className="min-w-0">
+                                        <span className="block text-[9px] uppercase tracking-wider font-extrabold text-blue-600">Video {v.orden}</span>
+                                        <span className="block text-xs font-bold text-slate-700 truncate">{v.titulo}</span>
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
     );
 }
 
