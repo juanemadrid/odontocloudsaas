@@ -79,9 +79,19 @@ export async function registrarMovimiento({
   return data;
 }
 
+// Igual que Administración → Terceros: tabla terceros y, si no hay, los guardados en la configuración de la clínica.
 export async function listarProveedores(tenantId) {
-  const { data } = await queryOptionalBillingTable("terceros", (t) => t.select("*").eq("tenant_id", tenantId));
-  return (data || [])
-    .map((t) => ({ id: String(t.id), nombre: formatTerceroNombre(t), documento: t.nro_documento || t.numero_documento || "" }))
+  let list = [];
+  try {
+    const { data } = await queryOptionalBillingTable("terceros", (t) => t.select("*").eq("tenant_id", tenantId));
+    list = data || [];
+  } catch { list = []; }
+  if (list.length === 0) {
+    const { data: cfgRow } = await supabase.from("website_config").select("config").eq("tenant_id", tenantId).maybeSingle();
+    list = Array.isArray(cfgRow?.config?.terceros) ? cfgRow.config.terceros : [];
+  }
+  return list
+    .filter((t) => t && t.id != null && t.activo !== false)
+    .map((t) => ({ id: String(t.id), nombre: formatTerceroNombre(t), documento: t.nro_documento || t.numero_documento || t.documento || "" }))
     .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
 }

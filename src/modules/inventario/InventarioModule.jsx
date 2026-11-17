@@ -404,7 +404,7 @@ function MovimientoModal({ tenantId, tipo, productoInicial, productos, onClose, 
         documento: tipo === "entrada" ? documento : null,
         observaciones,
       });
-      toast.success(`${info.label} registrada: ${producto.nombre} queda con ${num(resultado)}.`);
+      toast.success(`${info.label} ${tipo === "ajuste" ? "registrado" : "registrada"}: ${producto.nombre} queda con ${num(resultado)}.`);
       await onDone();
     } catch (e) {
       toast.error(e.message);
