@@ -50,6 +50,7 @@ export const PERMISSION_MAP = {
         "Residuos",
         "Rips",
         "Esterilizacion",
+        "Inventario",
         "Editor Web"
     ],
     "Reportes": [

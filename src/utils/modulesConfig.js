@@ -128,6 +128,15 @@ export const SYSTEM_MODULES = [
     badge: "Básico",
     defaultPlans: ["consultorio", "clinica", "enterprise", "trial"]
   },
+  {
+    id: "inventario",
+    name: "Inventario y Kardex",
+    description: "Existencias de insumos, entradas, salidas, ajustes y kardex.",
+    category: "Administrativo",
+    icon: "FiBox",
+    badge: "Básico",
+    defaultPlans: ["consultorio", "clinica", "enterprise", "trial"]
+  },
 
   // ── Marketing & Expansión ──
   {
@@ -234,6 +243,7 @@ export const mapFeatureToModuleId = (moduleName, featureName) => {
   if (f.includes("convenio") || m.includes("convenio")) return "convenios";
   if (f.includes("residuo") || m.includes("residuo")) return "residuos";
   if (f.includes("esteriliz") || m.includes("esteriliz")) return "esterilizacion";
+  if (f.includes("inventario") || m.includes("inventario")) return "inventario";
   if (f.includes("editor web") || f.includes("cms") || m.includes("cms")) return "cms";
   if (f.includes("sucursal") || m.includes("sucursal")) return "sucursales";
   if (f.includes("liquidacion") || m.includes("liquidacion")) return "liquidaciones";

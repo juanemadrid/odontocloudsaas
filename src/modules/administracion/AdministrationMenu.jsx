@@ -1,11 +1,12 @@
 import React from "react";
-import { FiFileText, FiUsers, FiCalendar, FiBriefcase, FiTrash2, FiActivity, FiShield, FiCheckSquare, FiChevronRight } from "react-icons/fi";
+import { FiFileText, FiUsers, FiCalendar, FiBriefcase, FiTrash2, FiActivity, FiShield, FiCheckSquare, FiChevronRight, FiBox } from "react-icons/fi";
 export const ADMIN_MODULES = [
   { id: "facturacion", label: "Facturación", desc: "Facturas y notas crédito", icon: FiFileText, color: "bg-blue-50 text-blue-600" },
   { id: "convenios", label: "Convenios", desc: "Descuentos y listas", icon: FiCheckSquare, color: "bg-emerald-50 text-emerald-600" },
   { id: "agenda", label: "Gestión Agenda", desc: "Turnos y horarios", icon: FiCalendar, color: "bg-indigo-50 text-indigo-600" },
   { id: "terceros", label: "Terceros", desc: "Proveedores y clientes", icon: FiUsers, color: "bg-purple-50 text-purple-600" },
   { id: "residuos", label: "Residuos Hosp.", desc: "Gestión ambiental", icon: FiTrash2, color: "bg-rose-50 text-rose-600" },
+  { id: "inventario", label: "Inventario", desc: "Existencias y kardex", icon: FiBox, color: "bg-amber-50 text-amber-600" },
   { id: "rips", label: "RIPS JSON", desc: "Archivos Res. 2275", icon: FiActivity, color: "bg-teal-50 text-teal-600" },
   { id: "esterilizacion", label: "Esterilización", desc: "Cargas de autoclaves", icon: FiShield, color: "bg-violet-50 text-violet-600" },
 ];

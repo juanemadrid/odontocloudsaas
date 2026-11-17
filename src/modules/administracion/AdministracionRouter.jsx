@@ -16,6 +16,7 @@ import Terceros from "./views/Terceros";
 import Convenios from "./views/Convenios";
 import ResiduosHub from "../residuos/ResiduosHub";
 import Esterilizacion from "../esterilizacion/Esterilizacion";
+import InventarioModule from "../inventario/InventarioModule";
 
 import AdministrationMenu, { ADMIN_MODULES } from "./AdministrationMenu";
 
@@ -44,6 +45,12 @@ export default function AdministracionRouter() {
       if (item.id === "terceros") return isTenantModuleEnabled(userProfile?.tenant, "terceros") && can("Administración", "Terceros", "consultar");
       if (item.id === "residuos") return isTenantModuleEnabled(userProfile?.tenant, "residuos") && can("Administración", "Residuos", "consultar");
       if (item.id === "rips") return isTenantModuleEnabled(userProfile?.tenant, "rips") && can("Administración", "Rips", "consultar");
+      if (item.id === "inventario") {
+        if (!isTenantModuleEnabled(userProfile?.tenant, "inventario")) return false;
+        // Los administradores lo ven siempre; los demás perfiles, si se les da el permiso «Inventario».
+        const rol = String(userProfile?.role || userProfile?.rol || "").toLowerCase();
+        return rol.includes("admin") || can("Administración", "Inventario", "consultar");
+      }
       if (item.id === "esterilizacion") return isTenantModuleEnabled(userProfile?.tenant, "esterilizacion") && can("Administración", "Esterilizacion", "consultar");
       return true;
     });
@@ -137,6 +144,7 @@ export default function AdministracionRouter() {
           <div className="sm:bg-white sm:rounded-xl sm:border sm:border-slate-200 sm:shadow-sm p-0 sm:p-4 min-h-[600px]">
             {selectedModule === "facturacion" && <FacturacionHub />}
             {selectedModule === "rips" && <RipsGenerator />}
+            {selectedModule === "inventario" && <InventarioModule />}
             {selectedModule === "agenda" && <GestionAgenda />}
             {selectedModule === "terceros" && <Terceros />}
             {selectedModule === "convenios" && <Convenios />}
