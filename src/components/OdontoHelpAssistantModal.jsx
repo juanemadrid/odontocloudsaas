@@ -138,8 +138,9 @@ export default function OdontoHelpAssistantModal({ isOpen, onClose }) {
 function HelpPanel({ onClose }) {
     const welcome = { 
         sender: 'bot', 
-        text: 'Soy OdontoIA. ¿Qué necesitas hacer en OdontoCloud? No escribas nombres, documentos ni datos de pacientes.',
-        sources: [] 
+        text: 'Soy OdontoIA. ¿Qué necesitas hacer en OdontoCloud? No escribas nombres, documentos ni datos de pacientes.\n\n🎬 También tienes videos paso a paso en la pestaña «Videos», en dos carpetas: Configuración y Uso diario.',
+        sources: [],
+        verVideos: true
     };
     
     const [messages, setMessages] = useState([welcome]);
@@ -251,7 +252,9 @@ function detectScreenContext() {
         if (requestId !== generation.current) return;
         const sources = (result.sources || []).filter(s => s && HELP_GUIDES.some(g => g.id === s.id));
         const video = (result.reason === 'cancelled' || result.reason === 'conversation') ? null : (videoParaGuias(sources.map(s => s.id)) || videoParaPregunta(question));
-        setMessages(prev => prev.map(m => m.id === replyId ? { sender: 'bot', text: result.answer, provider: result.provider, model: result.model, reason: result.reason, diagnostic: result.diagnostic, sources, video } : m));
+        // Si preguntan por los videos en general, se ofrece abrir la pestaña Videos.
+        const verVideos = !video && result.reason !== 'cancelled' && /\bvideos?\b|tutorial/i.test(question);
+        setMessages(prev => prev.map(m => m.id === replyId ? { sender: 'bot', text: result.answer, provider: result.provider, model: result.model, reason: result.reason, diagnostic: result.diagnostic, sources, video, verVideos } : m));
         if (sources.length && result.reason !== 'conversation' && result.reason !== 'cancelled') setPreviousIds(sources.map(s => s.id));
         pending.current = false;
         setIsTyping(false);
@@ -445,6 +448,15 @@ function detectScreenContext() {
                                                 </span>
                                             </button>
                                         )}
+                                        {message.verVideos && !message.pending && videos.length > 0 && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setActiveTab('videos')}
+                                                className="mt-3 w-full flex items-center gap-2 p-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-100 text-left text-[11px] font-extrabold text-rose-700 transition-colors cursor-pointer"
+                                            >
+                                                <FiPlayCircle size={14} /> Ver los videos tutoriales ({videos.length})
+                                            </button>
+                                        )}
                                         {message.sources?.length > 0 && (
                                             <div className="mt-3 pt-2 border-t border-slate-200/70">
                                                 <p className="text-[10px] font-bold text-slate-400 mb-1">Guías relacionadas:</p>
@@ -572,7 +584,7 @@ function detectScreenContext() {
             {/* Contenido: Tab Videos tutoriales (el video se abre en una ventana flotante) */}
             {activeTab === 'videos' && (
                 <div className="flex flex-col flex-1 min-h-0 bg-slate-50">
-                    <p className="px-3 pt-2.5 text-[10px] text-slate-500">Toca un video: se abre en una ventana flotante que puedes mover y agrandar.</p>
+                    <p className="px-3 pt-2.5 text-[10px] text-slate-500">Abre una carpeta y toca un video: se abre en una ventana flotante que puedes mover y agrandar.</p>
                     <ListaVideos videos={videos} actual={videoActual} onSelect={abrirVideo} />
                 </div>
             )}
@@ -716,33 +728,57 @@ function VideoFlotante({ video, onClose }) {
 }
 
 function ListaVideos({ videos, actual, onSelect }) {
+    // Carpetas cerradas al inicio; se abre sola la del video que se está viendo.
+    const [abiertas, setAbiertas] = useState(() => new Set(actual ? [actual.serie] : []));
+    const alternar = serie => setAbiertas(prev => {
+        const next = new Set(prev);
+        if (next.has(serie)) next.delete(serie); else next.add(serie);
+        return next;
+    });
     return (
-        <div className="overflow-y-auto p-2.5 flex-1 space-y-3">
+        <div className="overflow-y-auto p-2.5 flex-1 space-y-2">
             {HELP_VIDEO_SERIES.map(serie => {
                 const lista = videos.filter(v => v.serie === serie);
                 if (!lista.length) return null;
+                const abierta = abiertas.has(serie);
                 return (
-                    <div key={serie}>
-                        <p className="px-1 pb-1.5 text-[10px] uppercase tracking-wider font-extrabold text-slate-400">{serie}</p>
-                        <div className="space-y-1">
-                            {lista.map(v => (
-                                <button
-                                    type="button"
-                                    key={v.id}
-                                    onClick={() => onSelect(v)}
-                                    className={`w-full text-left p-2 rounded-xl flex items-center gap-2.5 transition-all cursor-pointer ${actual?.id === v.id ? 'bg-blue-50 border border-blue-200' : 'hover:bg-white hover:shadow-xs border border-transparent'}`}
-                                >
-                                    <span className="relative shrink-0">
-                                        <img src={youtubeThumb(v.youtube)} alt="" className="w-20 h-11 rounded-lg object-cover bg-slate-200" loading="lazy" />
-                                        <FiPlayCircle className="absolute inset-0 m-auto text-white drop-shadow" size={18} />
-                                    </span>
-                                    <span className="min-w-0">
-                                        <span className="block text-[9px] uppercase tracking-wider font-extrabold text-blue-600">Video {v.orden}</span>
-                                        <span className="block text-xs font-bold text-slate-700 truncate">{v.titulo}</span>
-                                    </span>
-                                </button>
-                            ))}
-                        </div>
+                    <div key={serie} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                        <button
+                            type="button"
+                            onClick={() => alternar(serie)}
+                            aria-expanded={abierta}
+                            className="w-full flex items-center gap-2.5 p-3 text-left hover:bg-slate-50 cursor-pointer"
+                        >
+                            <span className="w-8 h-8 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+                                <FiPlayCircle size={16} />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                                <span className="block text-xs font-extrabold text-slate-800">{serie}</span>
+                                <span className="block text-[10px] text-slate-500">{lista.length} {lista.length === 1 ? 'video' : 'videos'}</span>
+                            </span>
+                            <FiChevronRight size={15} className={`text-slate-400 transition-transform ${abierta ? 'rotate-90' : ''}`} />
+                        </button>
+                        {abierta && (
+                            <div className="px-2 pb-2 space-y-1 border-t border-slate-100 pt-2">
+                                {lista.map(v => (
+                                    <button
+                                        type="button"
+                                        key={v.id}
+                                        onClick={() => onSelect(v)}
+                                        className={`w-full text-left p-2 rounded-xl flex items-center gap-2.5 transition-all cursor-pointer ${actual?.id === v.id ? 'bg-blue-50 border border-blue-200' : 'hover:bg-slate-50 border border-transparent'}`}
+                                    >
+                                        <span className="relative shrink-0">
+                                            <img src={youtubeThumb(v.youtube)} alt="" className="w-20 h-11 rounded-lg object-cover bg-slate-200" loading="lazy" />
+                                            <FiPlayCircle className="absolute inset-0 m-auto text-white drop-shadow" size={18} />
+                                        </span>
+                                        <span className="min-w-0">
+                                            <span className="block text-[9px] uppercase tracking-wider font-extrabold text-blue-600">Video {v.orden}</span>
+                                            <span className="block text-xs font-bold text-slate-700 truncate">{v.titulo}</span>
+                                        </span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 );
             })}
