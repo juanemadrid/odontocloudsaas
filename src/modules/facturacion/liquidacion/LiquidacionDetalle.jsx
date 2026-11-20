@@ -159,17 +159,29 @@ export default function LiquidacionDetalle({ doctor, dateRange, preloadedItems =
         return Math.max(0, baseItemsComisionables - totalGastosLab);
     }, [baseItemsComisionables, totalGastosLab]);
 
-    // Total comisión: suma de comisiones individuales de ítems seleccionados menos gastos de laboratorio
+    // Total comisión.
+    // Costo de laboratorio (antes del %): se descuenta de la base de los ítems por porcentaje y
+    // DESPUÉS se aplica el porcentaje. Ej.: $140.000 al 60% con laboratorio de $50.000 →
+    // ($140.000 − $50.000) × 60% = $54.000. Si hay ítems con distinto %, el costo se reparte en
+    // proporción al valor de cada ítem. Los ítems de pago fijo no se afectan; si el laboratorio
+    // supera la base por porcentaje (o no hay ítems por %), el sobrante se resta del total.
+    // Gasto general (después del %) se resta del neto, más abajo.
     const totalComision = useMemo(() => {
+        const factorBase = baseItemsComisionables > 0
+            ? Math.max(0, baseItemsComisionables - totalGastosLab) / baseItemsComisionables
+            : 1;
+        const labSobrante = baseItemsComisionables > 0
+            ? Math.max(0, totalGastosLab - baseItemsComisionables)
+            : totalGastosLab;
         const totalItemsPay = selectedItems.reduce((acc, it) => {
             const itPct = it.porcentaje !== undefined && it.porcentaje !== "" ? Number(it.porcentaje) : comisionPct;
             const payVal = it.tipoLiquidacion === "fijo"
                 ? Number(it.valorAPagar || (it.pagoFijoValor * (it.cantidad || 1)) || 0)
-                : Math.round(Number(it.valorPrestacion || 0) * itPct / 100);
+                : Number(it.valorPrestacion || 0) * factorBase * itPct / 100;
             return acc + payVal;
         }, 0);
-        return Math.max(0, totalItemsPay - totalGastosLab);
-    }, [selectedItems, comisionPct, totalGastosLab]);
+        return Math.max(0, Math.round(totalItemsPay - labSobrante));
+    }, [selectedItems, comisionPct, totalGastosLab, baseItemsComisionables]);
 
     // Neto a pagar = Comisión + Bonificaciones - Deducciones - Otros Gastos
     const totalNetoPagar = useMemo(() => {
@@ -294,7 +306,7 @@ export default function LiquidacionDetalle({ doctor, dateRange, preloadedItems =
         <div className="p-1.5 sm:p-4 md:p-6 max-w-[1400px] mx-auto space-y-6 animate-in fade-in duration-300">
             
             {/* Header / Nav */}
-            <div className="bg-white p-6 rounded-[28px] border border-slate-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-6 transition-all">
+            <div className="bg-white px-5 py-4 rounded-[24px] border border-slate-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all">
                 <div className="flex items-center gap-4">
                     <button 
                         onClick={onBack}
@@ -312,44 +324,44 @@ export default function LiquidacionDetalle({ doctor, dateRange, preloadedItems =
                             <span>-</span>
                             <span>Detalle de Liquidación</span>
                         </div>
-                        <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight leading-none mt-1">
+                        <h2 className="text-lg font-black text-slate-800 uppercase tracking-tight leading-none mt-1">
                             Liquidación: {doctor.nombre}
                         </h2>
                     </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                <div className="flex flex-wrap items-center gap-2">
                     <button
                         onClick={() => setShowGastoForm(!showGastoForm)}
-                        className={`h-10 px-4 rounded-full border text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer ${
+                        className={`h-8 px-3 rounded-full border text-[10.5px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer ${
                             showGastoForm ? "bg-rose-50 border-rose-200 text-rose-600" : "bg-white border-slate-200 hover:bg-slate-50 text-slate-600"
                         }`}
                     >
-                        <FiPlus size={14} />
+                        <FiPlus size={12} />
                         Gastos / Laboratorio
                     </button>
                     <button
                         onClick={() => setShowBonoForm(!showBonoForm)}
-                        className={`h-10 px-4 rounded-full border text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer ${
+                        className={`h-8 px-3 rounded-full border text-[10.5px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer ${
                             showBonoForm ? "bg-emerald-50 border-emerald-200 text-emerald-600" : "bg-white border-slate-200 hover:bg-slate-50 text-slate-600"
                         }`}
                     >
-                        <FiPlus size={14} />
+                        <FiPlus size={12} />
                         Bonificaciones
                     </button>
                     <button
                         onClick={() => setShowDeduccionForm(!showDeduccionForm)}
-                        className={`h-10 px-4 rounded-full border text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer ${
+                        className={`h-8 px-3 rounded-full border text-[10.5px] font-black uppercase tracking-wider transition-all flex items-center gap-1 cursor-pointer ${
                             showDeduccionForm ? "bg-amber-50 border-amber-200 text-amber-600" : "bg-white border-slate-200 hover:bg-slate-50 text-slate-600"
                         }`}
                     >
-                        <FiPlus size={14} />
+                        <FiPlus size={12} />
                         Deducciones
                     </button>
                     <button 
                         onClick={handleGenerarLiquidacion}
                         disabled={saving || selectedItems.length === 0}
-                        className="h-10 px-7 flex items-center justify-center bg-purple-600 text-white rounded-full text-xs font-black uppercase tracking-widest hover:bg-purple-700 shadow-lg shadow-purple-600/20 transition-all active:scale-95 disabled:opacity-45 cursor-pointer ml-auto sm:ml-0"
+                        className="h-8 px-5 flex items-center justify-center bg-purple-600 text-white rounded-full text-[10.5px] font-black uppercase tracking-widest hover:bg-purple-700 shadow-lg shadow-purple-600/20 transition-all active:scale-95 disabled:opacity-45 cursor-pointer ml-auto sm:ml-0"
                     >
                         {saving ? "Generando..." : "Generar Liquidación"}
                     </button>
