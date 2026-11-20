@@ -284,7 +284,6 @@ export default function Liquidaciones() {
                                                 <th className="py-3 px-3">Período Liquidado</th>
                                                 <th className="py-3 px-3 text-right">Procedimientos</th>
                                                 <th className="py-3 px-3 text-right">Neto a Pagar</th>
-                                                <th className="py-3 px-3 text-center">Estado</th>
                                                 <th className="py-3 px-3 text-right">Acciones</th>
                                             </tr>
                                         </thead>
@@ -306,11 +305,6 @@ export default function Liquidaciones() {
                                                     <td className="py-3 px-3 font-black text-purple-700 text-right whitespace-nowrap text-sm">
                                                         {fmt(h.totalPagar)}
                                                     </td>
-                                                    <td className="py-3 px-3 text-center whitespace-nowrap">
-                                                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider leading-none bg-amber-50 text-amber-600 border border-amber-100">
-                                                            Generada
-                                                        </span>
-                                                    </td>
                                                     <td className="py-3 px-3 text-right whitespace-nowrap">
                                                         <div className="flex items-center justify-end gap-1.5">
                                                             <button
@@ -319,7 +313,6 @@ export default function Liquidaciones() {
                                                                 title="Visualizar detalle"
                                                             >
                                                                 <FiEye size={14} />
-                                                                Ver
                                                             </button>
                                                             <button
                                                                 onClick={() => handleAnular(h)}
@@ -327,7 +320,6 @@ export default function Liquidaciones() {
                                                                 title="Anular para que vuelva a pendientes"
                                                             >
                                                                 <FiTrash2 size={13} />
-                                                                Anular
                                                             </button>
                                                             <button
                                                                 onClick={() => setPayingLiq(h)}
@@ -422,7 +414,6 @@ export default function Liquidaciones() {
                                                 <th className="py-3 px-3 text-right">Procedimientos</th>
                                                 <th className="py-3 px-3 text-right">Neto Pagado</th>
                                                 <th className="py-3 px-3 text-center">Nro. Egreso</th>
-                                                <th className="py-3 px-3 text-center">Estado</th>
                                                 <th className="py-3 px-3 text-right">Acciones</th>
                                             </tr>
                                         </thead>
@@ -446,11 +437,6 @@ export default function Liquidaciones() {
                                                     </td>
                                                     <td className="py-3 px-3 text-center whitespace-nowrap font-mono text-slate-500 font-bold">
                                                         {h.pagoProveedorId ? `#${h.pagoProveedorId.slice(-6)}` : "—"}
-                                                    </td>
-                                                    <td className="py-3 px-3 text-center whitespace-nowrap">
-                                                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider leading-none bg-emerald-50 text-emerald-600 border border-emerald-100">
-                                                            Pagada
-                                                        </span>
                                                     </td>
                                                     <td className="py-3 px-3 text-right whitespace-nowrap">
                                                         <button
