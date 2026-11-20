@@ -22,7 +22,7 @@ export const HELP_VIDEOS = [
   { id: "uso-3", serie: "Uso diario", orden: 3, titulo: "Historia clínica", youtube: "xI6eUsODtKg", guias: ["historia", "evoluciones", "odontograma"], palabras: "historia clinica evolucion odontograma consulta" },
   { id: "uso-4", serie: "Uso diario", orden: 4, titulo: "Presupuestos y planes de tratamiento", youtube: "buCNGCK75sQ", guias: ["presupuestos"], palabras: "presupuesto plan de tratamiento" },
   { id: "uso-5", serie: "Uso diario", orden: 5, titulo: "Caja", youtube: "ycINpIg_JXo", guias: ["abrir-caja", "pagos-paciente", "cerrar-caja"], palabras: "abrir caja cerrar caja pago abono arqueo" },
-  { id: "uso-6", serie: "Uso diario", orden: 6, titulo: "Factura electrónica y RIPS", youtube: "bnsgcnw9jXg", guias: ["facturas", "rips", "facturacion-dian-rips"], palabras: "factura electronica dian nota credito rips" },
+  { id: "uso-6", serie: "Uso diario", orden: 6, titulo: "Factura electrónica y RIPS", youtube: "15fKzSuO5zo", guias: ["facturas", "rips", "facturacion-dian-rips"], palabras: "factura electronica dian nota credito rips" },
   { id: "uso-7", serie: "Uso diario", orden: 7, titulo: "Inventario", youtube: "Uba8m9j1q-o", guias: [], palabras: "inventario insumos stock kardex entrada salida ajuste" },
 ];
 
