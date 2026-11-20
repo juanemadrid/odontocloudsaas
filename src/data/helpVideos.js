@@ -24,6 +24,7 @@ export const HELP_VIDEOS = [
   { id: "uso-5", serie: "Uso diario", orden: 5, titulo: "Caja", youtube: "ycINpIg_JXo", guias: ["abrir-caja", "pagos-paciente", "cerrar-caja"], palabras: "abrir caja cerrar caja pago abono arqueo" },
   { id: "uso-6", serie: "Uso diario", orden: 6, titulo: "Factura electrónica y RIPS", youtube: "15fKzSuO5zo", guias: ["facturas", "rips", "facturacion-dian-rips"], palabras: "factura electronica dian nota credito rips" },
   { id: "uso-7", serie: "Uso diario", orden: 7, titulo: "Inventario", youtube: "Uba8m9j1q-o", guias: [], palabras: "inventario insumos stock kardex entrada salida ajuste" },
+  { id: "uso-8", serie: "Uso diario", orden: 8, titulo: "Liquidaciones, egresos y traslados", youtube: "hrUd6KH5WME", guias: ["liquidaciones", "proveedores"], palabras: "liquidacion liquidar comisiones doctor profesional laboratorio bonificacion deduccion egreso gasto proveedor traslado banco caja" },
 ];
 
 const norm = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
