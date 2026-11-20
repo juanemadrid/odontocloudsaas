@@ -279,43 +279,43 @@ export default function Liquidaciones() {
                                     <table className="w-full text-left border-collapse text-xs">
                                         <thead>
                                             <tr className="bg-slate-50/50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                                <th className="py-4 px-6">Fecha Generación</th>
-                                                <th className="py-4 px-6">Profesional</th>
-                                                <th className="py-4 px-6">Período Liquidado</th>
-                                                <th className="py-4 px-6 text-right">Procedimientos</th>
-                                                <th className="py-4 px-6 text-right">Neto a Pagar</th>
-                                                <th className="py-4 px-6 text-center">Estado</th>
-                                                <th className="py-4 px-6 text-right">Acciones</th>
+                                                <th className="py-3 px-3">Fecha Generación</th>
+                                                <th className="py-3 px-3">Profesional</th>
+                                                <th className="py-3 px-3">Período Liquidado</th>
+                                                <th className="py-3 px-3 text-right">Procedimientos</th>
+                                                <th className="py-3 px-3 text-right">Neto a Pagar</th>
+                                                <th className="py-3 px-3 text-center">Estado</th>
+                                                <th className="py-3 px-3 text-right">Acciones</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
                                             {liquidacionesGeneradas.map((h) => (
                                                 <tr key={h.id} className="hover:bg-slate-50/30 transition-colors">
-                                                    <td className="py-4 px-6 font-bold text-slate-500 whitespace-nowrap">
+                                                    <td className="py-3 px-3 font-bold text-slate-500 whitespace-nowrap">
                                                         {formatDateOnly(h.created_at || h.createdAt)}
                                                     </td>
-                                                    <td className="py-4 px-6 font-black text-slate-800">
+                                                    <td className="py-3 px-3 font-black text-slate-800">
                                                         {h.profesionalNombre}
                                                     </td>
-                                                    <td className="py-4 px-6 font-bold text-slate-400 whitespace-nowrap">
+                                                    <td className="py-3 px-3 font-bold text-slate-400 min-w-[110px]">
                                                         {h.fechaInicio} al {h.fechaFin}
                                                     </td>
-                                                    <td className="py-4 px-6 font-black text-slate-700 text-right whitespace-nowrap">
+                                                    <td className="py-3 px-3 font-black text-slate-700 text-right whitespace-nowrap">
                                                         {fmt(h.totalRecaudado || h.totalItemsValor)}
                                                     </td>
-                                                    <td className="py-4 px-6 font-black text-purple-700 text-right whitespace-nowrap text-sm">
+                                                    <td className="py-3 px-3 font-black text-purple-700 text-right whitespace-nowrap text-sm">
                                                         {fmt(h.totalPagar)}
                                                     </td>
-                                                    <td className="py-4 px-6 text-center whitespace-nowrap">
+                                                    <td className="py-3 px-3 text-center whitespace-nowrap">
                                                         <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider leading-none bg-amber-50 text-amber-600 border border-amber-100">
                                                             Generada
                                                         </span>
                                                     </td>
-                                                    <td className="py-4 px-6 text-right whitespace-nowrap">
-                                                        <div className="flex items-center justify-end gap-2">
+                                                    <td className="py-3 px-3 text-right whitespace-nowrap">
+                                                        <div className="flex items-center justify-end gap-1.5">
                                                             <button
                                                                 onClick={() => setViewingLiq(h)}
-                                                                className="h-8 px-3 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                                                                className="h-8 px-2 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
                                                                 title="Visualizar detalle"
                                                             >
                                                                 <FiEye size={14} />
@@ -323,7 +323,7 @@ export default function Liquidaciones() {
                                                             </button>
                                                             <button
                                                                 onClick={() => handleAnular(h)}
-                                                                className="h-8 px-3 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-100 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+                                                                className="h-8 px-2 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-100 text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
                                                                 title="Anular para que vuelva a pendientes"
                                                             >
                                                                 <FiTrash2 size={13} />
@@ -331,7 +331,7 @@ export default function Liquidaciones() {
                                                             </button>
                                                             <button
                                                                 onClick={() => setPayingLiq(h)}
-                                                                className="h-8 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase tracking-wider shadow-sm transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                                                                className="h-8 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase tracking-wider shadow-sm transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
                                                                 title="Pagar y generar comprobante de egreso"
                                                             >
                                                                 <FiCreditCard size={13} />
@@ -416,50 +416,50 @@ export default function Liquidaciones() {
                                     <table className="w-full text-left border-collapse text-xs">
                                         <thead>
                                             <tr className="bg-slate-50/50 border-b border-slate-100 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                                <th className="py-4 px-6">Fecha Pago</th>
-                                                <th className="py-4 px-6">Profesional</th>
-                                                <th className="py-4 px-6">Período Liquidado</th>
-                                                <th className="py-4 px-6 text-right">Procedimientos</th>
-                                                <th className="py-4 px-6 text-right">Neto Pagado</th>
-                                                <th className="py-4 px-6 text-center">Nro. Egreso</th>
-                                                <th className="py-4 px-6 text-center">Estado</th>
-                                                <th className="py-4 px-6 text-right">Acciones</th>
+                                                <th className="py-3 px-3">Fecha Pago</th>
+                                                <th className="py-3 px-3">Profesional</th>
+                                                <th className="py-3 px-3">Período Liquidado</th>
+                                                <th className="py-3 px-3 text-right">Procedimientos</th>
+                                                <th className="py-3 px-3 text-right">Neto Pagado</th>
+                                                <th className="py-3 px-3 text-center">Nro. Egreso</th>
+                                                <th className="py-3 px-3 text-center">Estado</th>
+                                                <th className="py-3 px-3 text-right">Acciones</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100">
                                             {liquidacionesPagadas.map((h) => (
                                                 <tr key={h.id} className="hover:bg-slate-50/30 transition-colors">
-                                                    <td className="py-4 px-6 font-bold text-slate-500 whitespace-nowrap">
+                                                    <td className="py-3 px-3 font-bold text-slate-500 whitespace-nowrap">
                                                         {formatDateOnly(h.fechaPago || h.created_at)}
                                                     </td>
-                                                    <td className="py-4 px-6 font-black text-slate-800">
+                                                    <td className="py-3 px-3 font-black text-slate-800">
                                                         {h.profesionalNombre}
                                                     </td>
-                                                    <td className="py-4 px-6 font-bold text-slate-400 whitespace-nowrap">
+                                                    <td className="py-3 px-3 font-bold text-slate-400 min-w-[110px]">
                                                         {h.fechaInicio} al {h.fechaFin}
                                                     </td>
-                                                    <td className="py-4 px-6 font-black text-slate-700 text-right whitespace-nowrap">
+                                                    <td className="py-3 px-3 font-black text-slate-700 text-right whitespace-nowrap">
                                                         {fmt(h.totalRecaudado || h.totalItemsValor)}
                                                     </td>
-                                                    <td className="py-4 px-6 font-black text-emerald-600 text-right whitespace-nowrap text-sm">
+                                                    <td className="py-3 px-3 font-black text-emerald-600 text-right whitespace-nowrap text-sm">
                                                         {fmt(h.totalPagar)}
                                                     </td>
-                                                    <td className="py-4 px-6 text-center whitespace-nowrap font-mono text-slate-500 font-bold">
+                                                    <td className="py-3 px-3 text-center whitespace-nowrap font-mono text-slate-500 font-bold">
                                                         {h.pagoProveedorId ? `#${h.pagoProveedorId.slice(-6)}` : "—"}
                                                     </td>
-                                                    <td className="py-4 px-6 text-center whitespace-nowrap">
+                                                    <td className="py-3 px-3 text-center whitespace-nowrap">
                                                         <span className="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider leading-none bg-emerald-50 text-emerald-600 border border-emerald-100">
                                                             Pagada
                                                         </span>
                                                     </td>
-                                                    <td className="py-4 px-6 text-right whitespace-nowrap">
+                                                    <td className="py-3 px-3 text-right whitespace-nowrap">
                                                         <button
                                                             onClick={() => setViewingLiq(h)}
-                                                            className="h-8 px-3 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 text-xs font-bold transition-all inline-flex items-center gap-1 cursor-pointer"
+                                                            className="h-8 px-2 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200 text-xs font-bold transition-all inline-flex items-center gap-1 cursor-pointer"
                                                             title="Ver recibo y comprobante"
                                                         >
                                                             <FiEye size={14} />
-                                                            Ver Comprobante
+                                                            Ver
                                                         </button>
                                                     </td>
                                                 </tr>
