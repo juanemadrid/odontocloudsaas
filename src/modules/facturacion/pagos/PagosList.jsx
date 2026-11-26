@@ -1,6 +1,7 @@
 import { expenseMatchesInvoice, getExpenseNumber } from '../../../services/supplierExpenseLinks';
 import { mismoTercero } from '../../../utils/terceroMatch';
 import { associateSupplierExpense } from '../../../services/supplierExpenseService';
+import { syncVoidExpenseInCaja } from '../../../services/cajaSyncService';
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { FiCreditCard, FiSearch, FiCalendar, FiPrinter, FiTrash2, FiPlus, FiHome, FiFileText, FiAlertTriangle, FiSlash, FiX, FiEye, FiLink } from "react-icons/fi";
 import supabase from "../../../lib/supabaseClient";
@@ -421,10 +422,7 @@ export default function PagosList({ onNew }) {
         console.warn("Aviso actualizando pagos_proveedor en config:", e);
       }
 
-      // 3. Sincronizar con el módulo de Caja
-      const montoNum = Number(pago.monto || pago.total || 0);
-      const consStr = String(pago.consecutivo || pago.numero || pago.nroConsecutivo || "").trim();
-
+      // 3. Sincronizar con el módulo de Caja mediante Reintegro a Caja
       let targetMovs = [];
       try {
         const { data: mData } = await supabase
@@ -434,6 +432,7 @@ export default function PagosList({ onNew }) {
           .eq("tipo", "egreso");
 
         if (mData && mData.length > 0) {
+          const consStr = String(pago.consecutivo || pago.numero || pago.nroConsecutivo || "").trim();
           targetMovs = mData.filter(m => {
             if (m.id === pago.id || m.pago_id === pago.id || m.pagoId === pago.id) return true;
             if (consStr && (
@@ -445,118 +444,23 @@ export default function PagosList({ onNew }) {
             )) return true;
             return false;
           });
-
-          // Si no coincidió por ID o consecutivo, buscar por monto y fecha
-          if (targetMovs.length === 0) {
-            const pFecha = (pago.fecha || pago.created_at || "").split("T")[0];
-            const candidate = mData.find(m => {
-              const mFecha = (m.fecha || m.created_at || "").split("T")[0];
-              const isNotAnulado = (m.estado || "").toLowerCase() !== "anulado" && !m.anulado;
-              return isNotAnulado && Math.abs(Number(m.monto || 0) - montoNum) < 0.01 && mFecha === pFecha;
-            });
-            if (candidate) targetMovs = [candidate];
-          }
         }
       } catch (e) {
         console.warn("Aviso consultando movimientos_caja:", e);
       }
 
-      // Marcar los movimientos como anulados en movimientos_caja
-      for (const mov of targetMovs) {
-        try {
-          await supabase
-            .from("movimientos_caja")
-            .update({
-              estado: "anulado",
-              anulado: true,
-              motivo_anulacion: motivo,
-              observaciones: `Egreso anulado: ${motivo}`,
-              updated_at: ahoraIso
-            })
-            .eq("id", mov.id);
-        } catch (e) {
-          console.warn("Aviso actualizando movimiento_caja:", e);
-        }
-      }
-
-      // Reintegrar valores a la Caja (cajas y website_config.cajas)
+      // Registrar movimiento de Reintegro a Caja y actualizar saldos de la caja
       try {
-        const { data: dbCajas } = await supabase
-          .from("cajas")
-          .select("*")
-          .eq("tenant_id", inquilino);
-
-        const { data: cfgRow } = await supabase
-          .from("website_config")
-          .select("config")
-          .eq("tenant_id", inquilino)
-          .maybeSingle();
-
-        const cfgCajas = cfgRow?.config?.cajas || [];
-        const allCajas = [...(dbCajas || []), ...cfgCajas];
-
-        const cajaIdAfectada = targetMovs[0]?.caja_id || targetMovs[0]?.cajaId || pago.caja_id || pago.cajaId;
-        let cajaAfectada = null;
-
-        if (cajaIdAfectada) {
-          cajaAfectada = allCajas.find(c => c.id === cajaIdAfectada);
-        }
-        if (!cajaAfectada && pago.bancoCaja) {
-          cajaAfectada = allCajas.find(c => (c.nombre || "").toLowerCase() === (pago.bancoCaja || "").toLowerCase());
-        }
-        if (!cajaAfectada) {
-          cajaAfectada = allCajas.find(c => c.estado === "abierta" || c.abierta) || allCajas[0];
-        }
-
-        if (cajaAfectada && cajaAfectada.id) {
-          const prevSaldo = Number(cajaAfectada.saldo_actual ?? cajaAfectada.saldoActual ?? 0);
-          const prevEgresos = Number(cajaAfectada.total_egresos ?? cajaAfectada.totalEgresos ?? 0);
-          const newSaldo = prevSaldo + montoNum;
-          const newEgresos = Math.max(0, prevEgresos - montoNum);
-
-          // Actualizar en tabla cajas
-          try {
-            await supabase
-              .from("cajas")
-              .update({
-                saldo_actual: newSaldo,
-                saldoActual: newSaldo,
-                total_egresos: newEgresos,
-                totalEgresos: newEgresos,
-                updated_at: ahoraIso
-              })
-              .eq("id", cajaAfectada.id);
-          } catch (e) {
-            console.warn("Aviso actualizando tabla cajas:", e);
-          }
-
-          // Actualizar en website_config.cajas
-          try {
-            const currCfg = cfgRow?.config || {};
-            if (Array.isArray(currCfg.cajas)) {
-              currCfg.cajas = currCfg.cajas.map(c => {
-                if (c.id === cajaAfectada.id) {
-                  return {
-                    ...c,
-                    saldo_actual: newSaldo,
-                    saldoActual: newSaldo,
-                    total_egresos: newEgresos,
-                    totalEgresos: newEgresos,
-                    updated_at: ahoraIso
-                  };
-                }
-                return c;
-              });
-              await supabase
-                .from("website_config")
-                .upsert({ tenant_id: inquilino, config: currCfg });
-            }
-          } catch (e) {
-            console.warn("Aviso actualizando config.cajas:", e);
-          }
-        }
-      } catch (e) {
-        console.warn("Aviso recalculando saldos de caja:", e);
+        await syncVoidExpenseInCaja({
+          inquilino,
+          expense: pago,
+          userProfile,
+          reason: motivo,
+          operator: nombreUsuario,
+          targetCajaId: targetMovs[0]?.caja_id || pago.caja_id || pago.cajaId
+        });
+      } catch (cajaErr) {
+        console.warn("Aviso al sincronizar reintegro de egreso en caja:", cajaErr);
       }
 
       // 4. Si amortizó facturas de compra, restaurar saldo pendiente

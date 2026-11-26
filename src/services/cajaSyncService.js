@@ -17,7 +17,7 @@ export const isUUID = (str) => {
 export const resolveTargetCajaId = async (inquilino, userProfile = null, preferredCajaId = null) => {
   if (!inquilino) return null;
 
-  // 1. Si se pasó preferredCajaId y es UUID, verificar si existe y está abierta en BD o website_config
+  // 1. Si se pasó preferredCajaId y es UUID, verificar si existe en BD o website_config
   if (preferredCajaId && isUUID(preferredCajaId)) {
     try {
       const { data: cData } = await supabase
@@ -25,7 +25,7 @@ export const resolveTargetCajaId = async (inquilino, userProfile = null, preferr
         .select("id, estado")
         .eq("id", preferredCajaId)
         .maybeSingle();
-      if (cData?.id && (cData.estado || "").toLowerCase() === "abierta") {
+      if (cData?.id) {
         return cData.id;
       }
     } catch (_) {}
@@ -33,7 +33,7 @@ export const resolveTargetCajaId = async (inquilino, userProfile = null, preferr
     try {
       const cfgCajas = await getConfigSection(inquilino, "cajas", []);
       const matched = (Array.isArray(cfgCajas) ? cfgCajas : []).find(
-        c => c.id === preferredCajaId && (c.estado || "").toLowerCase() === "abierta"
+        c => c.id === preferredCajaId
       );
       if (matched?.id) return matched.id;
     } catch (_) {}
@@ -177,9 +177,22 @@ export const syncVoidReceiptInCaja = async ({
     console.warn("[cajaSyncService] Aviso al verificar duplicados en movimientos_caja:", checkErr);
   }
 
-  // 2. Resolver caja destino
-  const preferredId = targetCajaId || receipt.caja_id || receipt.cajaId || receipt._raw?.caja_id || receipt._raw?.cajaId || receipt._meta?.cajaId || receipt._meta?.caja_id;
-  const finalCajaId = await resolveTargetCajaId(inquilino, userProfile, preferredId);
+  // 2. Resolver caja destino: buscar dónde estuvo el recibo original si no se pasó targetCajaId
+  let originalCajaId = targetCajaId || receipt.caja_id || receipt.cajaId || receipt._raw?.caja_id || receipt._raw?.cajaId || receipt._meta?.cajaId || receipt._meta?.caja_id;
+  if (!originalCajaId) {
+    try {
+      const { data: origMovs } = await supabase
+        .from("movimientos_caja")
+        .select("caja_id")
+        .eq("tenant_id", inquilino)
+        .eq("tipo", "ingreso")
+        .or(`id.eq.${receipt.id},concepto.ilike.%RC-${rawNum}%,referencia.ilike.%${rawNum}%`);
+      if (origMovs && origMovs.length > 0 && origMovs[0].caja_id) {
+        originalCajaId = origMovs[0].caja_id;
+      }
+    } catch (_) {}
+  }
+  const finalCajaId = await resolveTargetCajaId(inquilino, userProfile, originalCajaId);
 
   if (!finalCajaId) {
     console.error("[cajaSyncService] No se pudo resolver una caja válida para el egreso de anulación.");
@@ -290,44 +303,201 @@ export const syncVoidReceiptInCaja = async ({
 };
 
 /**
- * Reconcilia recibos de caja y pagos anulados preexistentes que no cuenten con un egreso
- * registrado en movimientos_caja (ej. RC-2109 y anteriores).
+ * Sincroniza la anulación de un egreso registrando un ingreso de reintegro en movimientos_caja
+ * y actualizando los saldos de la caja.
+ */
+export const syncVoidExpenseInCaja = async ({
+  inquilino,
+  expense,
+  userProfile = null,
+  reason = "",
+  operator = "",
+  targetCajaId = null
+}) => {
+  if (!inquilino || !expense) return { success: false, error: "Parámetros insuficientes" };
+
+  const monto = Math.abs(Number(expense.total ?? expense.monto ?? expense.valor ?? 0));
+  if (monto <= 0) {
+    return { success: true, skipped: true, reason: "monto_zero" };
+  }
+
+  const medioRaw = expense.medioPago || expense.metodo || expense.medio || expense.bancoCaja || "Efectivo";
+  const rawNum = String(
+    expense.consecutivo ||
+    expense.numero ||
+    expense.nroConsecutivo ||
+    expense.nroPago ||
+    expense.id ||
+    ""
+  ).replace(/^EGR-?/i, "").replace(/^Egreso\s*#?\s*/i, "").trim();
+
+  const formattedEgr = rawNum ? `Egreso #${rawNum}` : "Egreso S/N";
+  const reversalConcept = `[REINTEGRO EGRESO] ${formattedEgr}`;
+
+  // 1. Evitar duplicar el reintegro si ya existe en movimientos_caja
+  try {
+    const { data: existingMovs } = await supabase
+      .from("movimientos_caja")
+      .select("id, concepto, tipo")
+      .eq("tenant_id", inquilino)
+      .eq("tipo", "ingreso")
+      .ilike("concepto", `[REINTEGRO EGRESO] %${rawNum || ""}%`);
+
+    if (existingMovs && existingMovs.length > 0 && rawNum) {
+      console.log(`[cajaSyncService] Ya existe movimiento de reintegro para ${formattedEgr}. Omitiendo inserción.`);
+      return { success: true, existing: true, movimientoId: existingMovs[0].id };
+    }
+  } catch (checkErr) {
+    console.warn("[cajaSyncService] Aviso al verificar duplicados de reintegro en movimientos_caja:", checkErr);
+  }
+
+  // 2. Resolver caja destino: buscar dónde estuvo el egreso original si no se pasó targetCajaId
+  let originalCajaId = targetCajaId || expense.caja_id || expense.cajaId;
+  if (!originalCajaId) {
+    try {
+      const { data: origMovs } = await supabase
+        .from("movimientos_caja")
+        .select("caja_id")
+        .eq("tenant_id", inquilino)
+        .eq("tipo", "egreso")
+        .or(`id.eq.${expense.id},concepto.ilike.%${rawNum}%,referencia.ilike.%${rawNum}%`);
+      if (origMovs && origMovs.length > 0 && origMovs[0].caja_id) {
+        originalCajaId = origMovs[0].caja_id;
+      }
+    } catch (_) {}
+  }
+
+  const finalCajaId = await resolveTargetCajaId(inquilino, userProfile, originalCajaId);
+
+  if (!finalCajaId) {
+    console.error("[cajaSyncService] No se pudo resolver una caja válida para el reintegro de egreso.");
+    return { success: false, error: "No se encontró caja para el reintegro" };
+  }
+
+  const terceroNombre = expense.proveedor || expense.tercero || expense.profesional || "Proveedor / Tercero";
+  const opName = operator || userProfile?.nombreCompleto || userProfile?.nombre || "Sistema";
+  const nowIso = new Date().toISOString();
+
+  const movPayload = {
+    tenant_id: inquilino,
+    caja_id: finalCajaId,
+    usuario_id: isUUID(userProfile?.uid || userProfile?.id) ? (userProfile.uid || userProfile.id) : null,
+    usuario_nombre: opName,
+    tipo: "ingreso",
+    concepto: reversalConcept,
+    monto: monto,
+    metodo_pago: medioRaw,
+    descripcion: `Reintegro por anulación de ${formattedEgr}. Motivo: ${reason || "Anulación de documento"} (Operador: ${opName})`,
+    paciente_nombre: terceroNombre,
+    referencia: `Egreso: ${formattedEgr} | Proveedor: ${terceroNombre} | Motivo: ${reason || "Anulación de egreso"}`,
+    fecha: nowIso,
+    created_at: nowIso
+  };
+
+  const { data: insertedMov, error: insertErr } = await supabase
+    .from("movimientos_caja")
+    .insert([movPayload])
+    .select()
+    .single();
+
+  if (insertErr) {
+    console.error("[cajaSyncService] Error al insertar reintegro en movimientos_caja:", insertErr);
+    throw insertErr;
+  }
+
+  // 3. Actualizar saldos en tabla cajas y en website_config.cajas
+  try {
+    const { data: boxRow } = await supabase
+      .from("cajas")
+      .select("saldo_actual, total_egresos")
+      .eq("id", finalCajaId)
+      .maybeSingle();
+
+    const currentSaldo = Number(boxRow?.saldo_actual ?? 0);
+    const currentEgresos = Number(boxRow?.total_egresos ?? 0);
+    const updatedSaldo = currentSaldo + monto;
+    const updatedEgresos = Math.max(0, currentEgresos - monto);
+
+    await supabase
+      .from("cajas")
+      .update({
+        saldo_actual: updatedSaldo,
+        total_egresos: updatedEgresos,
+        updated_at: nowIso
+      })
+      .eq("id", finalCajaId);
+
+    const cfgCajas = await getConfigSection(inquilino, "cajas", []);
+    if (Array.isArray(cfgCajas) && cfgCajas.some(c => c.id === finalCajaId)) {
+      const updatedCfg = cfgCajas.map(c => {
+        if (c.id === finalCajaId) {
+          return {
+            ...c,
+            saldo_actual: updatedSaldo,
+            saldoActual: updatedSaldo,
+            total_egresos: updatedEgresos,
+            totalEgresos: updatedEgresos,
+            updated_at: nowIso
+          };
+        }
+        return c;
+      });
+      await saveConfigSection(inquilino, "cajas", updatedCfg);
+    }
+  } catch (balErr) {
+    console.warn("[cajaSyncService] Aviso actualizando balance de caja en reintegro:", balErr);
+  }
+
+  return { success: true, movimiento: insertedMov };
+};
+
+/**
+ * Reconcilia recibos de caja y egresos anulados preexistentes que no cuenten con su movimiento
+ * de devolución o reintegro registrado en movimientos_caja.
  */
 export const reconcileVoidedReceiptsInCaja = async (inquilino, userProfile = null) => {
   if (!inquilino) return [];
   try {
-    const [pagosRes, recibosRes, movsRes] = await Promise.all([
-      supabase.from("pagos").select("*").eq("tenant_id", inquilino),
-      supabase.from("recibos_caja").select("*").eq("tenant_id", inquilino),
-      supabase.from("movimientos_caja").select("id, concepto, tipo, caja_id").eq("tenant_id", inquilino).eq("tipo", "egreso")
+    const [pagosRes, recibosRes, cfgRecibos, egresosRes, cfgEgresos, movsRes] = await Promise.all([
+      supabase.from("pagos").select("*").eq("tenant_id", inquilino).catch(() => ({ data: [] })),
+      supabase.from("recibos_caja").select("*").eq("tenant_id", inquilino).catch(() => ({ data: [] })),
+      getConfigSection(inquilino, "recibos_caja", []).catch(() => []),
+      supabase.from("pagos_proveedor").select("*").eq("tenant_id", inquilino).catch(() => ({ data: [] })),
+      getConfigSection(inquilino, "pagos_proveedor", []).catch(() => []),
+      supabase.from("movimientos_caja").select("id, concepto, tipo, caja_id, monto, recibo_id, referencia").eq("tenant_id", inquilino).catch(() => ({ data: [] }))
     ]);
 
-    // 0. Reparar movimientos de anulación que tengan caja_id null
-    const orphanMovs = (movsRes?.data || []).filter(m => !m.caja_id && String(m.concepto || "").startsWith("[ANULACION RC]"));
+    const allMovs = movsRes?.data || [];
+    // 0. Reparar movimientos de anulación/reintegro que tengan caja_id null
+    const orphanMovs = allMovs.filter(m => !m.caja_id && (
+      String(m.concepto || "").startsWith("[ANULACION RC]") ||
+      String(m.concepto || "").startsWith("[REINTEGRO EGRESO]")
+    ));
     if (orphanMovs.length > 0) {
       try {
         const targetId = await resolveTargetCajaId(inquilino, userProfile);
         if (targetId) {
           for (const om of orphanMovs) {
-            await supabase
-              .from("movimientos_caja")
-              .update({ caja_id: targetId })
-              .eq("id", om.id);
+            await supabase.from("movimientos_caja").update({ caja_id: targetId }).eq("id", om.id);
             om.caja_id = targetId;
           }
         }
       } catch (orphanErr) {
-        console.warn("[reconcileVoidedReceiptsInCaja] Aviso reparando movimientos huérfanos:", orphanErr);
+        console.warn("[cajaSyncService] Aviso reparando movimientos huérfanos:", orphanErr);
       }
     }
 
     const existingEgresoConcepts = new Set(
-      (movsRes?.data || []).map(m => String(m.concepto || "").trim().toUpperCase())
+      allMovs.filter(m => m.tipo === "egreso").map(m => String(m.concepto || "").trim().toUpperCase())
+    );
+    const existingIngresoConcepts = new Set(
+      allMovs.filter(m => m.tipo === "ingreso").map(m => String(m.concepto || "").trim().toUpperCase())
     );
 
-    const voidedToSync = [];
+    const voidedRcToSync = [];
+    const voidedEgrToSync = [];
 
-    // 1. Revisar pagos
+    // 1. Revisar pagos (recibos desde tabla pagos)
     (pagosRes?.data || []).forEach(p => {
       let meta = {};
       if (typeof p.notas === "string" && p.notas.trim().startsWith("{")) {
@@ -354,7 +524,7 @@ export const reconcileVoidedReceiptsInCaja = async (inquilino, userProfile = nul
 
           const alreadyExists = formatted && Array.from(existingEgresoConcepts).some(c => c.startsWith(expectedConcept));
           if (!alreadyExists && monto > 0 && num) {
-            voidedToSync.push({
+            voidedRcToSync.push({
               isPago: true,
               id: p.id,
               monto,
@@ -373,9 +543,16 @@ export const reconcileVoidedReceiptsInCaja = async (inquilino, userProfile = nul
       }
     });
 
-    // 2. Revisar recibos_caja
-    (recibosRes?.data || []).forEach(r => {
+    // 2. Revisar recibos_caja (tabla + config)
+    const combinedRecibos = [...(recibosRes?.data || [])];
+    const recIds = new Set(combinedRecibos.map(r => r.id));
+    (Array.isArray(cfgRecibos) ? cfgRecibos : []).forEach(cr => {
+      if (cr?.id && !recIds.has(cr.id)) combinedRecibos.push(cr);
+    });
+
+    combinedRecibos.forEach(r => {
       const isAnulado = String(r.estado || "").toLowerCase() === "anulado" ||
+        Boolean(r.anulado) ||
         String(r.observaciones || "").toUpperCase().includes("ANULAD") ||
         String(r.concepto || "").toUpperCase().includes("ANULAD");
 
@@ -389,8 +566,8 @@ export const reconcileVoidedReceiptsInCaja = async (inquilino, userProfile = nul
 
           const alreadyExists = formatted && Array.from(existingEgresoConcepts).some(c => c.startsWith(expectedConcept));
           if (!alreadyExists && monto > 0 && num) {
-            if (!voidedToSync.some(item => item.consecutivoNumero === num)) {
-              voidedToSync.push({
+            if (!voidedRcToSync.some(item => item.consecutivoNumero === num)) {
+              voidedRcToSync.push({
                 isPago: false,
                 id: r.id,
                 monto,
@@ -410,8 +587,46 @@ export const reconcileVoidedReceiptsInCaja = async (inquilino, userProfile = nul
       }
     });
 
+    // 3. Revisar pagos_proveedor (egresos anulados) (tabla + config)
+    const combinedEgresos = [...(egresosRes?.data || [])];
+    const egrIds = new Set(combinedEgresos.map(e => e.id));
+    (Array.isArray(cfgEgresos) ? cfgEgresos : []).forEach(ce => {
+      if (ce?.id && !egrIds.has(ce.id)) combinedEgresos.push(ce);
+    });
+
+    combinedEgresos.forEach(e => {
+      const isAnulado = String(e.estado || "").toLowerCase() === "anulado" ||
+        Boolean(e.anulado) ||
+        Boolean(e.motivoAnulacion) ||
+        Boolean(e.motivo_anulacion);
+
+      if (isAnulado) {
+        const rawNum = String(
+          e.consecutivo || e.numero || e.nroConsecutivo || e.nroPago || e.id || ""
+        ).replace(/^EGR-?/i, "").replace(/^Egreso\s*#?\s*/i, "").trim();
+        const expectedConcept = `[REINTEGRO EGRESO] EGRESO #${rawNum}`.toUpperCase();
+        const monto = Number(e.monto || e.total || e.valor || 0);
+
+        const alreadyExists = rawNum && Array.from(existingIngresoConcepts).some(c => c.startsWith(expectedConcept) || c.includes(`EGRESO #${rawNum}`.toUpperCase()));
+        if (!alreadyExists && monto > 0 && rawNum) {
+          voidedEgrToSync.push({
+            id: e.id,
+            monto,
+            rawNum,
+            proveedor: e.proveedor || e.tercero || e.profesional || "Proveedor",
+            medioPago: e.medioPago || e.metodo || e.bancoCaja || "Efectivo",
+            motivoAnulacion: e.motivoAnulacion || e.motivo_anulacion || "Anulación de egreso",
+            anuladoPor: e.anuladoPor || e.anulado_por || "Sistema",
+            caja_id: e.caja_id || e.cajaId,
+            _raw: e
+          });
+        }
+      }
+    });
+
+    // Sincronizar devoluciones de recibos
     const synced = [];
-    for (const item of voidedToSync) {
+    for (const item of voidedRcToSync) {
       try {
         const res = await syncVoidReceiptInCaja({
           inquilino,
@@ -430,9 +645,31 @@ export const reconcileVoidedReceiptsInCaja = async (inquilino, userProfile = nul
       }
     }
 
+    // Sincronizar reintegros de egresos
+    for (const item of voidedEgrToSync) {
+      try {
+        const res = await syncVoidExpenseInCaja({
+          inquilino,
+          expense: item,
+          userProfile,
+          reason: item.motivoAnulacion,
+          operator: item.anuladoPor,
+          targetCajaId: item.caja_id
+        });
+        if (res?.success) {
+          synced.push(item);
+          existingIngresoConcepts.add(`[REINTEGRO EGRESO] EGRESO #${item.rawNum}`.toUpperCase());
+        }
+      } catch (e) {
+        console.warn(`[reconcileVoidedReceiptsInCaja] Error reconciliando Egreso #${item.rawNum}:`, e);
+      }
+    }
+
     return synced;
   } catch (err) {
     console.warn("[reconcileVoidedReceiptsInCaja] Error en reconciliación:", err);
     return [];
   }
 };
+
+export const reconcileVoidedMovementsInCaja = reconcileVoidedReceiptsInCaja;

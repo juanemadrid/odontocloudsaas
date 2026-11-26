@@ -188,10 +188,15 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
 
       // Detectar números de recibo que tienen devolución/anulación registrada en la caja
       const voidedRcSet = new Set();
+      // Detectar egresos que tienen reintegro registrado en la caja
+      const voidedEgrSet = new Set();
       (rawMovs || []).forEach(m => {
         if (m.tipo === "egreso" && String(m.concepto || "").startsWith("[ANULACION RC]")) {
           const num = String(m.concepto || "").replace(/^\[ANULACION RC\]\s*RC-?/i, "").trim().replace(/^0+/, "");
           if (num) voidedRcSet.add(num);
+        } else if (m.tipo === "ingreso" && String(m.concepto || "").startsWith("[REINTEGRO EGRESO]")) {
+          const num = String(m.concepto || "").replace(/^\[REINTEGRO EGRESO\]\s*/i, "").replace(/^Egreso\s*#?\s*/i, "").trim().replace(/^0+/, "");
+          if (num) voidedEgrSet.add(num);
         }
       });
 
@@ -204,12 +209,18 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
 
         // Extraer consecutivo explícito si existe
         const isAnulacionRc = m.tipo === "egreso" && String(m.concepto || "").startsWith("[ANULACION RC]");
+        const isReintegroEgr = m.tipo === "ingreso" && String(m.concepto || "").startsWith("[REINTEGRO EGRESO]");
         let consecutiveNumber = "";
         let anulacionRcTarget = "";
+        let reintegroEgrTarget = "";
         if (isAnulacionRc) {
           const rawTarget = String(m.concepto || "").replace(/^\[ANULACION RC\]\s*/i, "").trim();
           anulacionRcTarget = rawTarget ? (rawTarget.toUpperCase().startsWith("RC-") ? rawTarget.toUpperCase() : `RC-${rawTarget}`) : "RC";
           consecutiveNumber = `DEVOLUCIÓN ${anulacionRcTarget}`;
+        } else if (isReintegroEgr) {
+          const rawTarget = String(m.concepto || "").replace(/^\[REINTEGRO EGRESO\]\s*/i, "").trim();
+          reintegroEgrTarget = rawTarget.startsWith("Egreso") ? rawTarget : `Egreso #${rawTarget}`;
+          consecutiveNumber = `REINTEGRO ${reintegroEgrTarget}`;
         } else if (m.concepto) {
           const matchCons = m.concepto.match(/\[(EGR-\d+|RC-\d+)\]/i) || m.concepto.match(/\b(EGR-\d+|RC-\d+)\b/i);
           if (matchCons && matchCons[1]) {
@@ -294,16 +305,25 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
         const fechaVal = m.created_at || m.fecha || m.fechaISO || m.fecha_apertura;
         const metodoPago = m.metodo_pago || m.metodoPago || "Efectivo";
 
-        const isRcVoided = m.tipo === "ingreso" && (() => {
+        const isRcVoided = m.tipo === "ingreso" && !isReintegroEgr && (() => {
           const num = getReceiptNumber(m)?.replace(/^0+/, "");
           return Boolean(num && voidedRcSet.has(num));
+        })();
+
+        const isEgrVoided = m.tipo === "egreso" && !isAnulacionRc && (() => {
+          const num = String(m.egresoNumero || getExpenseNumber(m) || "").replace(/^0+/, "");
+          const fromConcept = String(m.concepto || "").match(/EGR-(\d+)/i)?.[1]?.replace(/^0+/, "");
+          return Boolean((num && voidedEgrSet.has(num)) || (fromConcept && voidedEgrSet.has(fromConcept)) || (m.estado || "").toLowerCase() === "anulado" || m.anulado);
         })();
 
         return {
           ...m,
           isAnulacionRc,
           anulacionRcTarget,
+          isReintegroEgr,
+          reintegroEgrTarget,
           rcAnulado: isRcVoided,
+          egrAnulado: isEgrVoided,
           nroConsecutivo: consecutiveNumber,
           consecutivo: consecutiveNumber,
           fecha: fechaVal,
@@ -342,9 +362,10 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
     fetchMovs();
   }, [caja?.id, userProfile?.inquilino, caja?.inquilino]);
 
-  // Cálculos de totales (excluyendo movimientos anulados)
+  // Cálculos de totales (excluyendo movimientos anulados que no tienen contrarrepartida de reversión)
   const isEffectiveMovement = (m) => !((m.estado || "").toLowerCase() === "anulado" || m.anulado)
-    || String(m.concepto || "").startsWith("[ANULACION RC]");
+    || String(m.concepto || "").startsWith("[ANULACION RC]")
+    || String(m.concepto || "").startsWith("[REINTEGRO EGRESO]");
   const totalIngresos = movimientos
     .filter(m => m.tipo === "ingreso" && isEffectiveMovement(m))
     .reduce((s, m) => s + (Number(m.monto) || 0), 0);
@@ -1050,33 +1071,41 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
                       }
                     }
                   } else {
-                    // Ingreso / Recibo de caja (ej. RC-2124)
-                    const matchTag = String(m.concepto || "").match(/\[?RC-(\d+)\]?/i);
-                    const rcNum = (matchTag && matchTag[1]) || getReceiptNumber(m) || (m.nroConsecutivo ? String(m.nroConsecutivo).replace(/^RC-?/i, "") : "");
-                    if (rcNum) {
-                      docVisible = `RC-${rcNum}`;
+                    // Ingreso (Recibo de caja o Reintegro de egreso)
+                    if (m.isReintegroEgr || String(m.concepto || "").startsWith("[REINTEGRO EGRESO]")) {
+                      const egrTarget = m.reintegroEgrTarget || String(m.concepto || "").replace(/^\[REINTEGRO EGRESO\]\s*/i, "").trim();
+                      docVisible = `REINTEGRO ${egrTarget.startsWith("Egreso") ? egrTarget : `Egreso #${egrTarget}`}`;
                     } else {
-                      docVisible = String(m.concepto || "Recibo de caja").replace(/[\[\]]/g, "").trim();
+                      const matchTag = String(m.concepto || "").match(/\[?RC-(\d+)\]?/i);
+                      const rcNum = (matchTag && matchTag[1]) || getReceiptNumber(m) || (m.nroConsecutivo ? String(m.nroConsecutivo).replace(/^RC-?/i, "") : "");
+                      if (rcNum) {
+                        docVisible = `RC-${rcNum}`;
+                      } else {
+                        docVisible = String(m.concepto || "Recibo de caja").replace(/[\[\]]/g, "").trim();
+                      }
                     }
                   }
 
+                  const tieneDevolucionOReintegro = Boolean(m.rcAnulado || m.egrAnulado);
+                  const tachado = esAnulado && !tieneDevolucionOReintegro;
+
                   return (
-                    <tr key={m.id} className={`transition-colors ${esAnulado ? "bg-rose-50/40 hover:bg-rose-50/70" : "hover:bg-slate-50"}`}>
+                    <tr key={m.id} className={`transition-colors ${(esAnulado || tieneDevolucionOReintegro) ? "bg-rose-50/40 hover:bg-rose-50/70" : "hover:bg-slate-50"}`}>
                       <td className="px-3 py-3 text-slate-600 whitespace-nowrap">{fmtDate(m.fecha)}</td>
-                      <td className={`px-3 py-3 font-medium ${esAnulado ? "text-slate-400" : "text-slate-800"}`}>{tercero}</td>
+                      <td className={`px-3 py-3 font-medium ${tachado ? "text-slate-400" : "text-slate-800"}`}>{tercero}</td>
                       <td className="px-3 py-3 text-slate-600">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className={esAnulado ? "text-slate-400" : "font-semibold text-slate-700"} title={m.concepto || ""}>
+                          <span className={tachado ? "text-slate-400" : "font-semibold text-slate-700"} title={m.concepto || ""}>
                             {docVisible}
                           </span>
-                          {(esAnulado || m.rcAnulado) && (
+                          {(esAnulado || m.rcAnulado || m.egrAnulado) && (
                             <span className="inline-block px-1.5 py-0.5 bg-rose-100 text-rose-700 font-bold text-[9px] rounded uppercase tracking-wider">
                               ANULADO
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className={`px-3 py-3 font-semibold ${esAnulado ? "line-through text-slate-400" : (esEgreso ? "text-rose-600" : "text-emerald-600")}`}>
+                      <td className={`px-3 py-3 font-semibold ${tachado ? "line-through text-slate-400" : (esEgreso ? "text-rose-600" : "text-emerald-600")}`}>
                         {valorFormateado}
                       </td>
                       <td className="px-3 py-3 text-slate-600">{m.metodoPago || "Efectivo"}</td>
@@ -1192,10 +1221,14 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
       {/* Modal Vista Previa del Comprobante Oficial */}
       {selectedMovimiento && (() => {
         const isAnulacion = selectedMovimiento.isAnulacionRc || String(selectedMovimiento.concepto || "").startsWith("[ANULACION RC]");
+        const isReintegro = selectedMovimiento.isReintegroEgr || String(selectedMovimiento.concepto || "").startsWith("[REINTEGRO EGRESO]");
         let previewConsecutive = selectedMovimiento.nroConsecutivo || selectedMovimiento.nro_consecutivo || "";
         if (isAnulacion) {
           const rcTarget = selectedMovimiento.anulacionRcTarget || String(selectedMovimiento.concepto || "").replace(/^\[ANULACION RC\]\s*/i, "").trim();
           previewConsecutive = `DEVOLUCIÓN ${rcTarget ? (rcTarget.toUpperCase().startsWith("RC-") ? rcTarget.toUpperCase() : `RC-${rcTarget}`) : "RC"}`;
+        } else if (isReintegro) {
+          const egrTarget = selectedMovimiento.reintegroEgrTarget || String(selectedMovimiento.concepto || "").replace(/^\[REINTEGRO EGRESO\]\s*/i, "").trim();
+          previewConsecutive = `REINTEGRO ${egrTarget.startsWith("Egreso") ? egrTarget : `Egreso #${egrTarget}`}`;
         } else {
           if (!previewConsecutive && selectedMovimiento.concepto) {
             const match = selectedMovimiento.concepto.match(/\[(EGR-\d+|RC-\d+)\]/i) || selectedMovimiento.concepto.match(/\b(EGR-\d+|RC-\d+)\b/i);
