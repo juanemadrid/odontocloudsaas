@@ -477,21 +477,20 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
     let pagadoFinal = 0;
     let porPagarFinal = totalDoc;
 
-    const hasExpenseLink = asocs.length > 0 || sumAplicados > 0 || Boolean(factura.egresoAsociadoId);
+    // REGLA CRÍTICA: Un documento SOLO se considera con egreso si realmente existe un egreso en la lista de asociados
+    const hasExpenseLink = asocs.length > 0;
 
     if (isAnulada) {
       const recordedPagado = Number(factura.valorPagado || 0);
-      pagadoFinal = Math.min(totalDoc, Math.max(recordedPagado, sumAplicados, sumAsocs));
+      pagadoFinal = Math.min(totalDoc, Math.max(recordedPagado, sumAsocs));
       porPagarFinal = 0;
     } else if (!hasExpenseLink) {
-      // REGLA CRÍTICA: Si no tiene ningún egreso asociado, NO debe aparecer como pagado
+      // Si no tiene ningún egreso en la lista (Sin egreso), NUNCA debe aparecer como pagado
       pagadoFinal = 0;
       porPagarFinal = totalDoc;
     } else {
-      // Tiene egreso(s) asociados: el valor pagado es lo que realmente se ha cubierto por egresos
-      const totalCubiertoPorEgresos = Math.max(sumAplicados, sumAsocs);
-      const recordedPagado = Number(factura.valorPagado || 0);
-      pagadoFinal = Math.min(totalDoc, totalCubiertoPorEgresos > 0 ? totalCubiertoPorEgresos : recordedPagado);
+      // Tiene egreso(s) asociados reales en la tabla: el valor pagado es lo que cubren esos egresos
+      pagadoFinal = Math.min(totalDoc, sumAsocs > 0 ? sumAsocs : totalDoc);
       porPagarFinal = Math.max(0, totalDoc - pagadoFinal);
     }
 

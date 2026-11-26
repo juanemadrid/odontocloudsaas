@@ -13,26 +13,28 @@ export async function createSupplierExpense(tenantId, payment, liquidacionId = n
 }
 
 export async function associateSupplierExpense(tenantId, invoiceId, paymentId, amount, requestId) {
-  // Saneamiento proactivo: si el documento no tiene egresos vinculados pero su saldo en config
-  // era 0 o menor al monto solicitado, restauramos su saldo al total real para evitar que
-  // la RPC de base de datos sea rechazada por 'El valor supera el saldo del documento'.
+  // Saneamiento proactivo: si el saldo pendiente en base de datos es menor al monto a pagar,
+  // restauramos su saldo real para evitar que la RPC falle con 'El valor supera el saldo del documento'.
   const healInvoiceBalanceIfNeeded = async () => {
     try {
       const currentFacturas = await getConfigSection(tenantId, "facturas_compra", []);
       const invIndex = (currentFacturas || []).findIndex(f => String(f.id) === String(invoiceId));
       if (invIndex >= 0) {
         const inv = currentFacturas[invIndex];
-        const hasEgresos = (Array.isArray(inv.egresosAplicados) && inv.egresosAplicados.length > 0) || Boolean(inv.egresoAsociadoId);
         const totalDoc = Number(inv.totalNeto !== undefined ? inv.totalNeto : (inv.total || inv.subtotal || 0));
         const currentPending = Number(inv.saldoPendiente ?? inv.saldo_pendiente ?? 0);
+        const sumApplied = Array.isArray(inv.egresosAplicados)
+          ? inv.egresosAplicados.reduce((s, a) => s + Number(a?.valor || 0), 0)
+          : 0;
+        const realPending = Math.max(0, totalDoc - sumApplied);
 
-        if (!hasEgresos && (currentPending < amount || currentPending <= 0)) {
+        if (currentPending < realPending || currentPending < amount) {
           const healedFacturas = [...currentFacturas];
           healedFacturas[invIndex] = {
             ...inv,
-            saldoPendiente: totalDoc,
-            saldo_pendiente: totalDoc,
-            valorPagado: 0,
+            saldoPendiente: realPending > 0 ? realPending : totalDoc,
+            saldo_pendiente: realPending > 0 ? realPending : totalDoc,
+            valorPagado: sumApplied,
             estado: 'Pendiente',
           };
           await saveConfigSection(tenantId, "facturas_compra", healedFacturas);
@@ -57,12 +59,17 @@ export async function associateSupplierExpense(tenantId, invoiceId, paymentId, a
       if (invIndex >= 0) {
         const inv = currentFacturas[invIndex];
         const totalDoc = Number(inv.totalNeto !== undefined ? inv.totalNeto : (inv.total || inv.subtotal || 0));
+        const sumApplied = Array.isArray(inv.egresosAplicados)
+          ? inv.egresosAplicados.reduce((s, a) => s + Number(a?.valor || 0), 0)
+          : 0;
+        const realPending = Math.max(0, totalDoc - sumApplied);
+
         const healedFacturas = [...currentFacturas];
         healedFacturas[invIndex] = {
           ...inv,
-          saldoPendiente: totalDoc,
-          saldo_pendiente: totalDoc,
-          valorPagado: 0,
+          saldoPendiente: realPending > 0 ? realPending : totalDoc,
+          saldo_pendiente: realPending > 0 ? realPending : totalDoc,
+          valorPagado: sumApplied,
           estado: 'Pendiente',
         };
         await saveConfigSection(tenantId, "facturas_compra", healedFacturas);
