@@ -477,32 +477,27 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
     let pagadoFinal = 0;
     let porPagarFinal = totalDoc;
 
+    const hasExpenseLink = asocs.length > 0 || sumAplicados > 0 || Boolean(factura.egresoAsociadoId);
+
     if (isAnulada) {
-      pagadoFinal = Math.min(totalDoc, Math.max(recordedPagado, sumAplicados));
+      const recordedPagado = Number(factura.valorPagado || 0);
+      pagadoFinal = Math.min(totalDoc, Math.max(recordedPagado, sumAplicados, sumAsocs));
       porPagarFinal = 0;
-    } else if (sumAplicados > 0 || recordedPagado > 0) {
-      pagadoFinal = Math.min(totalDoc, Math.max(recordedPagado, sumAplicados));
-      porPagarFinal = hasExplicitBalance
-        ? Math.min(explicitBalance, Math.max(0, totalDoc - pagadoFinal))
-        : Math.max(0, totalDoc - pagadoFinal);
-      pagadoFinal = Math.max(pagadoFinal, totalDoc - porPagarFinal);
-    } else if (asocs.length > 0) {
-      pagadoFinal = Math.min(totalDoc, sumAsocs);
-      porPagarFinal = hasExplicitBalance && explicitBalance < totalDoc
-        ? explicitBalance
-        : Math.max(0, totalDoc - pagadoFinal);
-      pagadoFinal = Math.max(pagadoFinal, totalDoc - porPagarFinal);
-    } else if (["pagada", "pagado"].includes(state) && (!hasExplicitBalance || explicitBalance <= 0)) {
-      pagadoFinal = totalDoc;
-      porPagarFinal = 0;
+    } else if (!hasExpenseLink) {
+      // REGLA CRÍTICA: Si no tiene ningún egreso asociado, NO debe aparecer como pagado
+      pagadoFinal = 0;
+      porPagarFinal = totalDoc;
     } else {
-      porPagarFinal = hasExplicitBalance ? explicitBalance : totalDoc;
-      pagadoFinal = Math.max(0, totalDoc - porPagarFinal);
+      // Tiene egreso(s) asociados: el valor pagado es lo que realmente se ha cubierto por egresos
+      const totalCubiertoPorEgresos = Math.max(sumAplicados, sumAsocs);
+      const recordedPagado = Number(factura.valorPagado || 0);
+      pagadoFinal = Math.min(totalDoc, totalCubiertoPorEgresos > 0 ? totalCubiertoPorEgresos : recordedPagado);
+      porPagarFinal = Math.max(0, totalDoc - pagadoFinal);
     }
 
-    const isPaid = isAnulada || porPagarFinal <= 0;
-    // Permite asociar siempre que tenga saldo por pagar O cuando aún no tenga ningún egreso asociado
-    const canAssociate = !isAnulada && (porPagarFinal > 0 || asocs.length === 0);
+    const isPaid = isAnulada || (hasExpenseLink && porPagarFinal <= 0);
+    // Permite asociar siempre que no esté anulada y (tenga saldo por pagar O no tenga egresos asociados)
+    const canAssociate = !isAnulada && (porPagarFinal > 0 || !hasExpenseLink);
 
     return { totalDoc, pagadoFinal, porPagarFinal, isPaid, isAnulada, asocs, canAssociate };
   }, [egresosList, getAssociatedEgresos, getAppliedAmountForExpense]);
