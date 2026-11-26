@@ -97,40 +97,21 @@ export default function CitasTab({ patient }) {
     const [modalOpen, setModalOpen] = useState(false);
     const [editingApt, setEditingApt] = useState(null);
 
-    // Filter appointments matching this patient by all available criteria
+    // Filter appointments matching this patient strictly by exact ID or exact document
     const filterAndSetAppointments = useCallback((citasList) => {
         const targetId = String(patient?.id || "").trim();
         const targetUid = String(patient?.uid || "").trim();
         const targetDoc = String(patient?.nroDocumento || patient?.documento || "").trim().toLowerCase();
-        const targetName = String(patient?.nombreCompleto || `${patient?.nombres || ''} ${patient?.apellidos || ''}`).trim().toLowerCase();
-        const targetPhone = String(patient?.celular || patient?.telefono || "").trim().replace(/\D/g, "");
 
         const matched = (citasList || []).filter(c => {
-            // 1. Direct paciente_id match
+            // 1. Direct paciente_id match (prioridad absoluta y exacta)
             const cPacId = String(c.paciente_id || c.pacienteId || c.patientId || c.paciente?.id || "").trim();
             if (targetId && cPacId && (cPacId === targetId || targetId === cPacId)) return true;
             if (targetUid && cPacId && (cPacId === targetUid || targetUid === cPacId)) return true;
 
-            // 2. Document match
+            // 2. Document match estricto (solo si no hay paciente_id y el documento es idéntico exacto)
             const cDoc = String(c.paciente?.documento || c.documento || c.nroDocumento || "").trim().toLowerCase();
-            if (targetDoc && cDoc && (cDoc === targetDoc || cDoc.includes(targetDoc) || targetDoc.includes(cDoc))) return true;
-
-            // 3. Phone match (if at least 7 digits)
-            const cPhone = String(c.paciente?.telefono || c.celular || c.telefono || "").trim().replace(/\D/g, "");
-            if (targetPhone && targetPhone.length >= 7 && cPhone && cPhone.length >= 7 && (cPhone === targetPhone || targetPhone.includes(cPhone) || cPhone.includes(targetPhone))) return true;
-
-            // 4. Name match
-            const cJoinedName = c.paciente ? `${c.paciente.nombres || ''} ${c.paciente.apellidos || ''}`.trim().toLowerCase() : "";
-            const cDirectName = String(c.pacienteNombre || c.paciente || "").trim().toLowerCase();
-            const cMotivo = String(c.motivo || "").trim().toLowerCase();
-            const cNotas = String(c.notas || "").trim().toLowerCase();
-
-            if (targetName && targetName.length >= 3) {
-                if (cJoinedName && (cJoinedName === targetName || cJoinedName.includes(targetName) || targetName.includes(cJoinedName))) return true;
-                if (cDirectName && (cDirectName === targetName || cDirectName.includes(targetName) || targetName.includes(cDirectName))) return true;
-                if (cMotivo && cMotivo.includes(targetName)) return true;
-                if (cNotas && cNotas.includes(targetName)) return true;
-            }
+            if (targetDoc && cDoc && targetDoc.length >= 5 && cDoc === targetDoc) return true;
 
             return false;
         });
