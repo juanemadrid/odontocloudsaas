@@ -14,19 +14,38 @@ export function expenseMatchesInvoice(payment, invoice) {
   if (!payment || !invoice) return false;
   if (payment.tenant_id && invoice.tenant_id && payment.tenant_id !== invoice.tenant_id) return false;
   const paymentRefs = [text(payment.id), getExpenseNumber(payment)].filter(Boolean);
-  const inverse = [invoice.egresoAsociadoId, !invoice.egresoAsociadoId ? invoice.egresoAsociadoDoc : null, invoice.egreso_asociado,
-    invoice.pago_asociado, invoice.egresos_asociados,
-    (invoice.egresosAplicados || []).map(entry => entry?.egresoId || entry?.numero || entry)].flatMap(refs);
+  const inverse = [
+    invoice.egresoAsociadoId,
+    invoice.egresoAsociadoDoc,
+    invoice.egreso_asociado,
+    invoice.pago_asociado,
+    invoice.egresos_asociados,
+    (invoice.egresosAplicados || []).map(entry => entry?.egresoId || entry?.numero || entry)
+  ].flatMap(refs);
   if (inverse.some(ref => paymentRefs.includes(ref))) return true;
   const invoiceId = text(invoice.id);
-  const invoiceNumber = text(invoice.nroFactura || invoice.documentoNumero || invoice.numero || invoice.consecutivo);
+  const allInvoiceNumbers = [
+    invoice.nroFactura,
+    invoice.documentoNumero,
+    invoice.numero,
+    invoice.consecutivo,
+    (invoice.prefijo || invoice.prefix) ? `${invoice.prefijo || invoice.prefix}${invoice.numero || invoice.consecutivo || ''}` : null,
+    (invoice.prefijo || invoice.prefix) ? `${invoice.prefijo || invoice.prefix}-${invoice.numero || invoice.consecutivo || ''}` : null
+  ].map(text).filter(Boolean);
+
   const direct = [payment.facturaId, payment.factura_id, payment.factura_asociada, payment.facturasSeleccionadas].flatMap(refs);
-  if (direct.some(ref => ref === invoiceId || (invoiceNumber && normalized(ref) === normalized(invoiceNumber)))) return true;
+  if (direct.some(ref => ref === invoiceId || allInvoiceNumbers.some(num => normalized(ref) === normalized(num)))) return true;
   if ((Array.isArray(payment.items) ? payment.items : []).some(item => item.isFactura && (
-    (invoiceId && text(item.facturaId) === invoiceId) || (invoiceNumber && normalized(item.numeroFactura || item.concepto) === normalized(invoiceNumber))
+    (invoiceId && text(item.facturaId) === invoiceId) || allInvoiceNumbers.some(num => normalized(item.numeroFactura || item.concepto) === normalized(num))
   ))) return true;
-  // Keep explicit legacy document mentions; supplier name and equal amounts alone are not a link.
-  const document = normalized(invoiceNumber);
+
+  // Matching por mención en notas / observaciones
   const notes = normalized([payment.observaciones, payment.notas, payment.descripcion, payment.concepto].filter(Boolean).join(' '));
-  return document.length >= 4 && /[a-z]/.test(document) && notes.includes(document);
+  for (const num of allInvoiceNumbers) {
+    const doc = normalized(num);
+    if (doc.length >= 4 && /[a-z]/.test(doc) && notes.includes(doc)) return true;
+    const digits = num.replace(/\D/g, '');
+    if (digits.length >= 3 && notes.includes(digits)) return true;
+  }
+  return false;
 }

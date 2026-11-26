@@ -1120,11 +1120,23 @@ export default function PagosForm({ onCancel, onSuccess, initialFacturaId = null
                         const nuevoSaldo = Math.max(0, saldoPrev - abono);
                         const nuevoEstado = nuevoSaldo === 0 ? "Pagada" : "Pendiente";
 
+                        const egresosPrevios = Array.isArray(fcOriginal.egresosAplicados) ? fcOriginal.egresosAplicados : [];
+                        const numEgreso = getExpenseNumber(pagoRecord) || pagoRecord.numero || pagoRecord.consecutivo || "";
+                        const nuevoEgresoItem = {
+                            egresoId: pagoRecord.id,
+                            numero: numEgreso,
+                            valor: abono,
+                            fecha: pagoRecord.fecha || new Date().toISOString()
+                        };
+
                         const fcUpdated = {
                             ...fcOriginal,
                             saldo_pendiente: nuevoSaldo,
                             saldoPendiente: nuevoSaldo,
                             estado: nuevoEstado,
+                            egresoAsociadoId: fcOriginal.egresoAsociadoId || pagoRecord.id,
+                            egresoAsociadoDoc: fcOriginal.egresoAsociadoDoc || numEgreso,
+                            egresosAplicados: [...egresosPrevios.filter(e => e?.egresoId !== pagoRecord.id), nuevoEgresoItem],
                             updated_at: new Date().toISOString()
                         };
                         facturasActualizadas.push(fcUpdated);
@@ -1133,6 +1145,7 @@ export default function PagosForm({ onCancel, onSuccess, initialFacturaId = null
                             await supabase.from("facturas_compra").update({
                                 saldo_pendiente: nuevoSaldo,
                                 estado: nuevoEstado,
+                                egreso_asociado: numEgreso,
                                 updated_at: new Date().toISOString()
                             }).eq("id", fcOriginal.id);
                         } catch (e) {}

@@ -501,7 +501,8 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
     }
 
     const isPaid = isAnulada || porPagarFinal <= 0;
-    const canAssociate = !isAnulada && porPagarFinal > 0;
+    // Permite asociar siempre que tenga saldo por pagar O cuando aún no tenga ningún egreso asociado
+    const canAssociate = !isAnulada && (porPagarFinal > 0 || asocs.length === 0);
 
     return { totalDoc, pagadoFinal, porPagarFinal, isPaid, isAnulada, asocs, canAssociate };
   }, [egresosList, getAssociatedEgresos, getAppliedAmountForExpense]);
@@ -545,19 +546,21 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
       : facturas.find(f => f.id === selectedFacturaId);
 
     if (!targetFactura) {
-      toast.error("Seleccione una factura o documento soporte con saldo pendiente para asociar egresos");
+      toast.error("Seleccione una factura o documento soporte para asociar egresos");
       return;
     }
 
-    const { porPagarFinal, isAnulada } = getFacturaPaymentSummary(targetFactura);
+    const { porPagarFinal, isAnulada, asocs, totalDoc } = getFacturaPaymentSummary(targetFactura);
     if (isAnulada) {
       toast.error("No se pueden asociar egresos a un documento anulado");
       return;
     }
-    if (porPagarFinal <= 0) {
-      toast.info("Este documento ya se encuentra pagado en su totalidad");
+    if (porPagarFinal <= 0 && asocs.length > 0) {
+      toast.info("Este documento ya se encuentra pagado en su totalidad y tiene sus egresos asociados");
       return;
     }
+
+    const valorAAsociar = porPagarFinal > 0 ? porPagarFinal : totalDoc;
 
     setFacturaToAsociar(targetFactura);
     setEgresosRows([
@@ -565,7 +568,7 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
         rowId: crypto.randomUUID(),
         requestId: crypto.randomUUID(),
         egresoId: "",
-        valorAPagar: String(porPagarFinal),
+        valorAPagar: String(valorAAsociar),
         disponible: 0
       }
     ]);
@@ -583,7 +586,8 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
       ), 0);
       const disp = Math.max(0, baseDisp - usadoEnOtrasFilas);
 
-      const { porPagarFinal: pendienteTotal } = getFacturaPaymentSummary(facturaToAsociar);
+      const { porPagarFinal, totalDoc, asocs } = getFacturaPaymentSummary(facturaToAsociar);
+      const pendienteTotal = (asocs.length === 0 && porPagarFinal <= 0) ? totalDoc : porPagarFinal;
       const sumaOtrasFilas = prev.reduce((sum, r, i) => (
         i !== idx ? sum + (parseFloat(r.valorAPagar) || 0) : sum
       ), 0);
@@ -615,7 +619,8 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
   // Agregar otra fila para asociar otro egreso en el mismo modal
   const handleAddEgresoRow = () => {
     setEgresosRows(prev => {
-      const { porPagarFinal: pendienteTotal } = getFacturaPaymentSummary(facturaToAsociar);
+      const { porPagarFinal, totalDoc, asocs } = getFacturaPaymentSummary(facturaToAsociar);
+      const pendienteTotal = (asocs.length === 0 && porPagarFinal <= 0) ? totalDoc : porPagarFinal;
       const sumaActual = prev.reduce((sum, r) => sum + (parseFloat(r.valorAPagar) || 0), 0);
       const restante = Math.max(0, pendienteTotal - sumaActual);
       return [
@@ -639,7 +644,8 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
   // Guardar Asociación de uno o varios Egresos
   const handleSaveAsociacion = async () => {
     if (!facturaToAsociar) return;
-    const { porPagarFinal: pendienteActual } = getFacturaPaymentSummary(facturaToAsociar);
+    const { porPagarFinal, totalDoc, asocs } = getFacturaPaymentSummary(facturaToAsociar);
+    const pendienteActual = (asocs.length === 0 && porPagarFinal <= 0) ? totalDoc : porPagarFinal;
 
     for (let i = 0; i < egresosRows.length; i++) {
       const row = egresosRows[i];
@@ -674,7 +680,7 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
 
     const totalAAplicar = egresosRows.reduce((sum, r) => sum + (parseFloat(r.valorAPagar) || 0), 0);
     if (totalAAplicar > pendienteActual + 0.001) {
-      toast.error(`La suma de los valores a pagar (${fmt(totalAAplicar)}) supera el saldo pendiente del documento (${fmt(pendienteActual)})`);
+      toast.error(`La suma de los valores a pagar (${fmt(totalAAplicar)}) supera el valor disponible del documento (${fmt(pendienteActual)})`);
       return;
     }
 
@@ -1834,7 +1840,8 @@ export default function FacturasCompraList({ onNew, onCrearEgreso }) {
       {/* MODAL: ASOCIAR EGRESO (Soporta uno o varios egresos)      */}
       {/* ========================================================= */}
       {showAsociarModal && facturaToAsociar && (() => {
-        const { porPagarFinal: pendienteFactura, asocs: egresosPrevios } = getFacturaPaymentSummary(facturaToAsociar);
+        const { porPagarFinal, totalDoc, asocs: egresosPrevios } = getFacturaPaymentSummary(facturaToAsociar);
+        const pendienteFactura = (egresosPrevios.length === 0 && porPagarFinal <= 0) ? totalDoc : porPagarFinal;
         const totalAAsociar = egresosRows.reduce((sum, r) => sum + (parseFloat(r.valorAPagar) || 0), 0);
         const restanteTrasAsociar = Math.max(0, pendienteFactura - totalAAsociar);
         // Solo los egresos del mismo tercero con saldo disponible
