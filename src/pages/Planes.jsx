@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { getPlans } from '../services/adminService';
 import SubscriptionModal from '../components/landing/SubscriptionModal';
 import TrialModal from '../components/landing/TrialModal';
+import BlackFridayHero from '../components/landing/BlackFridayHero';
 import { applyAnnualPromo, getActiveAnnualPromo, annualPromoText } from '../constants/promotions';
 
 const cop = (n) =>
@@ -70,10 +71,13 @@ export default function Planes() {
     return (
         <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-blue-500/30">
 
+            {/* Promoción vigente: precios visibles arriba */}
+            <BlackFridayHero plans={plans} loading={loading} onSelectPlan={handleOpenSub} />
+
             {/* ═══════════════════════════════════════════════════════
                 HERO SECTION - CLEAN LIGHT ROYAL BLUE DESIGN
             ═══════════════════════════════════════════════════════ */}
-            <section className="relative pt-44 pb-20 px-6 bg-white border-b border-slate-100 overflow-hidden text-center">
+            <section className={`relative ${getActiveAnnualPromo() ? 'pt-16' : 'pt-44'} pb-20 px-6 bg-white border-b border-slate-100 overflow-hidden text-center`}>
                 {/* Subtle Background Elements */}
                 <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[450px] bg-gradient-to-b from-blue-500/10 via-sky-50/20 to-transparent rounded-full blur-3xl pointer-events-none" />
 
