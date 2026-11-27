@@ -134,9 +134,10 @@ export default function BlackFridayHero({ plans = [], loading = false, onSelectP
                             initial={{ opacity: 0, y: 12 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: 0.05 }}
-                            className="text-4xl md:text-6xl font-black tracking-tight leading-[1.05]"
+                            className="text-4xl md:text-6xl font-black tracking-tight leading-[1.05] text-white"
+                            style={{ color: '#ffffff', textShadow: '0 2px 18px rgba(255,255,255,0.18)' }}
                         >
-                            Black Friday <span className="text-amber-400">{promo.percent}% OFF</span>
+                            Black Friday <span className="text-amber-400" style={{ color: '#fbbf24' }}>{promo.percent}% OFF</span>
                         </motion.h1>
                         <p className="mt-3 text-slate-300 text-base md:text-lg">
                             En el plan anual de todos los planes. Solo hasta el <strong className="text-white">{promo.endsLabel}</strong>.
