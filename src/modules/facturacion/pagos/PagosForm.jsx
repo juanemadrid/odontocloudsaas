@@ -1,4 +1,5 @@
 import { createSupplierExpense } from '../../../services/supplierExpenseService';
+import { getExpenseNumber } from '../../../services/supplierExpenseLinks';
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { 
     FiCalendar, FiPlus, FiTrash2, FiSave, FiAlertCircle, 
@@ -27,6 +28,9 @@ export default function PagosForm({ onCancel, onSuccess, initialFacturaId = null
     const inquilino = userProfile?.inquilino || userProfile?.tenantId || userProfile?.tenant_id || "";
 
     const [saving, setSaving] = useState(false);
+    // Evita egresos duplicados: bloqueo inmediato del botón y registro del egreso ya creado
+    const savingRef = useRef(false);
+    const createdPagoRef = useRef(null);
     const [showInsuficienteModal, setShowInsuficienteModal] = useState(false);
     const [loading, setLoading] = useState(false);
 
@@ -984,6 +988,13 @@ export default function PagosForm({ onCancel, onSuccess, initialFacturaId = null
             return;
         }
 
+        if (savingRef.current) return;
+        if (createdPagoRef.current) {
+            toast.info(`El egreso #${getExpenseNumber(createdPagoRef.current) || ""} ya fue guardado.`);
+            if (onSuccess) onSuccess();
+            return;
+        }
+        savingRef.current = true;
         setSaving(true);
         try {
             const selectedTercero = selectedTerceroObj || terceros.find(t => t.id === terceroId || t.nombre === terceroId) || {
@@ -1044,6 +1055,7 @@ export default function PagosForm({ onCancel, onSuccess, initialFacturaId = null
             };
 
             pagoRecord = await createSupplierExpense(inquilino, pagoRecord);
+            createdPagoRef.current = pagoRecord;
 
             // 3. Registrar Egreso en movimientos_caja y actualizar saldo de la caja (positivo o negativo)
             if (isPayingFromCaja && miCajaAbierta?.id) {
@@ -1170,8 +1182,15 @@ export default function PagosForm({ onCancel, onSuccess, initialFacturaId = null
             if (onSuccess) onSuccess();
         } catch (err) {
             console.error("Error saving pago:", err);
-            toast.error("Error al guardar el pago: " + (err.message || ""));
+            if (createdPagoRef.current) {
+                // El egreso ya quedó creado: no permitir volver a guardarlo (generaría duplicados)
+                toast.warning(`El egreso #${getExpenseNumber(createdPagoRef.current) || ""} quedó guardado, pero hubo un problema al terminar de actualizarlo: ${err.message || ""}. No lo vuelvas a crear; revísalo en Egresos.`);
+                if (onSuccess) onSuccess();
+            } else {
+                toast.error("Error al guardar el pago: " + (err.message || ""));
+            }
         } finally {
+            savingRef.current = false;
             setSaving(false);
         }
     };
