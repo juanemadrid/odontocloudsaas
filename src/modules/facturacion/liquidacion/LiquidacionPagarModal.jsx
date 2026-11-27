@@ -13,7 +13,28 @@ const fmt = (n) =>
 export default function LiquidacionPagarModal({ liquidacion, tenantId, onClose, onConfirm, loading }) {
   const [origenes, setOrigenes] = useState([]);
   const [origenId, setOrigenId] = useState("");
-  const [medioPago, setMedioPago] = useState("Transferencia");
+  // Medios de pago: los configurados por la clínica (mismo nombre que en caja y reportes)
+  const DEFAULT_MEDIOS = ["Transferencia Bancaria", "Efectivo", "Cheque", "Nequi", "Daviplata"];
+  const [mediosPago, setMediosPago] = useState(DEFAULT_MEDIOS);
+  const [medioPago, setMedioPago] = useState("Transferencia Bancaria");
+
+  useEffect(() => {
+    if (!tenantId) return;
+    getConfigSection(tenantId, "metodos_pago", [])
+      .then((list) => {
+        const names = (Array.isArray(list) ? list : [])
+          .filter((m) => m && m.activo !== false)
+          .map((m) => (typeof m === "string" ? m : m.nombre))
+          .map((n) => String(n || "").trim())
+          .filter(Boolean);
+        const unique = [...new Set(names)];
+        if (unique.length) {
+          setMediosPago(unique);
+          setMedioPago((prev) => (unique.includes(prev) ? prev : (unique.find((n) => /transfer/i.test(n)) || unique[0])));
+        }
+      })
+      .catch(() => {});
+  }, [tenantId]);
 
   useEffect(() => {
     const loadBanks = async () => {
@@ -117,11 +138,9 @@ export default function LiquidacionPagarModal({ liquidacion, tenantId, onClose, 
               onChange={(e) => setMedioPago(e.target.value)}
               className="w-full h-11 px-4 bg-slate-50 hover:bg-slate-100/60 border border-slate-200 focus:bg-white rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all cursor-pointer"
             >
-              <option value="Transferencia">Transferencia Bancaria</option>
-              <option value="Efectivo">Efectivo</option>
-              <option value="Cheque">Cheque</option>
-              <option value="Nequi">Nequi</option>
-              <option value="Daviplata">Daviplata</option>
+              {mediosPago.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
             </select>
           </div>
 
