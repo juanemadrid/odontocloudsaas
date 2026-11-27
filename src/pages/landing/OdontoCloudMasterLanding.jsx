@@ -6,7 +6,7 @@ import DocumentationModal from "../../components/landing/DocumentationModal";
 import "./master-hero.css";
 import ProductDemo from "./ProductDemo";
 
-const OVERVIEW_VIDEO_ID = "Jh6mv7aVicY"; // OdontoCloud · Recorrido del sistema (YouTube, oculto)
+const OVERVIEW_VIDEO_ID = "flMSLTb9lYg"; // OdontoCloud · Recorrido del sistema (YouTube, oculto)
 
 function OverviewVideoModal({ onClose }) {
   useEffect(() => {
