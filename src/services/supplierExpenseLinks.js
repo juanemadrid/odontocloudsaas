@@ -24,14 +24,17 @@ export function expenseMatchesInvoice(payment, invoice) {
   ].flatMap(refs);
   if (inverse.some(ref => paymentRefs.includes(ref))) return true;
   const invoiceId = text(invoice.id);
+  const invoicePrefix = text(invoice.prefijo || invoice.prefix);
+  const invoiceSeq = text(invoice.numero || invoice.consecutivo);
+  // Un número de factura debe tener número: el prefijo solo (p. ej. "FEMT") no identifica ninguna factura
   const allInvoiceNumbers = [
     invoice.nroFactura,
     invoice.documentoNumero,
     invoice.numero,
     invoice.consecutivo,
-    (invoice.prefijo || invoice.prefix) ? `${invoice.prefijo || invoice.prefix}${invoice.numero || invoice.consecutivo || ''}` : null,
-    (invoice.prefijo || invoice.prefix) ? `${invoice.prefijo || invoice.prefix}-${invoice.numero || invoice.consecutivo || ''}` : null
-  ].map(text).filter(Boolean);
+    invoicePrefix && invoiceSeq ? `${invoicePrefix}${invoiceSeq}` : null,
+    invoicePrefix && invoiceSeq ? `${invoicePrefix}-${invoiceSeq}` : null
+  ].map(text).filter(num => num && /\d/.test(num));
 
   const direct = [payment.facturaId, payment.factura_id, payment.factura_asociada, payment.facturasSeleccionadas].flatMap(refs);
   if (direct.some(ref => ref === invoiceId || allInvoiceNumbers.some(num => normalized(ref) === normalized(num)))) return true;
