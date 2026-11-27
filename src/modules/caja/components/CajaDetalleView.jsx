@@ -30,9 +30,12 @@ const getExpenseNumber = (movement) => {
 const getReceiptNumber = (movement) => {
   const concept = String(movement.concepto || "");
   const reference = String(movement.referencia || "");
+  const desc = String(movement.descripcion || "");
   return concept.match(/\[RC-(\d+)\]/i)?.[1]
-    || concept.match(/Recibo de Caja\s*#\s*(\d+)/i)?.[1]
+    || concept.match(/Recibo de Caja\s*#?\s*(\d+)/i)?.[1]
     || reference.match(/\bRC-?(\d+)\b/i)?.[1]
+    || desc.match(/\bRC-?(\d+)\b/i)?.[1]
+    || desc.match(/Recibo\s*#?\s*(\d+)/i)?.[1]
     || "";
 };
 
@@ -169,16 +172,54 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
 
       let allRecibos = [];
       try {
-        const [cfgRows, tableRows] = await Promise.all([
+        const [cfgRows, tableRows, pagosTableRows, cfgPagosRows] = await Promise.all([
           getConfigSection(inquilinoId, "recibos_caja", []).catch(() => []),
           supabase.from("recibos_caja").select("*").eq("tenant_id", inquilinoId)
             .then(({ data, error }) => error ? [] : (data || [])).catch(() => []),
+          supabase.from("pagos").select("*").eq("tenant_id", inquilinoId)
+            .then(({ data, error }) => error ? [] : (data || [])).catch(() => []),
+          getConfigSection(inquilinoId, "pagos", []).catch(() => []),
         ]);
         const receiptMap = new Map();
         [...(Array.isArray(cfgRows) ? cfgRows : []), ...(Array.isArray(tableRows) ? tableRows : [])].forEach((receipt) => {
           if (receipt?.id) receiptMap.set(String(receipt.id), { ...(receiptMap.get(String(receipt.id)) || {}), ...receipt });
         });
-          allRecibos = [...receiptMap.values()];
+        // Agregar pagos de la tabla pagos como recibos para matching
+        [...(Array.isArray(pagosTableRows) ? pagosTableRows : []), ...(Array.isArray(cfgPagosRows) ? cfgPagosRows : [])].forEach((p) => {
+          if (p?.id) {
+            let meta = {};
+            if (typeof p.notas === "string" && p.notas.trim().startsWith("{")) {
+              try { meta = JSON.parse(p.notas); } catch (_) {}
+            } else if (p.notas && typeof p.notas === "object") {
+              meta = p.notas;
+            }
+            const isAnulado = String(p.estado || "").toLowerCase() === "anulado" ||
+              Boolean(meta.anulado) ||
+              String(meta.estado || "").toLowerCase() === "anulado" ||
+              String(p.referencia || "").toUpperCase().includes("ANULADO") ||
+              String(p.notas || "").toUpperCase().includes("ANULADO");
+
+            const num = String(meta.nroConsecutivo || p.nroConsecutivo || p.nro_consecutivo || p.numero || "").replace(/^RC-?/i, "").trim();
+            const existing = receiptMap.get(String(p.id)) || {};
+            receiptMap.set(String(p.id), {
+              ...existing,
+              id: p.id,
+              numero: num || existing.numero,
+              nro_consecutivo: num || existing.nro_consecutivo,
+              nroConsecutivo: num || existing.nroConsecutivo,
+              consecutivoNumero: num || existing.consecutivoNumero,
+              paciente_id: p.paciente_id || existing.paciente_id,
+              pacienteNombre: meta.patientNombre || meta.pacienteNombre || p.pacienteNombre || existing.pacienteNombre,
+              total: Number(p.monto || existing.total || 0),
+              monto: Number(p.monto || existing.monto || 0),
+              estado: isAnulado ? "anulado" : (existing.estado || p.estado || "completado"),
+              anulado: isAnulado || existing.anulado,
+              observaciones: p.notas || existing.observaciones,
+              concepto: meta.concepto || p.concepto || existing.concepto
+            });
+          }
+        });
+        allRecibos = [...receiptMap.values()];
       } catch (e) {}
 
       // 3. Cargar movimientos_caja en orden cronológico
@@ -244,10 +285,25 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
         } else {
           rcCount += 1;
           const receiptNumber = getReceiptNumber(m);
-          const receiptId = String(m.recibo_id || m.reciboId || getReferenceValue(refParsed, ["RECIBO", "RECIBO_ID"]));
+          const receiptId = String(m.recibo_id || m.reciboId || getReferenceValue(refParsed, ["RECIBO", "RECIBO_ID", "PAGO", "PAGO_ID"]));
+          const movMonto = Math.abs(Number(m.monto || 0));
+          const movPacId = String(m.paciente_id || m.pacienteId || "");
+
           matchedReceipt = allRecibos.find((receipt) => receiptId && String(receipt.id) === receiptId)
             || allRecibos.find((receipt) => receiptNumber && String(receipt.numero || receipt.nro_consecutivo || receipt.nroConsecutivo || receipt.consecutivoNumero || "").replace(/^RC-/i, "").replace(/^0+/, "") === receiptNumber.replace(/^0+/, ""))
+            // Fallback por paciente + monto en caso de que el movimiento no tenga id explícito ni consecutivo formateado
+            || allRecibos.find((receipt) => {
+              if (!movMonto) return false;
+              const rMonto = Math.abs(Number(receipt.total || receipt.monto || 0));
+              if (Math.abs(rMonto - movMonto) > 0.01) return false;
+              const rPacId = String(receipt.paciente_id || receipt.pacienteId || "");
+              if (movPacId && rPacId && movPacId === rPacId) return true;
+              const rPacNom = String(receipt.pacienteNombre || receipt.paciente_nombre || "").trim().toLowerCase();
+              const mPacNom = String(pacienteParsed || m.paciente_nombre || "").trim().toLowerCase();
+              return Boolean(rPacNom && mPacNom && (rPacNom.includes(mPacNom) || mPacNom.includes(rPacNom)));
+            })
             || null;
+
           if (!matchedReceipt && m.paciente_id) matchedPatient = fullPatientMap[m.paciente_id] || null;
           if (matchedReceipt) {
             const patientId = matchedReceipt.paciente_id || matchedReceipt.pacienteId || matchedReceipt.patient_id;
@@ -315,7 +371,8 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
             String(matchedReceipt.observaciones || "").toUpperCase().includes("ANULAD") ||
             String(matchedReceipt.concepto || "").toUpperCase().includes("ANULAD")
           );
-          return Boolean((num && voidedRcSet.has(num)) || (m.estado || "").toLowerCase() === "anulado" || m.anulado || matchedRcVoid);
+          const conceptVoid = String(m.concepto || "").toUpperCase().includes("ANULAD") || String(m.referencia || "").toUpperCase().includes("ANULAD");
+          return Boolean((num && voidedRcSet.has(num)) || (m.estado || "").toLowerCase() === "anulado" || m.anulado || matchedRcVoid || conceptVoid);
         })();
 
         const isEgrVoided = m.tipo === "egreso" && !isAnulacionRc && (() => {

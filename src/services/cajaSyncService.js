@@ -458,8 +458,9 @@ export const syncVoidExpenseInCaja = async ({
 export const reconcileVoidedReceiptsInCaja = async (inquilino, userProfile = null, currentCajaId = null) => {
   if (!inquilino) return [];
   try {
-    const [pagosRes, recibosRes, cfgRecibos, egresosRes, cfgEgresos, movsRes] = await Promise.all([
+    const [pagosRes, cfgPagos, recibosRes, cfgRecibos, egresosRes, cfgEgresos, movsRes] = await Promise.all([
       supabase.from("pagos").select("*").eq("tenant_id", inquilino).catch(() => ({ data: [] })),
+      getConfigSection(inquilino, "pagos", []).catch(() => []),
       supabase.from("recibos_caja").select("*").eq("tenant_id", inquilino).catch(() => ({ data: [] })),
       getConfigSection(inquilino, "recibos_caja", []).catch(() => []),
       supabase.from("pagos_proveedor").select("*").eq("tenant_id", inquilino).catch(() => ({ data: [] })),
@@ -497,8 +498,14 @@ export const reconcileVoidedReceiptsInCaja = async (inquilino, userProfile = nul
     const voidedRcToSync = [];
     const voidedEgrToSync = [];
 
-    // 1. Revisar pagos (recibos desde tabla pagos)
-    (pagosRes?.data || []).forEach(p => {
+    // 1. Revisar pagos (recibos desde tabla pagos + website_config pagos)
+    const combinedPagos = [...(pagosRes?.data || [])];
+    const pagoIds = new Set(combinedPagos.map(p => p.id));
+    (Array.isArray(cfgPagos) ? cfgPagos : []).forEach(cp => {
+      if (cp?.id && !pagoIds.has(cp.id)) combinedPagos.push(cp);
+    });
+
+    combinedPagos.forEach(p => {
       let meta = {};
       if (typeof p.notas === "string" && p.notas.trim().startsWith("{")) {
         try { meta = JSON.parse(p.notas); } catch (_) {}
@@ -509,6 +516,7 @@ export const reconcileVoidedReceiptsInCaja = async (inquilino, userProfile = nul
       const notesStr = typeof p.notas === "string" ? p.notas.toUpperCase() : "";
       const isAnulado = 
         String(p.estado || "").toLowerCase() === "anulado" ||
+        Boolean(p.anulado) ||
         Boolean(meta.anulado) ||
         String(meta.estado || "").toLowerCase() === "anulado" ||
         refStr.includes("ANULADO") ||
@@ -518,23 +526,24 @@ export const reconcileVoidedReceiptsInCaja = async (inquilino, userProfile = nul
         const metodo = p.metodo || p.medio || meta.metodo || meta.medio || "Efectivo";
         if (metodo.toLowerCase() !== "saldo a favor") {
           const num = String(meta.nroConsecutivo || p.nroConsecutivo || p.nro_consecutivo || p.numero || "").replace(/^RC-?/i, "").trim();
-          const formatted = num ? `RC-${num.padStart(4, "0")}` : "";
+          const formatted = num ? `RC-${num.padStart(4, "0")}` : (p.id ? `RC-${String(p.id).slice(0, 6).toUpperCase()}` : "");
           const expectedConcept = `[ANULACION RC] ${formatted}`.toUpperCase();
           const monto = Number(p.monto || 0);
 
-          const alreadyExists = formatted && Array.from(existingEgresoConcepts).some(c => c.startsWith(expectedConcept));
-          if (!alreadyExists && monto > 0 && num) {
+          const alreadyExists = formatted && Array.from(existingEgresoConcepts).some(c => c.startsWith(expectedConcept) || (num && c.includes(num)));
+          if (!alreadyExists && monto > 0) {
             voidedRcToSync.push({
               isPago: true,
               id: p.id,
               monto,
-              consecutivoNumero: num,
-              nroConsecutivo: num,
+              consecutivoNumero: num || String(p.id).slice(0, 6).toUpperCase(),
+              nroConsecutivo: num || String(p.id).slice(0, 6).toUpperCase(),
               paciente_id: p.paciente_id,
               pacienteNombre: meta.patientNombre || meta.pacienteNombre || p.pacienteNombre || p.patientNombre || "",
               medioPago: metodo,
               motivoAnulacion: p.motivoAnulacion || meta.motivoAnulacion || "Anulación de pago",
               anuladoPor: p.anuladoPor || meta.anuladoPor || "Sistema",
+              caja_id: p.caja_id || p.cajaId,
               _raw: p,
               _meta: meta
             });
@@ -560,24 +569,25 @@ export const reconcileVoidedReceiptsInCaja = async (inquilino, userProfile = nul
         const metodo = r.medio_pago || r.medioPago || r.condicion_pago || "Efectivo";
         if (metodo.toLowerCase() !== "saldo a favor") {
           const num = String(r.nro_consecutivo || r.nroConsecutivo || r.numero || "").replace(/^RC-?/i, "").trim();
-          const formatted = num ? `RC-${num.padStart(4, "0")}` : "";
+          const formatted = num ? `RC-${num.padStart(4, "0")}` : (r.id ? `RC-${String(r.id).slice(0, 6).toUpperCase()}` : "");
           const expectedConcept = `[ANULACION RC] ${formatted}`.toUpperCase();
           const monto = Number(r.total || r.monto || 0);
 
-          const alreadyExists = formatted && Array.from(existingEgresoConcepts).some(c => c.startsWith(expectedConcept));
-          if (!alreadyExists && monto > 0 && num) {
-            if (!voidedRcToSync.some(item => item.consecutivoNumero === num)) {
+          const alreadyExists = formatted && Array.from(existingEgresoConcepts).some(c => c.startsWith(expectedConcept) || (num && c.includes(num)));
+          if (!alreadyExists && monto > 0) {
+            if (!voidedRcToSync.some(item => (num && item.consecutivoNumero === num) || item.id === r.id)) {
               voidedRcToSync.push({
                 isPago: false,
                 id: r.id,
                 monto,
-                consecutivoNumero: num,
-                nroConsecutivo: num,
+                consecutivoNumero: num || String(r.id).slice(0, 6).toUpperCase(),
+                nroConsecutivo: num || String(r.id).slice(0, 6).toUpperCase(),
                 paciente_id: r.paciente_id || r.pacienteId,
                 pacienteNombre: r.paciente_nombre || r.pacienteNombre || "",
                 medioPago: metodo,
                 motivoAnulacion: r.motivoAnulacion || r.motivo_anulacion || "Anulación de recibo",
                 anuladoPor: r.anuladoPor || r.anulado_por || "Sistema",
+                caja_id: r.caja_id || r.cajaId,
                 _raw: r,
                 _meta: {}
               });
