@@ -85,7 +85,7 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
                   className="px-5 sm:px-6 2xl:px-8 py-3 sm:py-3.5 2xl:py-4 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-full font-bold text-sm sm:text-base 2xl:text-lg shadow-sm hover:shadow transition-all duration-200 flex items-center gap-2 cursor-pointer"
                 >
                   <FiPlay size={13} className="text-[#2563EB] fill-[#2563EB]" />
-                  <span>Ver video (2 min)</span>
+                  <span>Ver video</span>
                 </button>
               </div>
 
