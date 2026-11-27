@@ -177,22 +177,22 @@ export const syncVoidReceiptInCaja = async ({
     console.warn("[cajaSyncService] Aviso al verificar duplicados en movimientos_caja:", checkErr);
   }
 
-  // 2. Resolver caja destino: buscar dónde estuvo el recibo original si no se pasó targetCajaId
+    // 2. Resolver caja destino: buscar dónde estuvo el recibo original si no se pasó targetCajaId
   let originalCajaId = targetCajaId || receipt.caja_id || receipt.cajaId || receipt._raw?.caja_id || receipt._raw?.cajaId || receipt._meta?.cajaId || receipt._meta?.caja_id;
-  if (!originalCajaId) {
+  if (!originalCajaId && rawNum) {
     try {
       const { data: origMovs } = await supabase
         .from("movimientos_caja")
         .select("caja_id")
         .eq("tenant_id", inquilino)
         .eq("tipo", "ingreso")
-        .or(`id.eq.${receipt.id},concepto.ilike.%RC-${rawNum}%,referencia.ilike.%${rawNum}%`);
+        .or(`concepto.ilike.%RC-${rawNum}%,referencia.ilike.%${rawNum}%`);
       if (origMovs && origMovs.length > 0 && origMovs[0].caja_id) {
         originalCajaId = origMovs[0].caja_id;
       }
     } catch (_) {}
   }
-  const finalCajaId = await resolveTargetCajaId(inquilino, userProfile, originalCajaId);
+  const finalCajaId = targetCajaId || await resolveTargetCajaId(inquilino, userProfile, originalCajaId);
 
   if (!finalCajaId) {
     console.error("[cajaSyncService] No se pudo resolver una caja válida para el egreso de anulación.");
@@ -353,21 +353,21 @@ export const syncVoidExpenseInCaja = async ({
 
   // 2. Resolver caja destino: buscar dónde estuvo el egreso original si no se pasó targetCajaId
   let originalCajaId = targetCajaId || expense.caja_id || expense.cajaId;
-  if (!originalCajaId) {
+  if (!originalCajaId && rawNum) {
     try {
       const { data: origMovs } = await supabase
         .from("movimientos_caja")
         .select("caja_id")
         .eq("tenant_id", inquilino)
         .eq("tipo", "egreso")
-        .or(`id.eq.${expense.id},concepto.ilike.%${rawNum}%,referencia.ilike.%${rawNum}%`);
+        .or(`concepto.ilike.%${rawNum}%,referencia.ilike.%${rawNum}%`);
       if (origMovs && origMovs.length > 0 && origMovs[0].caja_id) {
         originalCajaId = origMovs[0].caja_id;
       }
     } catch (_) {}
   }
 
-  const finalCajaId = await resolveTargetCajaId(inquilino, userProfile, originalCajaId);
+  const finalCajaId = targetCajaId || await resolveTargetCajaId(inquilino, userProfile, originalCajaId);
 
   if (!finalCajaId) {
     console.error("[cajaSyncService] No se pudo resolver una caja válida para el reintegro de egreso.");
@@ -455,7 +455,7 @@ export const syncVoidExpenseInCaja = async ({
  * Reconcilia recibos de caja y egresos anulados preexistentes que no cuenten con su movimiento
  * de devolución o reintegro registrado en movimientos_caja.
  */
-export const reconcileVoidedReceiptsInCaja = async (inquilino, userProfile = null) => {
+export const reconcileVoidedReceiptsInCaja = async (inquilino, userProfile = null, currentCajaId = null) => {
   if (!inquilino) return [];
   try {
     const [pagosRes, recibosRes, cfgRecibos, egresosRes, cfgEgresos, movsRes] = await Promise.all([
@@ -475,7 +475,7 @@ export const reconcileVoidedReceiptsInCaja = async (inquilino, userProfile = nul
     ));
     if (orphanMovs.length > 0) {
       try {
-        const targetId = await resolveTargetCajaId(inquilino, userProfile);
+        const targetId = currentCajaId || await resolveTargetCajaId(inquilino, userProfile);
         if (targetId) {
           for (const om of orphanMovs) {
             await supabase.from("movimientos_caja").update({ caja_id: targetId }).eq("id", om.id);
@@ -633,7 +633,8 @@ export const reconcileVoidedReceiptsInCaja = async (inquilino, userProfile = nul
           receipt: item,
           userProfile,
           reason: item.motivoAnulacion,
-          operator: item.anuladoPor
+          operator: item.anuladoPor,
+          targetCajaId: item.caja_id || currentCajaId
         });
         if (res?.success) {
           synced.push(item);
@@ -654,7 +655,7 @@ export const reconcileVoidedReceiptsInCaja = async (inquilino, userProfile = nul
           userProfile,
           reason: item.motivoAnulacion,
           operator: item.anuladoPor,
-          targetCajaId: item.caja_id
+          targetCajaId: item.caja_id || currentCajaId
         });
         if (res?.success) {
           synced.push(item);

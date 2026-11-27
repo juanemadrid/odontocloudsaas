@@ -128,10 +128,12 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
       setLoading(true);
       const inquilinoId = userProfile?.inquilino || caja?.inquilino || "";
 
-      // Reconciliar cualquier recibo anulado preexistente que deba impactar caja
+      // Reconciliar cualquier recibo o egreso anulado preexistente que deba impactar caja
       try {
-        await reconcileVoidedReceiptsInCaja(inquilinoId, userProfile);
-      } catch (_) {}
+        await reconcileVoidedReceiptsInCaja(inquilinoId, userProfile, caja.id);
+      } catch (err) {
+        console.warn("Aviso en reconciliación de caja:", err);
+      }
 
       // 1. Cargar pacientes para mapeo completo
       let patientMap = {};
@@ -307,13 +309,25 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
 
         const isRcVoided = m.tipo === "ingreso" && !isReintegroEgr && (() => {
           const num = getReceiptNumber(m)?.replace(/^0+/, "");
-          return Boolean(num && voidedRcSet.has(num));
+          const matchedRcVoid = matchedReceipt && (
+            (matchedReceipt.estado || "").toLowerCase() === "anulado" ||
+            Boolean(matchedReceipt.anulado) ||
+            String(matchedReceipt.observaciones || "").toUpperCase().includes("ANULAD") ||
+            String(matchedReceipt.concepto || "").toUpperCase().includes("ANULAD")
+          );
+          return Boolean((num && voidedRcSet.has(num)) || (m.estado || "").toLowerCase() === "anulado" || m.anulado || matchedRcVoid);
         })();
 
         const isEgrVoided = m.tipo === "egreso" && !isAnulacionRc && (() => {
-          const num = String(m.egresoNumero || getExpenseNumber(m) || "").replace(/^0+/, "");
+          const num = String(m.egresoNumero || getExpenseNumber(m) || consecutiveNumber || "").replace(/^0+/, "");
           const fromConcept = String(m.concepto || "").match(/EGR-(\d+)/i)?.[1]?.replace(/^0+/, "");
-          return Boolean((num && voidedEgrSet.has(num)) || (fromConcept && voidedEgrSet.has(fromConcept)) || (m.estado || "").toLowerCase() === "anulado" || m.anulado);
+          const matchedExpVoid = matchedExpense && (
+            (matchedExpense.estado || "").toLowerCase() === "anulado" ||
+            Boolean(matchedExpense.anulado) ||
+            Boolean(matchedExpense.motivoAnulacion) ||
+            Boolean(matchedExpense.motivo_anulacion)
+          );
+          return Boolean((num && voidedEgrSet.has(num)) || (fromConcept && voidedEgrSet.has(fromConcept)) || (m.estado || "").toLowerCase() === "anulado" || m.anulado || matchedExpVoid);
         })();
 
         return {
@@ -345,6 +359,72 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
         };
       });
 
+      // Si hay movimientos anulados que no tienen su contrapartida física registrada en la base de datos para esta caja,
+      // generamos sintéticamente el movimiento de contrapartida para garantizar visualización y balance exactos en vivo.
+      const synthesizedReversals = [];
+      const hasReversalForRc = (rcNum) => {
+        const target = `RC-${String(rcNum).replace(/^RC-?/i, "").padStart(4, "0")}`.toUpperCase();
+        return parsedChronological.some(m => m.isAnulacionRc && String(m.concepto || "").toUpperCase().includes(target))
+          || synthesizedReversals.some(m => m.isAnulacionRc && String(m.concepto || "").toUpperCase().includes(target));
+      };
+      const hasReversalForEgr = (egrNum) => {
+        const raw = String(egrNum).replace(/^0+/, "");
+        return parsedChronological.some(m => m.isReintegroEgr && String(m.concepto || "").includes(raw))
+          || synthesizedReversals.some(m => m.isReintegroEgr && String(m.concepto || "").includes(raw));
+      };
+
+      parsedChronological.forEach(m => {
+        if (m.rcAnulado && !m.isReintegroEgr) {
+          const rcNum = getReceiptNumber(m) || (m.nroConsecutivo ? String(m.nroConsecutivo).replace(/^RC-?/i, "") : "");
+          if (rcNum && !hasReversalForRc(rcNum)) {
+            const formattedRc = `RC-${String(rcNum).padStart(4, "0")}`;
+            const synthDate = m.fecha ? new Date(new Date(m.fecha).getTime() + 1000).toISOString() : new Date().toISOString();
+            synthesizedReversals.push({
+              id: `synth-rc-${rcNum}-${m.id}`,
+              caja_id: caja.id,
+              tipo: "egreso",
+              isAnulacionRc: true,
+              anulacionRcTarget: formattedRc,
+              consecutivo: `DEVOLUCIÓN ${formattedRc}`,
+              nroConsecutivo: `DEVOLUCIÓN ${formattedRc}`,
+              concepto: `[ANULACION RC] ${formattedRc}`,
+              descripcion: `Devolución por anulación de recibo ${formattedRc}`,
+              monto: Math.abs(Number(m.monto || 0)),
+              metodoPago: m.metodoPago || m.metodo_pago || "Efectivo",
+              metodo_pago: m.metodoPago || m.metodo_pago || "Efectivo",
+              pacienteNombre: m.pacienteNombre || m.tercero || "Paciente",
+              tercero: m.pacienteNombre || m.tercero || "Paciente",
+              fecha: synthDate,
+              created_at: synthDate
+            });
+          }
+        } else if (m.egrAnulado && !m.isAnulacionRc) {
+          const rawEgr = String(m.egresoNumero || getExpenseNumber(m) || m.consecutivo || "").replace(/^EGR-?/i, "").replace(/^Egreso\s*#?\s*/i, "").trim();
+          if (rawEgr && !hasReversalForEgr(rawEgr)) {
+            const formattedEgr = `Egreso #${rawEgr}`;
+            const synthDate = m.fecha ? new Date(new Date(m.fecha).getTime() + 1000).toISOString() : new Date().toISOString();
+            synthesizedReversals.push({
+              id: `synth-egr-${rawEgr}-${m.id}`,
+              caja_id: caja.id,
+              tipo: "ingreso",
+              isReintegroEgr: true,
+              reintegroEgrTarget: formattedEgr,
+              consecutivo: `REINTEGRO ${formattedEgr}`,
+              nroConsecutivo: `REINTEGRO ${formattedEgr}`,
+              concepto: `[REINTEGRO EGRESO] ${formattedEgr}`,
+              descripcion: `Reintegro por anulación de ${formattedEgr}`,
+              monto: Math.abs(Number(m.monto || 0)),
+              metodoPago: m.metodoPago || m.metodo_pago || "Efectivo",
+              metodo_pago: m.metodoPago || m.metodo_pago || "Efectivo",
+              pacienteNombre: m.pacienteNombre || m.tercero || "Proveedor / Tercero",
+              tercero: m.pacienteNombre || m.tercero || "Proveedor / Tercero",
+              fecha: synthDate,
+              created_at: synthDate
+            });
+          }
+        }
+      });
+
       // Traslados banco ↔ esta caja (ej. de Nequi a la caja): suman o restan en el saldo.
       let trasladoMovs = [];
       try {
@@ -352,7 +432,7 @@ export default function CajaDetalleView({ caja, userProfile, onBack }) {
         trasladoMovs = cajaTransferMovements(ctx.transfers, caja, { allCajas: ctx.cajas, banks: ctx.banks });
       } catch (e) {}
       const time = (m) => new Date(m.fecha || m.created_at || 0).getTime();
-      const all = [...parsedChronological, ...trasladoMovs].sort((a, b) => time(a) - time(b));
+      const all = [...parsedChronological, ...synthesizedReversals, ...trasladoMovs].sort((a, b) => time(a) - time(b));
 
       // Ordenar del más reciente al más antiguo para la vista
       setMovimientos([...all].reverse());
