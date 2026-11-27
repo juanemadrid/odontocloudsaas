@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { FiCheck, FiStar, FiZap, FiX } from 'react-icons/fi';
 import { getPlans } from '../../services/adminService';
+import { applyAnnualPromo, getActiveAnnualPromo, annualPromoText } from '../../constants/promotions';
 
 export default function PricingSection({ config, dbPlans, onShowTrial, dark = false }) {
     const [fetchedPlans, setFetchedPlans] = useState([]);
@@ -79,6 +80,11 @@ export default function PricingSection({ config, dbPlans, onShowTrial, dark = fa
                     <p className={`text-xl max-w-2xl mx-auto font-light leading-relaxed ${dark ? 'text-slate-200' : 'text-slate-500'}`}>
                         Elige el plan que mejor se adapte al tamaño de tu práctica. <br /> Sin contratos forzosos ni letras pequeñas.
                     </p>
+                    {getActiveAnnualPromo() && (
+                        <p className={`mt-6 text-base font-black ${dark ? 'text-amber-300' : 'text-slate-900'}`}>
+                            {annualPromoText(getActiveAnnualPromo())}
+                        </p>
+                    )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-7xl mx-auto">
@@ -146,16 +152,26 @@ export default function PricingSection({ config, dbPlans, onShowTrial, dark = fa
                                             <span className={`${isRecommended || dark ? 'text-slate-300' : 'text-slate-400'} font-bold text-sm`}>/mes</span>
                                         </div>
 
-                                        {(plan.yearlyPrice || plan.annualPrice) > 0 && (
-                                            <div className="flex items-center gap-2">
-                                                <span className={`text-xs font-bold ${isRecommended || dark ? 'text-slate-400' : 'text-slate-500'}`}>
-                                                    $ {Number(plan.yearlyPrice || plan.annualPrice).toLocaleString('es-CO')} / año
-                                                </span>
-                                                <span className="text-[9px] px-2 py-0.5 rounded-full font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 uppercase tracking-wider">
-                                                    Ahorra 15%
-                                                </span>
-                                            </div>
-                                        )}
+                                        {(plan.yearlyPrice || plan.annualPrice) > 0 && (() => {
+                                            const yearlyBase = Number(plan.yearlyPrice || plan.annualPrice);
+                                            const deal = applyAnnualPromo(yearlyBase);
+                                            const hasDeal = Boolean(deal.promo) && deal.price < yearlyBase;
+                                            return (
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    {hasDeal && (
+                                                        <span className={`text-xs font-semibold line-through ${isRecommended || dark ? 'text-slate-500' : 'text-slate-400'}`}>
+                                                            $ {yearlyBase.toLocaleString('es-CO')}
+                                                        </span>
+                                                    )}
+                                                    <span className={`text-xs font-bold ${hasDeal ? (isRecommended || dark ? 'text-white' : 'text-slate-900') : (isRecommended || dark ? 'text-slate-400' : 'text-slate-500')}`}>
+                                                        $ {deal.price.toLocaleString('es-CO')} / año
+                                                    </span>
+                                                    <span className="text-[9px] px-2 py-0.5 rounded-full font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 uppercase tracking-wider">
+                                                        {hasDeal ? `${deal.promo.label} -${deal.promo.percent}%` : 'Ahorra 15%'}
+                                                    </span>
+                                                </div>
+                                            );
+                                        })()}
                                     </div>
                                     <div className={`mt-4 text-[10px] font-black uppercase tracking-widest border-t pt-3 ${isRecommended || dark ? 'border-white/10 text-cyan-300/70' : 'border-slate-100 text-blue-600/70'}`}>
                                         IVA Incluido • Pesos Colombianos

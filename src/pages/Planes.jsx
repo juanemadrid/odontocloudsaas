@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { getPlans } from '../services/adminService';
 import SubscriptionModal from '../components/landing/SubscriptionModal';
 import TrialModal from '../components/landing/TrialModal';
+import { applyAnnualPromo, getActiveAnnualPromo, annualPromoText } from '../constants/promotions';
 
 const cop = (n) =>
     new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(n || 0);
@@ -130,10 +131,15 @@ export default function Planes() {
                         >
                             Pago Anual
                             <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${billing === 'anual' ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-600'}`}>
-                                1 MES GRATIS
+                                {getActiveAnnualPromo() ? `-${getActiveAnnualPromo().percent}%` : '1 MES GRATIS'}
                             </span>
                         </button>
                     </motion.div>
+                    {getActiveAnnualPromo() && (
+                        <p className="mt-4 text-sm font-bold text-slate-900">
+                            {annualPromoText(getActiveAnnualPromo())}
+                        </p>
+                    )}
                 </div>
             </section>
 
@@ -150,7 +156,10 @@ export default function Planes() {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch">
                         {plans.map((plan, i) => {
                             const isRecommended = plan.recommended || plan.isPopular;
-                            const displayPrice = billing === 'anual' ? (plan.yearlyPrice || plan.monthlyPrice * 10) : (plan.monthlyPrice || 0);
+                            const basePrice = billing === 'anual' ? (plan.yearlyPrice || plan.monthlyPrice * 10) : (plan.monthlyPrice || 0);
+                            const annualDeal = billing === 'anual' ? applyAnnualPromo(basePrice) : null;
+                            const displayPrice = annualDeal ? annualDeal.price : basePrice;
+                            const hasDeal = Boolean(annualDeal?.promo) && displayPrice < basePrice;
 
                             return (
                                 <motion.div
@@ -184,6 +193,14 @@ export default function Planes() {
 
                                             {/* Price Display */}
                                             <div className="mt-6">
+                                                {hasDeal && (
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <span className="text-sm text-slate-400 line-through font-semibold">{cop(basePrice)}</span>
+                                                        <span className="text-[11px] font-black text-white bg-slate-900 px-2 py-0.5 rounded-md">
+                                                            {annualDeal.promo.label} -{annualDeal.promo.percent}%
+                                                        </span>
+                                                    </div>
+                                                )}
                                                 <div className="flex items-baseline gap-1">
                                                     <span className="text-4xl font-black text-slate-900 tracking-tight">
                                                         {cop(displayPrice)}
@@ -198,7 +215,7 @@ export default function Planes() {
                                                     </p>
                                                 ) : (
                                                     <p className="text-xs text-blue-600 font-semibold mt-1">
-                                                        Ahorra 1 mes pagando el plan anual
+                                                        {getActiveAnnualPromo() ? `${getActiveAnnualPromo().percent}% de descuento pagando el plan anual` : 'Ahorra 1 mes pagando el plan anual'}
                                                     </p>
                                                 )}
                                             </div>
@@ -220,7 +237,7 @@ export default function Planes() {
                                     {/* Actions */}
                                     <div className="space-y-3 pt-4 border-t border-slate-100">
                                         <button
-                                            onClick={() => handleOpenSub({ ...plan, billing, displayPrice })}
+                                            onClick={() => handleOpenSub({ ...plan, billing, displayPrice: basePrice })}
                                             className={`w-full py-3.5 px-6 rounded-2xl font-black text-xs uppercase tracking-wider transition-all duration-300 shadow-md ${isRecommended
                                                     ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/30'
                                                     : 'bg-slate-900 hover:bg-slate-800 text-white'
@@ -229,7 +246,7 @@ export default function Planes() {
                                             Seleccionar {plan.name}
                                         </button>
                                         <button
-                                            onClick={() => handleOpenTrial({ ...plan, billing, displayPrice })}
+                                            onClick={() => handleOpenTrial({ ...plan, billing, displayPrice: basePrice })}
                                             className="w-full py-2.5 text-xs font-bold text-slate-500 hover:text-slate-900 transition-colors"
                                         >
                                             Probar 30 días gratis sin compromiso →

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { applyAnnualPromo, annualPromoText } from "../constants/promotions";
 import { FiX, FiCheck, FiCopy, FiCreditCard, FiSmartphone, FiCalendar, FiClock, FiShield, FiAlertTriangle, FiUsers, FiGlobe, FiFileText, FiStar } from "react-icons/fi";
 import { FaWhatsapp, FaUniversity } from "react-icons/fa";
 import supabase from "../lib/supabaseClient";
@@ -77,7 +78,9 @@ export default function SubscriptionRenewalModal({ isOpen, onClose, userProfile 
 
     // Precios del plan seleccionado
     const monthlyPrice = Number(selectedPlan.monthlyPrice ?? selectedPlan.price ?? 79900);
-    const yearlyPrice = Number(selectedPlan.yearlyPrice ?? (monthlyPrice * 10)); // 2 meses gratis de ahorro
+    const yearlyBase = Number(selectedPlan.yearlyPrice ?? (monthlyPrice * 10)); // 2 meses gratis de ahorro
+    const { price: yearlyPrice, promo: annualPromo } = applyAnnualPromo(yearlyBase);
+    const promoActive = Boolean(annualPromo) && yearlyPrice < yearlyBase;
     const currentPrice = selectedDuration === "yearly" ? yearlyPrice : monthlyPrice;
 
     const formatEndDate = (dateStr) => {
@@ -106,6 +109,7 @@ export default function SubscriptionRenewalModal({ isOpen, onClose, userProfile 
         return `Hola OdontoCloud, he realizado la transferencia para la *Renovación de Membresía* de mi clínica *${clinicName}*${nit}.\n\n` +
             `📋 *Plan Seleccionado:* ${planName}\n` +
             `⏳ *Ciclo de Facturación:* ${durationText}\n` +
+            (selectedDuration === "yearly" && promoActive ? `🏷️ *Promoción:* ${annualPromo.label} -${annualPromo.percent}% (antes ${yearlyBase.toLocaleString("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 })})\n` : "") +
             `💰 *Valor Transferido:* ${valorFmt}\n\n` +
             `Adjunto mi comprobante de pago para que por favor validen la transacción y reactiven el acceso a nuestra clínica. ¡Muchas gracias!`;
     };
@@ -139,7 +143,7 @@ export default function SubscriptionRenewalModal({ isOpen, onClose, userProfile 
                     tenant_phone: tenant.telCelular || tenant.telefono || "",
                     request_type: "renewal",
                     requested_plan_id: selectedPlan.id || selectedPlanId,
-                    requested_plan_name: `${planName} (${selectedDuration === 'yearly' ? 'Renovación Anual' : 'Renovación Mensual'})`,
+                    requested_plan_name: `${planName} (${selectedDuration === 'yearly' ? 'Renovación Anual' : 'Renovación Mensual'})${selectedDuration === 'yearly' && promoActive ? ` · ${annualPromo.label} -${annualPromo.percent}%: ${yearlyPrice.toLocaleString("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 })}` : ''}`,
                     plan_duration: durationText,
                     payment_status: "awaiting_validation",
                     status: "pending"
@@ -239,8 +243,10 @@ export default function SubscriptionRenewalModal({ isOpen, onClose, userProfile 
                                 const isSelected = (selectedPlan.id || selectedPlanId) === plan.id;
                                 const isClinica = plan.id === "clinica" || plan.recommended;
                                 const pMonthly = Number(plan.monthlyPrice || 0);
-                                const pYearly = Number(plan.yearlyPrice || (pMonthly * 10));
+                                const pYearlyBase = Number(plan.yearlyPrice || (pMonthly * 10));
+                                const pYearly = applyAnnualPromo(pYearlyBase).price;
                                 const displayPrice = selectedDuration === "yearly" ? pYearly : pMonthly;
+                                const showStrike = selectedDuration === "yearly" && pYearly < pYearlyBase;
                                 const periodSuffix = selectedDuration === "yearly" ? "/ año" : "/ mes";
 
                                 return (
@@ -295,6 +301,11 @@ export default function SubscriptionRenewalModal({ isOpen, onClose, userProfile 
                                         </div>
 
                                         <div className="mt-4 pt-3 border-t border-slate-200/60">
+                                            {showStrike && (
+                                                <div className="text-[11px] text-slate-400 line-through font-semibold">
+                                                    {pYearlyBase.toLocaleString("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 })}
+                                                </div>
+                                            )}
                                             <div className="text-lg font-black text-slate-900">
                                                 {displayPrice.toLocaleString("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 })}
                                                 <span className="text-[10px] text-slate-400 font-semibold ml-1">{periodSuffix}</span>
@@ -314,7 +325,7 @@ export default function SubscriptionRenewalModal({ isOpen, onClose, userProfile 
                                 Selecciona el Periodo de Facturación:
                             </label>
                             <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                                ⭐ Recomendado: Ahorra con el Plan Anual
+                                {promoActive ? annualPromoText(annualPromo) : "⭐ Recomendado: Ahorra con el Plan Anual"}
                             </span>
                         </div>
 
@@ -337,7 +348,12 @@ export default function SubscriptionRenewalModal({ isOpen, onClose, userProfile 
                                     </div>
                                     <p className="text-[11px] text-slate-500">Un año completo sin cortes. Incluye 2 meses de ahorro.</p>
                                 </div>
-                                <div className="mt-2 pt-2 border-t border-slate-200/60 flex items-baseline gap-1">
+                                <div className="mt-2 pt-2 border-t border-slate-200/60 flex items-baseline gap-1 flex-wrap">
+                                    {promoActive && (
+                                        <span className="text-[11px] text-slate-400 line-through font-semibold mr-1">
+                                            {yearlyBase.toLocaleString("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 })}
+                                        </span>
+                                    )}
                                     <span className="text-lg font-black text-slate-900">
                                         {yearlyPrice.toLocaleString("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 })}
                                     </span>

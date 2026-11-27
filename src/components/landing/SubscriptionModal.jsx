@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FiX, FiCheck, FiMessageCircle, FiShield, FiLock, FiAward, FiClock } from 'react-icons/fi';
+import { applyAnnualPromo } from '../../constants/promotions';
 
 const cop = (n) =>
     n ? new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 }).format(n) : '';
@@ -11,15 +12,18 @@ export default function SubscriptionModal({ isOpen, onClose, plan, config }) {
     if (!plan) return null;
 
     const planName = plan?.name || plan || 'Seleccionado';
-    const displayPrice = plan?.displayPrice || plan?.yearlyPrice || plan?.monthlyPrice || 0;
     const billing = plan?.billing || 'anual';
+    const basePrice = plan?.displayPrice || plan?.yearlyPrice || plan?.monthlyPrice || 0;
+    const annualDeal = billing === 'anual' ? applyAnnualPromo(basePrice) : null;
+    const displayPrice = annualDeal ? annualDeal.price : basePrice;
+    const hasDeal = Boolean(annualDeal?.promo) && displayPrice < basePrice;
     const features = plan?.features || [];
     const phone = (config?.contactPhone || '3001234567').replace(/\D/g, '');
     const bankAccount = config?.bankAccount || '031-000000-00';
     const nequiNumber = config?.nequiNumber || '300 123 4567';
     const nit = config?.nit || '900.000.000-1';
 
-    const whatsappMessage = `Hola, me interesa suscribirme al plan *${planName}* de OdontoCloud por ${cop(displayPrice)}/${billing === 'anual' ? 'año' : 'mes'}. ¿Me pueden guiar para completar el pago?`;
+    const whatsappMessage = `Hola, me interesa suscribirme al plan *${planName}* de OdontoCloud por ${cop(displayPrice)}/${billing === 'anual' ? 'año' : 'mes'}${hasDeal ? ` (promoción ${annualDeal.promo.label} -${annualDeal.promo.percent}%, antes ${cop(basePrice)})` : ''}. ¿Me pueden guiar para completar el pago?`;
     const whatsappUrl = `https://wa.me/57${phone}?text=${encodeURIComponent(whatsappMessage)}`;
 
     const handleCopyAccount = () => {
@@ -79,6 +83,12 @@ export default function SubscriptionModal({ isOpen, onClose, plan, config }) {
                                     Plan {planName}
                                 </h2>
 
+                                {hasDeal && (
+                                    <p className="text-blue-100 text-xs font-bold mb-2">
+                                        <span className="line-through opacity-80 mr-2">{cop(basePrice)}</span>
+                                        {annualDeal.promo.label} -{annualDeal.promo.percent}% · hasta el {annualDeal.promo.endsLabel}
+                                    </p>
+                                )}
                                 {/* Price badge */}
                                 <div className="inline-flex items-baseline gap-2 bg-white/10 border border-white/20 backdrop-blur-sm px-5 py-3 rounded-2xl">
                                     <span className="text-3xl font-black text-white tabular-nums">
@@ -91,7 +101,7 @@ export default function SubscriptionModal({ isOpen, onClose, plan, config }) {
 
                                 {billing === 'anual' && displayPrice > 0 && (
                                     <p className="text-blue-200 text-xs mt-2 font-medium">
-                                        Equivalente a {cop(Math.round(displayPrice / 12))} / mes · 1 mes gratis incluido
+                                        Equivalente a {cop(Math.round(displayPrice / 12))} / mes{hasDeal ? '' : ' · 1 mes gratis incluido'}
                                     </p>
                                 )}
                             </div>

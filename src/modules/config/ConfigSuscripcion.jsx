@@ -6,6 +6,7 @@ import { getPlans, getPaymentMethods, getGlobalConfig } from "../../services/adm
 import { FiPackage, FiZap, FiClock, FiStar, FiCreditCard, FiSmartphone, FiArrowRight, FiCheck } from "react-icons/fi";
 import { FaWhatsapp, FaUniversity } from "react-icons/fa";
 import { isSubscriptionExpired } from "../../utils/subscriptionHelper";
+import { applyAnnualPromo, getActiveAnnualPromo, annualPromoText } from "../../constants/promotions";
 
 export default function ConfigSuscripcion() {
     const { userProfile } = useAuth();
@@ -98,6 +99,7 @@ export default function ConfigSuscripcion() {
             return;
         }
         const durationText = selectedDuration === "yearly" ? "ANUAL" : "MENSUAL";
+        const newPlanPromo = applyAnnualPromo(newPlan.yearlyPrice || 0);
         if (!window.confirm(`¿Solicitar cambio al plan "${newPlan.name}" (${durationText})?`)) return;
 
         setRequesting(newPlan.id);
@@ -105,14 +107,19 @@ export default function ConfigSuscripcion() {
             await createChangeRequest({
                 requestType: "upgrade",
                 requestedPlanId: newPlan.id,
-                requestedPlanName: newPlan.name,
+                requestedPlanName: selectedDuration === "yearly" && newPlanPromo.promo && newPlanPromo.price < newPlanPromo.original
+                    ? `${newPlan.name} · ${newPlanPromo.promo.label} -${newPlanPromo.promo.percent}%: ${newPlanPromo.price.toLocaleString("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 })}`
+                    : newPlan.name,
                 planDuration: selectedDuration,
                 paymentStatus: "awaiting_validation"
             });
             if (toast?.success) toast.success("Solicitud enviada. Redirigiendo a WhatsApp para adjuntar comprobante...");
 
             const phone = globalConfig.adminPhone || "573124119846";
-            const msg = `Hola OdontoCloud, he realizado el pago para el plan *${newPlan.name}* de mi clínica *${tenant.name || tenant.nombre || 'Clínica'}*. Adjunto comprobante para activación.`;
+            const promoLine = selectedDuration === "yearly" && newPlanPromo.promo && newPlanPromo.price < newPlanPromo.original
+                ? ` (${durationText}, ${newPlanPromo.promo.label} -${newPlanPromo.promo.percent}%: ${newPlanPromo.price.toLocaleString("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 })})`
+                : ` (${durationText})`;
+            const msg = `Hola OdontoCloud, he realizado el pago para el plan *${newPlan.name}*${promoLine} de mi clínica *${tenant.name || tenant.nombre || 'Clínica'}*. Adjunto comprobante para activación.`;
             const wpUrl = `https://wa.me/${phone.replace(/\s+/g, '')}?text=${encodeURIComponent(msg)}`;
 
             setTimeout(() => {
@@ -350,10 +357,15 @@ export default function ConfigSuscripcion() {
                                 onClick={() => setSelectedDuration("yearly")}
                                 className={`px-3 py-1 rounded text-[11px] font-bold transition-colors border-0 cursor-pointer ${selectedDuration === 'yearly' ? 'bg-white text-blue-600 shadow-xs' : 'text-slate-500'}`}
                             >
-                                Anual (Descuento)
+                                {getActiveAnnualPromo() ? `Anual (-${getActiveAnnualPromo().percent}%)` : 'Anual (Descuento)'}
                             </button>
                         </div>
                     </div>
+                    {getActiveAnnualPromo() && (
+                        <p className="text-[12px] font-semibold text-blue-700 m-0">
+                            {annualPromoText(getActiveAnnualPromo())}
+                        </p>
+                    )}
 
                     {/* Plans Grid */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -377,8 +389,13 @@ export default function ConfigSuscripcion() {
                                         <h4 className="text-[16px] font-bold text-slate-800 uppercase">{p.name}</h4>
 
                                         <div className="pt-1">
+                                            {selectedDuration === 'yearly' && p.yearlyPrice && applyAnnualPromo(p.yearlyPrice).price < Number(p.yearlyPrice) && (
+                                                <span className="block text-[11px] text-slate-400 line-through">
+                                                    {Number(p.yearlyPrice).toLocaleString("es-CO", { style: 'currency', currency: 'COP', maximumFractionDigits: 0 })}
+                                                </span>
+                                            )}
                                             <span className="text-[22px] font-bold text-slate-900">
-                                                {(selectedDuration === 'yearly' && p.yearlyPrice ? p.yearlyPrice : (p.monthlyPrice || p.price || 0)).toLocaleString("es-CO", { style: 'currency', currency: 'COP', maximumFractionDigits: 0 })}
+                                                {(selectedDuration === 'yearly' && p.yearlyPrice ? applyAnnualPromo(p.yearlyPrice).price : (p.monthlyPrice || p.price || 0)).toLocaleString("es-CO", { style: 'currency', currency: 'COP', maximumFractionDigits: 0 })}
                                             </span>
                                             <span className="text-[11px] text-slate-400 ml-1">
                                                 /{selectedDuration === 'yearly' ? 'año' : 'mes'}
