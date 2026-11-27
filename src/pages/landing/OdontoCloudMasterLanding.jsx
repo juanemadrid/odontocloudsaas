@@ -1,13 +1,50 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
-  FiArrowRight, FiPlay, FiCalendar, FiFileText, FiBell, FiCloud
+  FiArrowRight, FiPlay, FiCalendar, FiFileText, FiBell, FiCloud, FiX
 } from "react-icons/fi";
 import DocumentationModal from "../../components/landing/DocumentationModal";
 import "./master-hero.css";
 import ProductDemo from "./ProductDemo";
 
+const OVERVIEW_VIDEO_ID = "Jh6mv7aVicY"; // OdontoCloud · Recorrido del sistema (YouTube, oculto)
+
+function OverviewVideoModal({ onClose }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = prev; };
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm" onClick={onClose} role="dialog" aria-modal="true" aria-label="Video: recorrido por OdontoCloud">
+      <div className="relative w-full max-w-5xl" onClick={(e) => e.stopPropagation()}>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Cerrar video"
+          className="absolute -top-12 right-0 w-10 h-10 rounded-full bg-white/90 hover:bg-white text-slate-800 flex items-center justify-center shadow-lg border-0 cursor-pointer"
+        >
+          <FiX size={20} />
+        </button>
+        <div className="relative w-full overflow-hidden rounded-2xl shadow-2xl bg-black" style={{ paddingTop: "56.25%" }}>
+          <iframe
+            className="absolute inset-0 w-full h-full"
+            src={`https://www.youtube-nocookie.com/embed/${OVERVIEW_VIDEO_ID}?autoplay=1&rel=0&modestbranding=1&playsinline=1`}
+            title="OdontoCloud · Recorrido del sistema"
+            allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+            allowFullScreen
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
   const [showDocModal, setShowDocModal] = useState(false);
+  const [showVideo, setShowVideo] = useState(false);
 
   const phone = (config.contactPhone || "3015768935").replace(/\D/g, "");
   const clinicHeroBg = `${(import.meta.env.BASE_URL || "/").replace(/\/$/, "")}/assets/clinic_hero_bg.jpg`;
@@ -81,7 +118,7 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
                 </button>
 
                 <button
-                  onClick={() => setShowDocModal(true)}
+                  onClick={() => setShowVideo(true)}
                   className="px-5 sm:px-6 2xl:px-8 py-3 sm:py-3.5 2xl:py-4 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-full font-bold text-sm sm:text-base 2xl:text-lg shadow-sm hover:shadow transition-all duration-200 flex items-center gap-2 cursor-pointer"
                 >
                   <FiPlay size={13} className="text-[#2563EB] fill-[#2563EB]" />
@@ -369,6 +406,7 @@ export default function OdontoCloudMasterLanding({ config = {}, onShowTrial }) {
 
       {/* Modal de Video / Demostración */}
       {showDocModal && <DocumentationModal onClose={() => setShowDocModal(false)} />}
+      {showVideo && <OverviewVideoModal onClose={() => setShowVideo(false)} />}
     </div>
   );
 }
