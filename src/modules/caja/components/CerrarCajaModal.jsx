@@ -81,7 +81,8 @@ export default function CerrarCajaModal({ caja, inquilino, userProfile, onClose,
 
   // Calculated values
   const isEffectiveMovement = (m) => (m.estado || "").toLowerCase() !== "anulado" && !m.anulado
-    || String(m.concepto || "").startsWith("[ANULACION RC]");
+    || String(m.concepto || "").startsWith("[ANULACION RC]")
+    || String(m.concepto || "").startsWith("[REINTEGRO EGRESO]");
 
   const totalIngresos = movimientos.filter(m => m.tipo === "ingreso" && isEffectiveMovement(m)).reduce((s, m) => s + (Number(m.monto) || 0), 0);
   const totalEgresos = movimientos.filter(m => m.tipo === "egreso" && isEffectiveMovement(m)).reduce((s, m) => s + (Number(m.monto) || 0), 0);

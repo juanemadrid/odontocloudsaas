@@ -151,10 +151,11 @@ export default function Caja() {
         if (c && c.id && !mergedMap.has(c.id)) {
           const trasladoMovs = cajaTransferMovements(trCtx.transfers, c, { allCajas: combined, banks: trCtx.banks });
           const cajaMovs = [...movsList.filter(m => (m.caja_id === c.id || m.cajaId === c.id)), ...trasladoMovs]
-            // Una devolución por anulación es un egreso nuevo y válido; el movimiento
-            // original queda como anulado, pero el egreso de reversión sí debe afectar caja.
+            // Una devolución o reintegro por anulación es un movimiento nuevo y válido;
+            // el movimiento original queda como anulado, pero el movimiento de reversión sí debe afectar caja.
             .filter(m => !((m.estado || "").toLowerCase() === "anulado" || m.anulado)
-              || String(m.concepto || "").startsWith("[ANULACION RC]"));
+              || String(m.concepto || "").startsWith("[ANULACION RC]")
+              || String(m.concepto || "").startsWith("[REINTEGRO EGRESO]"));
           const movIngresos = cajaMovs.filter(m => m.tipo === "ingreso").reduce((s, m) => s + Number(m.monto || 0), 0);
           const movEgresos = cajaMovs.filter(m => m.tipo === "egreso").reduce((s, m) => s + Number(m.monto || 0), 0);
           const baseInicial = Number(c.base_inicial ?? c.baseInicial ?? 0);
