@@ -72,6 +72,7 @@ export default function LiquidacionPagarModal({ liquidacion, tenantId, onClose, 
   }, [tenantId]);
 
   if (!liquidacion) return null;
+  const isZeroPayment = Number(liquidacion.totalPagar || 0) <= 0;
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -114,39 +115,47 @@ export default function LiquidacionPagarModal({ liquidacion, tenantId, onClose, 
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <label className="text-[11px] font-black text-slate-500 uppercase tracking-wider ml-1">
-              Caja o Banco de Origen *
-            </label>
-            <select
-              value={origenId}
-              onChange={(e) => setOrigenId(e.target.value)}
-              className="w-full h-11 px-4 bg-slate-50 hover:bg-slate-100/60 border border-slate-200 focus:bg-white rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all cursor-pointer"
-            >
-              {origenes.map((origen) => (
-                <option key={origen.id} value={origen.id}>{origen.label}</option>
-              ))}
-            </select>
-          </div>
+          {isZeroPayment ? (
+            <div className="p-4 bg-emerald-50/70 rounded-2xl border border-emerald-100 text-xs text-emerald-800 font-medium leading-relaxed">
+              Como el total a pagar al profesional es <strong>{fmt(0)}</strong>, al confirmar la liquidación pasará directamente a estado <strong className="text-emerald-700">Pagada</strong> sin generar comprobante de egreso ni afectar saldos de caja o bancos.
+            </div>
+          ) : (
+            <>
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-black text-slate-500 uppercase tracking-wider ml-1">
+                  Caja o Banco de Origen *
+                </label>
+                <select
+                  value={origenId}
+                  onChange={(e) => setOrigenId(e.target.value)}
+                  className="w-full h-11 px-4 bg-slate-50 hover:bg-slate-100/60 border border-slate-200 focus:bg-white rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all cursor-pointer"
+                >
+                  {origenes.map((origen) => (
+                    <option key={origen.id} value={origen.id}>{origen.label}</option>
+                  ))}
+                </select>
+              </div>
 
-          <div className="space-y-1.5">
-            <label className="text-[11px] font-black text-slate-500 uppercase tracking-wider ml-1">
-              Medio de Pago *
-            </label>
-            <select
-              value={medioPago}
-              onChange={(e) => setMedioPago(e.target.value)}
-              className="w-full h-11 px-4 bg-slate-50 hover:bg-slate-100/60 border border-slate-200 focus:bg-white rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all cursor-pointer"
-            >
-              {mediosPago.map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-          </div>
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-black text-slate-500 uppercase tracking-wider ml-1">
+                  Medio de Pago *
+                </label>
+                <select
+                  value={medioPago}
+                  onChange={(e) => setMedioPago(e.target.value)}
+                  className="w-full h-11 px-4 bg-slate-50 hover:bg-slate-100/60 border border-slate-200 focus:bg-white rounded-xl text-xs font-bold text-slate-700 outline-none focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all cursor-pointer"
+                >
+                  {mediosPago.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
 
-          <p className="text-[11px] text-slate-400 font-medium">
-            💡 Al confirmar, el sistema generará el egreso y lo registrará automáticamente en la caja seleccionada; si eliges un banco, quedará asociado al banco. El estado pasará a <strong className="text-emerald-600">Pagada</strong>.
-          </p>
+              <p className="text-[11px] text-slate-400 font-medium">
+                💡 Al confirmar, el sistema generará el egreso y lo registrará automáticamente en la caja seleccionada; si eliges un banco, quedará asociado al banco. El estado pasará a <strong className="text-emerald-600">Pagada</strong>.
+              </p>
+            </>
+          )}
         </div>
 
         {/* Footer */}
@@ -159,13 +168,17 @@ export default function LiquidacionPagarModal({ liquidacion, tenantId, onClose, 
           </button>
           <button
             onClick={() => {
+              if (isZeroPayment) {
+                onConfirm({ bancoCaja: null, cajaId: null, medioPago: "Sin desembolso ($0)" });
+                return;
+              }
               const origen = origenes.find((item) => item.id === origenId);
               if (origen) onConfirm({ bancoCaja: origen.bancoCaja, cajaId: origen.cajaId, medioPago });
             }}
-            disabled={loading || !origenId}
+            disabled={loading || (!isZeroPayment && !origenId)}
             className="h-10 px-6 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-emerald-600/20 active:scale-95 transition-all disabled:opacity-50"
           >
-            {loading ? "Procesando..." : "Confirmar y Pagar"}
+            {loading ? "Procesando..." : (isZeroPayment ? "Confirmar cierre ($0)" : "Confirmar y Pagar")}
           </button>
         </div>
 

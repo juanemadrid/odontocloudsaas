@@ -16,6 +16,13 @@ const fmt = (n) => {
   });
 };
 
+const resolveItemPct = (it, defaultPct) => {
+  if (it?.porcentaje === "") return 0;
+  if (it?.porcentaje === undefined || it?.porcentaje === null) return Number(defaultPct) || 0;
+  const parsed = Number(it.porcentaje);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
 export default function LiquidacionDetalle({ doctor, dateRange, preloadedItems = null, onBack, onSuccess }) {
     const { userProfile } = useAuth();
     const inquilino = userProfile?.inquilino || "";
@@ -26,7 +33,7 @@ export default function LiquidacionDetalle({ doctor, dateRange, preloadedItems =
     const [error, setError] = useState("");
 
     // Professional data
-    const [comisionPct, setComisionPct] = useState(doctor?.comisionPorcentaje || 35);
+    const [comisionPct, setComisionPct] = useState(doctor?.comisionPorcentaje ?? 35);
 
     // Items to liquidate
     const [items, setItems] = useState([]);
@@ -52,7 +59,7 @@ export default function LiquidacionDetalle({ doctor, dateRange, preloadedItems =
         if (!inquilino || !doctor) return;
         setLoading(true);
         try {
-            setComisionPct(doctor.comisionPorcentaje || 35);
+            setComisionPct(doctor.comisionPorcentaje ?? 35);
 
             let itemList = preloadedItems;
             if (!itemList || itemList.length === 0) {
@@ -174,7 +181,7 @@ export default function LiquidacionDetalle({ doctor, dateRange, preloadedItems =
             ? Math.max(0, totalGastosLab - baseItemsComisionables)
             : totalGastosLab;
         const totalItemsPay = selectedItems.reduce((acc, it) => {
-            const itPct = it.porcentaje !== undefined && it.porcentaje !== "" ? Number(it.porcentaje) : comisionPct;
+            const itPct = resolveItemPct(it, comisionPct);
             const payVal = it.tipoLiquidacion === "fijo"
                 ? Number(it.valorAPagar || (it.pagoFijoValor * (it.cantidad || 1)) || 0)
                 : Number(it.valorPrestacion || 0) * factorBase * itPct / 100;
@@ -226,10 +233,13 @@ export default function LiquidacionDetalle({ doctor, dateRange, preloadedItems =
     };
 
     const handleItemPctChange = (itemKey, newPct) => {
-        const cleanPct = newPct === "" ? "" : Math.max(0, Math.min(100, Number(newPct)));
+        const parsed = Number(newPct);
+        const cleanPct = newPct === ""
+            ? ""
+            : (Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : 0);
         setItems(prev => prev.map(it => {
             if (it.key === itemKey) {
-                const pctNum = cleanPct === "" ? comisionPct : Number(cleanPct);
+                const pctNum = cleanPct === "" ? 0 : Number(cleanPct);
                 const newPayVal = it.tipoLiquidacion === "fijo"
                     ? (it.valorAPagar || (it.pagoFijoValor * (it.cantidad || 1)))
                     : Math.round((Number(it.valorPrestacion) || 0) * pctNum / 100);
@@ -272,7 +282,7 @@ export default function LiquidacionDetalle({ doctor, dateRange, preloadedItems =
                 deducciones,
                 conceptosLiquidados,
                 selectedItems: selectedItems.map(it => {
-                    const itPct = it.porcentaje !== undefined && it.porcentaje !== "" ? Number(it.porcentaje) : comisionPct;
+                    const itPct = resolveItemPct(it, comisionPct);
                     return {
                         ...it,
                         porcentaje: itPct,
@@ -448,7 +458,8 @@ export default function LiquidacionDetalle({ doctor, dateRange, preloadedItems =
                             <tbody className="divide-y divide-slate-100">
                                 {items.map((it) => {
                                     const isChecked = !!selectedItemKeys[it.key];
-                                    const itPct = it.porcentaje !== undefined && it.porcentaje !== "" ? Number(it.porcentaje) : comisionPct;
+                                    const itPct = resolveItemPct(it, comisionPct);
+                                    const inputPctValue = it.porcentaje === undefined || it.porcentaje === null ? comisionPct : it.porcentaje;
                                     const itemPayVal = it.tipoLiquidacion === "fijo" 
                                         ? (it.valorAPagar || (it.pagoFijoValor * (it.cantidad || 1))) 
                                         : Math.round((Number(it.valorPrestacion) || 0) * itPct / 100);
@@ -497,10 +508,11 @@ export default function LiquidacionDetalle({ doctor, dateRange, preloadedItems =
                                                             type="number"
                                                             min="0"
                                                             max="100"
-                                                            value={it.porcentaje !== undefined && it.porcentaje !== "" ? it.porcentaje : comisionPct}
+                                                            placeholder="0"
+                                                            value={inputPctValue}
                                                             onChange={(e) => handleItemPctChange(it.key, e.target.value)}
-                                                            className="w-10 text-center font-black text-purple-700 bg-transparent text-xs outline-none focus:ring-0 p-0"
-                                                            title="Editar porcentaje de comisión para este procedimiento"
+                                                            className="w-10 text-center font-black text-purple-700 bg-transparent text-xs outline-none focus:ring-0 p-0 placeholder:text-purple-300"
+                                                            title="Editar porcentaje de comisión para este procedimiento (vacío o 0 = 0%)"
                                                         />
                                                         <span className="text-[10px] font-black text-purple-400 select-none">%</span>
                                                     </div>

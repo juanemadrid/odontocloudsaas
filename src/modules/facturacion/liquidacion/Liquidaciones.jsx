@@ -134,7 +134,11 @@ export default function Liquidaciones() {
         setPayingLoading(true);
         try {
             await pagarLiquidacion(inquilino, payingLiq, pagoOptions, userProfile);
-            toast.success(`✅ Liquidación pagada con éxito. Se generó el comprobante de egreso para ${payingLiq.profesionalNombre}.`);
+            toast.success(
+                Number(payingLiq.totalPagar || 0) <= 0
+                    ? `✅ Liquidación de ${payingLiq.profesionalNombre} cerrada como Pagada en $0 (sin comprobante de egreso).`
+                    : `✅ Liquidación pagada con éxito. Se generó el comprobante de egreso para ${payingLiq.profesionalNombre}.`
+            );
             setPayingLiq(null);
             setViewingLiq(null);
             loadLiquidaciones();

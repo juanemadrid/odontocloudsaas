@@ -225,7 +225,7 @@ export const getDoctoresParaLiquidacion = async (tenantId) => {
                         nombre: existing.nombre || name,
                         cedula: existing.cedula || p.cedula || p.documento || detail.numeroDocumento || "",
                         email: existing.email || p.email || detail.email || "",
-                        comisionPorcentaje: existing.comisionPorcentaje || pct,
+                        comisionPorcentaje: existing.comisionPorcentaje ?? pct,
                         formaPago: existing.formaPago || formaPago
                     });
                 } else {
@@ -1359,7 +1359,7 @@ export const corregirItemLiquidacionPagada = async ({ tenantId, liquidacionId, i
     const index = items.findIndex((item, idx) => String(item.key || item.id || idx) === String(itemKey));
     if (index < 0) throw new Error("No se encontró el procedimiento seleccionado en la liquidación.");
     const [removedItem] = items.slice(index, index + 1);
-    const removedCommission = Number(removedItem.valorAPagar ?? Math.round(Number(removedItem.valorPrestacion || removedItem.valorRecaudado || 0) * Number(removedItem.porcentaje || liq.comisionPorcentaje || 0) / 100));
+    const removedCommission = Number(removedItem.valorAPagar ?? Math.round(Number(removedItem.valorPrestacion || removedItem.valorRecaudado || 0) * Number(removedItem.porcentaje ?? liq.comisionPorcentaje ?? 0) / 100));
     const removedValue = Number(removedItem.valorPrestacion ?? removedItem.valorRecaudado ?? 0);
     const newTotalPagar = Number(pago.monto || pago.total || liq.totalPagar || 0) - removedCommission;
     if (!(removedValue > 0) || !(removedCommission >= 0) || !(newTotalPagar > 0)) {
@@ -1475,6 +1475,36 @@ export const pagarLiquidacion = async (tenantId, liquidacion, pagoOptions = {}, 
     const now = new Date();
     const nowIso = now.toISOString();
     const todayStr = todayBogota(now);
+    const totalPagar = safeNumber(liquidacion.totalPagar);
+
+    // Liquidación en $0 (ej. procedimientos liquidados al 0%): cerrar como Pagada sin crear egreso ni afectar caja
+    if (totalPagar <= 0) {
+        const pagadoPor = userProfile?.nombre || userProfile?.full_name || userProfile?.email || "Administración";
+        const currentLiqs = await getConfigSection(tenantId, "liquidaciones", []);
+        const updatedLiqs = (Array.isArray(currentLiqs) ? currentLiqs : []).map((l) =>
+            String(l.id) === String(liquidacion.id)
+                ? {
+                    ...l,
+                    estado: "Pagada",
+                    fechaPago: todayStr,
+                    medioPago: "Sin desembolso ($0)",
+                    bancoCaja: null,
+                    pagoProveedorId: null,
+                    pagadoPor,
+                    updated_at: nowIso,
+                }
+                : l
+        );
+        await saveConfigSection(tenantId, "liquidaciones", updatedLiqs);
+        try {
+            await supabase
+                .from("liquidaciones")
+                .update({ estado: "Pagada" })
+                .eq("id", liquidacion.id);
+        } catch (_) {}
+        return { id: null, monto: 0, total: 0, sinEgreso: true, liquidacionId: liquidacion.id };
+    }
+
     const pagoId = `pago_liq_${crypto.randomUUID()}`;
 
     // 1. Crear registro de pago a proveedor (Médico)

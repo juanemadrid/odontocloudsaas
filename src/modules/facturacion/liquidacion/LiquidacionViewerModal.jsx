@@ -81,7 +81,7 @@ export default function LiquidacionViewerModal({ liquidacion, onClose, onPagar, 
             <div>
               <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Comisión (%)</span>
               <span className="text-sm font-black text-purple-600 font-mono mt-0.5 block">
-                {liquidacion.comisionPorcentaje ? `${liquidacion.comisionPorcentaje}%` : "Personalizada"} ({fmt(liquidacion.comisionesTotal)})
+                {liquidacion.comisionPorcentaje !== undefined && liquidacion.comisionPorcentaje !== null && liquidacion.comisionPorcentaje !== "" ? `${liquidacion.comisionPorcentaje}%` : "Personalizada"} ({fmt(liquidacion.comisionesTotal)})
               </span>
             </div>
             <div>
@@ -133,7 +133,7 @@ export default function LiquidacionViewerModal({ liquidacion, onClose, onPagar, 
                         <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${
                           it.tipoLiquidacion === "fijo" ? "bg-amber-50 text-amber-600 border border-amber-100" : "bg-purple-50 text-purple-600 border border-purple-100"
                         }`}>
-                          {it.tipoLiquidacion === "fijo" ? "Valor Fijo" : `${it.porcentaje || liquidacion.comisionPorcentaje}%`}
+                          {it.tipoLiquidacion === "fijo" ? "Valor Fijo" : `${it.porcentaje ?? liquidacion.comisionPorcentaje ?? 0}%`}
                         </span>
                       </td>
                       <td className="py-2.5 px-4 text-right font-black text-purple-700">{fmt(it.valorAPagar)}</td>

@@ -97,10 +97,13 @@ export default function LiquidacionPendientes({ onSelectDoctor }) {
     const handleItemPorcentajeChange = (itemKey, newPct) => {
         setResult(prev => {
             if (!prev || !Array.isArray(prev.items)) return prev;
-            const cleanPct = newPct === "" ? "" : Math.max(0, Math.min(100, Number(newPct)));
+            const parsed = Number(newPct);
+            const cleanPct = newPct === ""
+                ? ""
+                : (Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : 0);
             const updatedItems = prev.items.map(it => {
                 if (it.key === itemKey) {
-                    const pctNum = Number(cleanPct) || 0;
+                    const pctNum = cleanPct === "" ? 0 : Number(cleanPct);
                     const newValorAPagar = it.tipoLiquidacion === "fijo" 
                         ? it.valorAPagar 
                         : Math.round((Number(it.valorPrestacion) || 0) * pctNum / 100);
@@ -319,10 +322,11 @@ export default function LiquidacionPendientes({ onSelectDoctor }) {
                                                             type="number"
                                                             min="0"
                                                             max="100"
-                                                            value={it.porcentaje !== undefined ? it.porcentaje : ""}
+                                                            placeholder="0"
+                                                            value={it.porcentaje !== undefined && it.porcentaje !== null ? it.porcentaje : ""}
                                                             onChange={(e) => handleItemPorcentajeChange(it.key, e.target.value)}
-                                                            className="w-10 text-center font-black text-purple-700 bg-transparent text-xs outline-none focus:ring-0 p-0"
-                                                            title="Editar porcentaje de comisión para este procedimiento"
+                                                            className="w-10 text-center font-black text-purple-700 bg-transparent text-xs outline-none focus:ring-0 p-0 placeholder:text-purple-300"
+                                                            title="Editar porcentaje de comisión para este procedimiento (vacío o 0 = 0%)"
                                                         />
                                                         <span className="text-[10px] font-black text-purple-400 select-none">%</span>
                                                     </div>

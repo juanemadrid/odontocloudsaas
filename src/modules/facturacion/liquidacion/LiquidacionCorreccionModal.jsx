@@ -39,7 +39,7 @@ export default function LiquidacionCorreccionModal({ liquidacion, tenantId, onCl
 
   const selectedItem = (liquidacion.items || []).find((item, index) => String(item.key || item.id || index) === String(itemKey));
   const removedCommission = selectedItem
-    ? Number(selectedItem.valorAPagar ?? Math.round(Number(selectedItem.valorPrestacion || selectedItem.valorRecaudado || 0) * Number(selectedItem.porcentaje || liquidacion.comisionPorcentaje || 0) / 100))
+    ? Number(selectedItem.valorAPagar ?? Math.round(Number(selectedItem.valorPrestacion || selectedItem.valorRecaudado || 0) * Number(selectedItem.porcentaje ?? liquidacion.comisionPorcentaje ?? 0) / 100))
     : 0;
   const nuevoNeto = useMemo(() => Math.max(0, Number(liquidacion.totalPagar || 0) - removedCommission), [liquidacion.totalPagar, removedCommission]);
 
@@ -62,7 +62,7 @@ export default function LiquidacionCorreccionModal({ liquidacion, tenantId, onCl
           <div className="space-y-2 max-h-64 overflow-y-auto">
             {(liquidacion.items || []).map((item, index) => {
               const key = String(item.key || item.id || index);
-              const amount = Number(item.valorAPagar ?? Math.round(Number(item.valorPrestacion || item.valorRecaudado || 0) * Number(item.porcentaje || liquidacion.comisionPorcentaje || 0) / 100));
+              const amount = Number(item.valorAPagar ?? Math.round(Number(item.valorPrestacion || item.valorRecaudado || 0) * Number(item.porcentaje ?? liquidacion.comisionPorcentaje ?? 0) / 100));
               return (
                 <label key={key} className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer ${itemKey === key ? "border-rose-300 bg-rose-50" : "border-slate-200 hover:bg-slate-50"}`}>
                   <input type="radio" name="item-correccion" checked={itemKey === key} onChange={() => setItemKey(key)} className="mt-1 accent-rose-600" />
