@@ -496,12 +496,44 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
         }
         try {
             const nowIso = new Date().toISOString();
+            const consultaMeta = typeof selectedConsulta.metadata === 'string'
+                ? (() => { try { return JSON.parse(selectedConsulta.metadata); } catch { return {}; } })()
+                : (selectedConsulta.metadata || {});
+            const consultaDoctorName =
+                selectedConsulta.profesional ||
+                selectedConsulta.profesionalNombre ||
+                consultaMeta.profesional ||
+                consultaMeta.profesionalNombre ||
+                selectedConsulta.doctor ||
+                "";
+            const normText = (v) => String(v || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+            const creadorId = consultaMeta.creadorId || selectedConsulta.creadorId || "";
+            const transcribeName = consultaMeta.transcribe || selectedConsulta.transcribe || "";
+            const creadorMatchesDoctor = Boolean(creadorId) && (
+                !consultaDoctorName ||
+                !transcribeName ||
+                normText(transcribeName) === normText(consultaDoctorName)
+            );
+            const currentUserName = userProfile?.nombreCompleto || userProfile?.nombre || "";
+            const consultaDoctorId =
+                selectedConsulta.profesional_id ||
+                selectedConsulta.profesionalId ||
+                consultaMeta.profesionalId ||
+                consultaMeta.doctorId ||
+                (creadorMatchesDoctor ? creadorId : "") ||
+                (isDoctorUser(userProfile) && (!consultaDoctorName || normText(currentUserName) === normText(consultaDoctorName))
+                    ? (userProfile?.uid || userProfile?.id || "")
+                    : "");
+
             const updatedItems = items.map(it => {
                 if (it.id === targetConsultaItem.id) {
                     return {
                         ...it,
+                        status: 'completed',
                         realizado: true,
                         fechaRealizado: nowIso,
+                        ...(consultaDoctorId ? { profesionalId: consultaDoctorId } : {}),
+                        ...(consultaDoctorName ? { profesional: consultaDoctorName } : {}),
                         asocConsultaId: selectedConsulta.id,
                         asocConsultaTitulo: selectedConsulta.titulo || 'Consulta Odontológica',
                         asocConsultaFecha: selectedConsulta.fechaIso || selectedConsulta.created_at || selectedConsulta.date || nowIso
@@ -589,19 +621,49 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
     };
 
     const handleEvolutionSaved = async (savedEvo) => {
+        let parsedEvo = null;
         if (savedEvo) {
-            setEvolutions(prev => [savedEvo, ...prev]);
+            let parsed = {};
+            if (savedEvo.tratamiento && typeof savedEvo.tratamiento === 'string' && savedEvo.tratamiento.startsWith('{')) {
+                try { parsed = JSON.parse(savedEvo.tratamiento); } catch (_) {}
+            } else if (savedEvo.tratamiento && typeof savedEvo.tratamiento === 'object') {
+                parsed = savedEvo.tratamiento;
+            }
+            parsedEvo = {
+                ...savedEvo,
+                ...parsed,
+                id: savedEvo.id,
+                planId: parsed.planId || savedEvo.planId || currentPlanId,
+                plantillaItems: parsed.plantillaItems || savedEvo.plantillaItems || {}
+            };
+            setEvolutions(prev => [parsedEvo, ...prev]);
         }
-        const nowIso = new Date().toISOString();
+        const nowIso = parsedEvo?.fecha || parsedEvo?.date || new Date().toISOString();
+        const evoDocId = parsedEvo?.profesional_id || parsedEvo?.profesionalId || parsedEvo?.doctorId || null;
+        const evoDocName = parsedEvo?.profesional || "";
+        const evoPlantilla = parsedEvo?.plantillaItems || {};
+
         const updatedItems = items.map(it => {
-            if (selectedForRealizar.has(it.id)) {
+            if (!selectedForRealizar.has(it.id)) return it;
+            const detail = evoPlantilla[it.id];
+            if (detail && detail.realizado === false) {
                 return {
                     ...it,
-                    realizado: true,
-                    fechaRealizado: it.fechaRealizado || nowIso
+                    status: detail.checked ? 'in_progress' : (it.status || 'pending'),
+                    realizado: false,
+                    fechaRealizado: null,
+                    ...(evoDocId ? { profesionalId: evoDocId } : {}),
+                    ...(evoDocName ? { profesional: evoDocName } : {})
                 };
             }
-            return it;
+            return {
+                ...it,
+                status: 'completed',
+                realizado: true,
+                fechaRealizado: it.fechaRealizado || nowIso,
+                ...(evoDocId ? { profesionalId: evoDocId } : {}),
+                ...(evoDocName ? { profesional: evoDocName } : {})
+            };
         });
         setItems(updatedItems);
         if (currentPlanId) {
@@ -610,7 +672,7 @@ export default function PlanEditor({ patient: dbPatient, initialData, onClose, o
         setSelectedForRealizar(new Set());
         setShowEvolutionModal(false);
         setEvolutionInitialData(null);
-        toast.success("✅ Evolución registrada y procedimientos marcados como realizados.");
+        toast.success("✅ Evolución registrada y procedimientos actualizados.");
         if (onSaved) onSaved();
     };
 

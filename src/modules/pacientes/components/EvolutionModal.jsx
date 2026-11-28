@@ -993,8 +993,13 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                     profesional: docName || it.profesional || ""
                                 };
                             }
-                            // Si el ítem estaba registrado en esta evolución y ahora se desmarcó
-                            if (initialData?.plantillaItems?.[itId] && (!detail || !detail.checked)) {
+                            // Si el ítem estaba realmente marcado en esta evolución y ahora se desmarcó
+                            // (sin revertir procedimientos ya realizados en otras evoluciones)
+                            const wasSelectedInInitial = Boolean(
+                                initialData?.plantillaItems?.[itId]?.checked === true ||
+                                initialData?.plantillaItems?.[itId]?.realizado === true
+                            );
+                            if (wasSelectedInInitial && (!detail || !detail.checked) && !realizedItemIds.has(itId)) {
                                 return {
                                     ...it,
                                     status: 'pending',
@@ -2205,7 +2210,8 @@ export default function EvolutionModal({ isOpen, onClose, onSave, patient, initi
                                 <tbody className="divide-y divide-slate-100">
                                     {servicios.map((s, idx) => {
                                         const isCurrentEvoItem = Boolean(
-                                            initialData?.plantillaItems?.[s.id] ||
+                                            initialData?.plantillaItems?.[s.id]?.checked === true ||
+                                            initialData?.plantillaItems?.[s.id]?.realizado === true ||
                                             (Array.isArray(initialData?.serviciosIds) && initialData.serviciosIds.some(id => String(id) === String(s.id)))
                                         );
                                         const isPastRealized = !isCurrentEvoItem && (realizedItemIds.has(s.id) || s.status === 'completed' || s.realizado === true || s.completed === true);

@@ -52,6 +52,13 @@ const safeNumber = (val) => {
     return isNaN(num) ? 0 : num;
 };
 
+const normalizeDocText = (str) =>
+    String(str || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .trim();
+
 /**
  * Extrae y calcula el desglose financiero real de un ítem de un plan de tratamiento/presupuesto,
  * teniendo en cuenta:
@@ -270,10 +277,10 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
             formaPago: "Realizadas y pagadas"
         };
 
-        const currentDocNorm = (currentDoctor.nombre || "").toLowerCase().trim();
+        const currentDocNorm = normalizeDocText(currentDoctor.nombre);
         const doctorNamesSet = new Set([
             currentDocNorm,
-            ...currentDocNorm.split(" ").filter(w => w.length > 2)
+            ...currentDocNorm.split(/\s+/).filter(w => w.length > 2)
         ]);
         const currentDocIdStr = String(currentDoctor.id || doctorId).toLowerCase().trim();
 
@@ -324,6 +331,75 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
             };
         });
 
+        // 3b. Cargar Documentos Clínicos (Consultas asociadas a ítems de planes de tratamiento)
+        let docsClinicosList = [];
+        try {
+            const { data } = await supabase
+                .from("documentos_clinicos")
+                .select("*")
+                .eq("tenant_id", tenantId);
+            if (data && data.length > 0) docsClinicosList = data;
+        } catch (e) {}
+
+        const resolveClinicalDocDoctor = (docObj, metaObj = {}) => {
+            const doctorName =
+                docObj?.profesional ||
+                docObj?.profesional_nombre ||
+                metaObj?.profesional ||
+                metaObj?.profesionalNombre ||
+                metaObj?.doctorName ||
+                "";
+            const explicitId =
+                docObj?.profesional_id ||
+                docObj?.profesionalId ||
+                metaObj?.profesionalId ||
+                metaObj?.doctorId ||
+                null;
+            if (explicitId) return { doctorId: explicitId, doctorName };
+
+            const docNameNorm = normalizeDocText(doctorName);
+            if (docNameNorm) {
+                const exactDoc = allDocs.find((d) => normalizeDocText(d.nombre) === docNameNorm);
+                const partialDoc = !exactDoc && docNameNorm.length >= 6
+                    ? allDocs.find((d) => {
+                        const dn = normalizeDocText(d.nombre);
+                        return dn.length >= 6 && (dn.includes(docNameNorm) || docNameNorm.includes(dn));
+                    })
+                    : null;
+                const matchedDoc = exactDoc || partialDoc;
+                if (matchedDoc) {
+                    return { doctorId: matchedDoc.id, doctorName: doctorName || matchedDoc.nombre };
+                }
+            }
+
+            const creadorId = metaObj?.creadorId || docObj?.creadorId || null;
+            const transcribeNorm = normalizeDocText(metaObj?.transcribe || docObj?.transcribe || "");
+            const creadorMatchesDoctor = Boolean(creadorId) && (!docNameNorm || !transcribeNorm || transcribeNorm === docNameNorm);
+            return {
+                doctorId: creadorMatchesDoctor ? creadorId : null,
+                doctorName
+            };
+        };
+
+        const docsById = new Map();
+        const docsByPlanItem = new Map();
+        (docsClinicosList || []).forEach(doc => {
+            let meta = doc.metadata || {};
+            if (typeof meta === "string") {
+                try { meta = JSON.parse(meta); } catch (_) { meta = {}; }
+            }
+            const resolvedDoc = {
+                ...doc,
+                _meta: meta,
+                ...resolveClinicalDocDoctor(doc, meta)
+            };
+            if (doc.id) docsById.set(String(doc.id), resolvedDoc);
+            if (doc.legacy_id) docsById.set(String(doc.legacy_id), resolvedDoc);
+            if (meta.planId && meta.planItemId) {
+                docsByPlanItem.set(`${meta.planId}_${meta.planItemId}`, resolvedDoc);
+            }
+        });
+
         // 4. Cargar Pacientes para nombres completos
         let pacientesList = [];
         try {
@@ -344,6 +420,20 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
                 nombre: fullName,
                 documento: p.cedula || p.documento || ""
             };
+            // Indexar también documentos clínicos guardados en historial_medico como respaldo
+            const hmDocs = p.historial_medico?.documentosClinicos;
+            if (Array.isArray(hmDocs)) {
+                hmDocs.forEach(d => {
+                    if (d?.id && !docsById.has(String(d.id))) {
+                        const meta = (d.metadata && typeof d.metadata === "object") ? d.metadata : {};
+                        docsById.set(String(d.id), {
+                            ...d,
+                            _meta: meta,
+                            ...resolveClinicalDocDoctor(d, meta)
+                        });
+                    }
+                });
+            }
         });
 
         // 5. Cargar Pagos y Recibos de Caja (para saber si el ítem o plan está pagado por el cliente)
@@ -480,31 +570,45 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
         });
 
         // 7. Cargar Liquidaciones existentes para no duplicar ítems liquidados
-        let liquidaciones = [];
+        let dbLiquidaciones = [];
         try {
             const { data } = await supabase
                 .from("liquidaciones")
                 .select("*")
                 .eq("tenant_id", tenantId);
-            if (data && data.length > 0) liquidaciones = data;
+            if (data && data.length > 0) dbLiquidaciones = data;
         } catch (e) {}
-        if (liquidaciones.length === 0) {
-            liquidaciones = await getConfigSection(tenantId, "liquidaciones", []);
-        }
+        const cfgLiquidaciones = await getConfigSection(tenantId, "liquidaciones", []);
+        const liqMap = new Map();
+        (dbLiquidaciones || []).forEach(l => {
+            if (l?.id) liqMap.set(String(l.id), l);
+        });
+        (Array.isArray(cfgLiquidaciones) ? cfgLiquidaciones : []).forEach(l => {
+            if (l?.id) liqMap.set(String(l.id), { ...(liqMap.get(String(l.id)) || {}), ...l });
+        });
+        const liquidaciones = Array.from(liqMap.values());
 
         const itemsLiquidadosKeys = new Set();
         liquidaciones.forEach(liq => {
             if (liq.estado === "Anulada" || liq.estado === "anulada") return;
+            // Si la liquidación tiene arreglo explícito `items`, es la fuente autoritativa
+            // (evita que ítems retirados en una corrección queden bloqueados por un `conceptosLiquidados` obsoleto).
+            const hasAuthoritativeItems = Array.isArray(liq.items) && (
+                liq.items.length > 0 ||
+                (Array.isArray(liq.correcciones) && liq.correcciones.length > 0)
+            );
+            if (hasAuthoritativeItems) {
+                liq.items.forEach(it => {
+                    if (it.key) itemsLiquidadosKeys.add(String(it.key));
+                    if (it.itemId && it.planId) itemsLiquidadosKeys.add(`${it.planId}_${it.itemId}`);
+                    if (it.id && it.planId) itemsLiquidadosKeys.add(`${it.planId}_${it.id}`);
+                    if (it.id && !/^item_\d+$/.test(String(it.id))) itemsLiquidadosKeys.add(String(it.id));
+                });
+                return;
+            }
             const keys = liq.conceptosLiquidados || liq.itemsIds || [];
             if (Array.isArray(keys)) {
                 keys.forEach(k => itemsLiquidadosKeys.add(String(k)));
-            }
-            if (Array.isArray(liq.items)) {
-                liq.items.forEach(it => {
-                    if (it.key) itemsLiquidadosKeys.add(String(it.key));
-                    if (it.id) itemsLiquidadosKeys.add(String(it.id));
-                    if (it.itemId && it.planId) itemsLiquidadosKeys.add(`${it.planId}_${it.itemId}`);
-                });
             }
         });
 
@@ -676,7 +780,9 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
                         if (pi.realizado === true) {
                             evoSaysRealizado = true;
                             if (!realizingEvolution) realizingEvolution = evo;
-                        } else if (pi.realizado === false) {
+                        } else if (pi.realizado === false && pi.checked !== false) {
+                            // Solo marcar como no realizado si el ítem fue seleccionado en la evolución (en progreso),
+                            // ignorando los ítems no seleccionados ({ checked: false, realizado: false }) del resto del plan.
                             evoSaysNotRealizado = true;
                         }
                     } else if (
@@ -695,7 +801,13 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
                 }
 
                 // 2. Estado en el propio ítem del plan de tratamiento
-                const isItemExplicitlyPendingOrInProgress = (
+                // Si el ítem tiene explícitamente realizado=true (ej. consulta asociada desde presupuestos),
+                // no debe ser descartado por un status="pending" residual.
+                const isItemExplicitlyRealizado = (
+                    item.realizado === true ||
+                    item.realizada === true
+                );
+                const isItemExplicitlyPendingOrInProgress = !isItemExplicitlyRealizado && (
                     item.realizado === false ||
                     item.status === "in_progress" ||
                     item.status === "pending" ||
@@ -708,11 +820,9 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
                 }
 
                 // 3. Determinar si está formalmente realizado
-                const isRealizado = evoSaysRealizado || (
+                const isRealizado = evoSaysRealizado || isItemExplicitlyRealizado || (
                     !isItemExplicitlyPendingOrInProgress && (
-                        item.realizado === true || 
-                        item.realizada === true || 
-                        item.estado === "completado" || 
+                        item.estado === "completado" ||
                         item.estado === "realizado" ||
                         item.status === "completed" ||
                         item.status === "realizado"
@@ -725,22 +835,38 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
                 const matchedEvolution = realizingEvolution;
 
                 // Regla C: Identificar profesional que realizó el ítem
-                // Si la evolución clínica tiene un profesional asignado, ese tiene máxima prioridad (el profesional tratante que ejecutó el procedimiento)
+                // Prioridad: 1) Evolución clínica, 2) Consulta asociada en documentos_clinicos,
+                // 3) Profesional en el ítem, 4) Profesional en el pago, 5) Profesional del plan.
                 const evoDoctorId = matchedEvolution?.profesional_id || matchedEvolution?._tData?.profesionalId || matchedEvolution?._tData?.doctorId || matchedEvolution?.doctorId;
                 const evoDoctorName = matchedEvolution?._tData?.profesional || matchedEvolution?.profesionalNombre || matchedEvolution?.doctorName;
 
+                const linkedConsultaDoc =
+                    (item.asocConsultaId && docsById.get(String(item.asocConsultaId))) ||
+                    docsByPlanItem.get(`${plan.id}_${itemId}`) ||
+                    null;
+                const docDoctorId = linkedConsultaDoc?.doctorId || null;
+                const docDoctorName = linkedConsultaDoc?.doctorName || "";
+
                 const paidDocInfo = paidItemsDoctorMap[String(itemId)] || {};
-                const itemDoctorId = evoDoctorId || item.profesionalId || item.doctorId || item.profesional_id || 
-                    paidDocInfo.doctorId || planDoctorId;
-                const itemDoctorName = evoDoctorName || item.profesional || item.doctor || 
-                    paidDocInfo.doctorName || planDoctorName;
+                const directItemDoctorId = item.profesionalId || item.doctorId || item.profesional_id || null;
+                const directItemDoctorName = item.profesional || item.doctor || "";
+
+                const doctorSource =
+                    (evoDoctorId || evoDoctorName) ? { id: evoDoctorId || null, name: evoDoctorName || "" } :
+                    (docDoctorId || docDoctorName) ? { id: docDoctorId || null, name: docDoctorName || "" } :
+                    (directItemDoctorId || directItemDoctorName) ? { id: directItemDoctorId, name: directItemDoctorName } :
+                    (paidDocInfo.doctorId || paidDocInfo.doctorName) ? { id: paidDocInfo.doctorId || null, name: paidDocInfo.doctorName || "" } :
+                    { id: planDoctorId || null, name: planDoctorName || "" };
+
+                const itemDoctorId = doctorSource.id;
+                const itemDoctorName = doctorSource.name;
 
                 let matchesDoctor = false;
                 if (itemDoctorId && (String(itemDoctorId) === String(doctorId) || String(itemDoctorId).toLowerCase() === currentDocIdStr)) {
                     matchesDoctor = true;
                 } else if (itemDoctorName) {
-                    const normDoc = itemDoctorName.toLowerCase().trim();
-                    if (doctorNamesSet.has(normDoc) || normDoc.includes(currentDocNorm) || currentDocNorm.includes(normDoc)) {
+                    const normDoc = normalizeDocText(itemDoctorName);
+                    if (normDoc && (doctorNamesSet.has(normDoc) || normDoc.includes(currentDocNorm) || currentDocNorm.includes(normDoc))) {
                         matchesDoctor = true;
                     }
                 }
@@ -749,7 +875,9 @@ export const getItemsPendientesPorDoctor = async (tenantId, doctorId, dateRange)
 
                 // Regla D: Fecha de realización debe estar en el rango [desde, hasta]
                 let fechaRealizadoRaw = item.fechaRealizado || item.fecha_realizado || 
-                    matchedEvolution?.fecha || matchedEvolution?.created_at || item.fecha || plan.created_at;
+                    matchedEvolution?.fecha || matchedEvolution?.created_at ||
+                    linkedConsultaDoc?._meta?.fechaIso || linkedConsultaDoc?.created_at ||
+                    item.fecha || plan.created_at;
                 
                 let fechaObj = fechaRealizadoRaw ? parseLocalDate(fechaRealizadoRaw) : new Date(plan.created_at || 0);
                 if (!fechaObj || isNaN(fechaObj.getTime())) return;
@@ -1253,11 +1381,31 @@ export const corregirItemLiquidacionPagada = async ({ tenantId, liquidacionId, i
         valorCorregido: newTotalPagar,
         corregidoPor: userProfile?.nombreCompleto || userProfile?.nombre || userProfile?.email || "Administración",
     };
+    const removedKeys = new Set(
+        [
+            itemKey,
+            removedItem.key,
+            removedItem.id,
+            removedItem.planId && removedItem.id ? `${removedItem.planId}_${removedItem.id}` : null,
+            removedItem.planId && removedItem.itemId ? `${removedItem.planId}_${removedItem.itemId}` : null,
+        ].filter(Boolean).map(String)
+    );
+    const remainingConceptos = Array.isArray(liq.conceptosLiquidados)
+        ? liq.conceptosLiquidados.filter((k) => !removedKeys.has(String(k)))
+        : remainingItems
+            .map((it) => it.key || (it.planId && it.id ? `${it.planId}_${it.id}` : it.id))
+            .filter(Boolean)
+            .map(String);
+    const remainingItemsIds = Array.isArray(liq.itemsIds)
+        ? liq.itemsIds.filter((k) => !removedKeys.has(String(k)))
+        : undefined;
     const updatedLiq = {
         ...liq,
         cajaId,
         caja_id: cajaId,
         items: remainingItems,
+        conceptosLiquidados: remainingConceptos,
+        ...(remainingItemsIds !== undefined ? { itemsIds: remainingItemsIds } : {}),
         totalRecaudado: Number(liq.totalRecaudado ?? liq.totalItemsValor ?? 0) - removedValue,
         totalItemsValor: Number(liq.totalItemsValor ?? liq.totalRecaudado ?? 0) - removedValue,
         comisionesTotal: Number(liq.comisionesTotal || 0) - removedCommission,
